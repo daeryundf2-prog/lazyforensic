@@ -127,29 +127,59 @@ function extractTarget(sources) {
 	return '';
 }
 
-const GUARD_KEYWORD_RE = /보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|검토해줘|검증해줘|검증|할루시네이션|할루체크|팩트체크|거짓말검사|사실확인|무결성검사|verify|\/verify|\/할루체크|\/검증|법적.*검토|요약해줘|요약파일|요약 파일|기록해줘|기록해|정리해줘|정리해|결론정리|summary|findings|\/요약|\/기록/i;
+// 트리거는 키워드/경로힌트/본문 스니핑 3계층. 영어 일반 단어(summary,
+// findings)는 본문 키워드에서 빼고 경로 힌트로만 쓴다 — 일반 개발 노트가
+// 금지문구 스캐너까지 몰려 차단되는 과잉 트리거를 막는다.
+const GUARD_KEYWORD_RE = /보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|검토해줘|검증해줘|검증|할루시네이션|할루체크|팩트체크|거짓말검사|사실확인|무결성검사|verify|\/verify|\/할루체크|\/검증|법적.*검토|요약해줘|기록해줘|\/요약|\/기록/i;
 const REPORT_PATH_HINT_RE = /report|보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|draft|초안|analysis|opinion|summary|findings|notes|요약|기록/i;
 const READ_CAP_BYTES = 2 * 1024 * 1024; // shouldGuard 내용 훑기 상한
+const TAIL_SAMPLE_BYTES = 512 * 1024; // 대용량 파일 후미 샘플 (후미 배치 우회 방지)
+
+function readSamples(targetFile) {
+	// 앞 2MB + 뒤 512KB 양단 샘플. 2MB 초과 파일은 뒤쪽 해시가 스니핑
+	// 사각이 되는 것을 막는다. UTF-8 경계 절단은 라인 시작까지 되돌린다.
+	const st = fs.statSync(targetFile);
+	const headLen = Math.min(READ_CAP_BYTES, st.size);
+	const fd = fs.openSync(targetFile, 'r');
+	const head = Buffer.alloc(headLen);
+	fs.readSync(fd, head, 0, headLen, 0);
+	let tail = null;
+	if (st.size > headLen) {
+		const tailLen = Math.min(TAIL_SAMPLE_BYTES, st.size - headLen);
+		tail = Buffer.alloc(tailLen);
+		fs.readSync(fd, tail, 0, tailLen, st.size - tailLen);
+		let start = 0;
+		// tail 앞단이 잘린 멀티바이트면 첫 개행 이후부터 사용
+		const nl = tail.indexOf(0x0a);
+		if (nl > 0) start = nl + 1;
+		tail = tail.subarray(start);
+	}
+	fs.closeSync(fd);
+	return head.toString('utf-8') + (tail ? tail.toString('utf-8') : '');
+}
 
 function shouldGuard(targetFile, rawTexts) {
 	const keywordHit = GUARD_KEYWORD_RE.test(rawTexts.join('\n'));
 	const reportExt = /\.(md|html|txt)$/i.test(targetFile);
-	const reportPathHint = REPORT_PATH_HINT_RE.test(targetFile);
+	// 경로 힌트는 basename에만 적용 — 디렉터리명/부분문자열 오탐 방지.
+	// 토큰 경계로 묶어 reporting.md 정도는 허용하고 notes/report 디렉터리
+	// 안의 무관 파일이 내용 무관 발동하는 것을 막는다.
+	const base = path.basename(targetFile);
+	const reportPathHint = /(?:^|[-_])(?:report|summary|findings|notes|draft|analysis|opinion)(?:[-_\.]|$)/i.test(base)
+		|| /보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|초안|요약|기록/.test(base);
 	if (keywordHit && reportExt) return true;
 	if (reportPathHint && reportExt) return true;
 	if (reportExt && fs.existsSync(targetFile)) {
 		try {
-			const fd = fs.openSync(targetFile, 'r');
-			const buf = Buffer.alloc(Math.min(READ_CAP_BYTES, fs.fstatSync(fd).size));
-			fs.readSync(fd, buf, 0, buf.length, 0);
-			fs.closeSync(fd);
-			const text = buf.toString('utf-8');
+			const text = readSamples(targetFile);
 			// 본문 폴백: 포렌식 기술 패턴 조합 시 발동.
-			// 1) 64hex 해시가 본문에 있으면 길이 불문 무조건 발동 — 짧은
-			//    "요약" 파일에 해시를 끼워 넣는 우회를 원천 차단한다.
-			// 2) 그 외: 200자 이상 + 마커 2개 이상 동시 존재.
-			// 3) 기존 폴백 유지: 500자 이상 + 사건/감정/해시/증거 키워드.
-			if (/[a-fA-F0-9]{64}/.test(text)) return true;
+			// 1) SHA/MD5 라벨이 붙은 64hex 해시가 있으면서 포렌식 마커(감정/
+			//    증거/사건/포렌식/타임스탬프)도 함께 있을 때만 발동 — 짧은
+			//    "요약" 파일에 해시를 끼워 넣는 우회는 차단하고, 릴리스 체크섬
+			//    노트(해시만 있음)는 발동하지 않는다.
+			const hasLabeledHash = /(?:SHA-?256|sha256)\s*[:=]?\s*[a-fA-F0-9]{64}/i.test(text);
+			const hasForensicMarker = /감정|증거|사건|포렌식|타임스탬프|timestamp/i.test(text);
+			if (hasLabeledHash && hasForensicMarker) return true;
 			if (text.length > 200) {
 				const forensicMarkers = [
 					/SHA-?256|MD5/i.test(text),
@@ -188,7 +218,8 @@ function evidenceCandidates(targetFile) {
 	return candidates.filter((p) => fs.existsSync(p));
 }
 
-// timeline 자동 탐색: 보고서 옆/작업 디렉터리의 timeline json — 시각 grounding
+// timeline 자동 탐색: 보고서 옆/작업 디렉터리의 timeline json — 시각 grounding.
+// 여러 개 있으면 보고서와 가장 가까운(같은 디렉터리) 것부터 전달한다.
 function timelineCandidates(targetFile) {
 	const dir = path.dirname(path.resolve(targetFile));
 	const candidates = [
@@ -262,6 +293,10 @@ async function main() {
 	}
 	if (timeline) {
 		args.push('--timeline', timeline);
+	} else {
+		// timeline 근거 파일을 못 찾으면 과거 시각 grounding이 스킵된다.
+		// 조용한 사각지대 대신 사용자에게 노출해 수동 제공을 유도한다.
+		console.error(`[HALLUCINATION GUARD] timeline 근거 파일 미발견 — 타임라인 grounding 생략. timeline.json이 있다면 보고서와 같은 디렉터리에 두십시오: ${path.dirname(path.resolve(targetFile))}`);
 	}
 	if (ledger) {
 		args.push('--claim-ledger', ledger);

@@ -120,6 +120,9 @@ def extract_forensic_morphemes(text: str, min_len: int = 2) -> list[str]:
             pass
 
     # Regex fallback
+    # NOTE: 이 폴백 로직은 lazyothers/scripts/korean_morph_grounding.py 의
+    # extract_content_morphemes 폴백과 짝이다. 어미/조사 제거 규칙을 고칠 때
+    # 두 파일을 함께 고칠 것 (동기화 페어).
     known_terms = {w for w, _ in FORENSIC_DOMAIN_TERMS} | FORENSIC_PROCEDURAL_TERMS
     known_terms_lower = {w.lower() for w in known_terms}
 
@@ -131,18 +134,21 @@ def extract_forensic_morphemes(text: str, min_len: int = 2) -> list[str]:
     )
     particles = r"(?:은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|에게|이나|나|으로서|으로써)$"
 
-    words = re.findall(r"[가-힣a-zA-Z0-9_]+", text)
+    # 하이픈 결합 토큰(SHA-256, Cellebrite-UFED 등)도 하나의 단어로 본다.
+    # 순수 숫자 토큰(날짜·번호)은 유지하고, 어미/조사 제거는 시도한다.
+    words = re.findall(r"[가-힣a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)*", text)
     fallback_tokens = []
     for w in words:
         if re.match(r"^[0-9]+[.)]?$", w):
             continue
 
         # If w is directly a known domain or procedural term, preserve it
+        # (case-insensitive hit preserves the original casing so evidence
+        # "SHA-256" and report "sha-256" both survive)
         if w.lower() in known_terms_lower:
             fallback_tokens.append(w)
             continue
 
-        # Strip predicate endings first (e.g. 복원하였다 -> 복원, 측정되었습니다 -> 측정)
         stripped_pred = re.sub(predicates, "", w)
         if stripped_pred and stripped_pred != w:
             clean_pred = stripped_pred.rstrip(".,;:-~`!@#$%^&*()[]{}")
@@ -150,7 +156,6 @@ def extract_forensic_morphemes(text: str, min_len: int = 2) -> list[str]:
                 fallback_tokens.append(clean_pred)
                 continue
 
-        # Strip particles (e.g. 하드디스크의 -> 하드디스크)
         stripped = re.sub(particles, "", w)
         clean_w = stripped.rstrip(".,;:-~`!@#$%^&*()[]{}")
         if len(clean_w) >= min_len:

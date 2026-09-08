@@ -16,8 +16,17 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# 보고서 기준 타임존: 대한민국 실무 문서는 KST다. 실행 머신의 로컬 TZ과
+# 무관하게 미래 시각 판정 경계를 고정한다.
+KST = timezone(timedelta(hours=9))
+CURRENT_YEAR = datetime.now(KST).year
+
+# 정확히 표준 길이인 해시만 인정한다 (MD5 32 / SHA-1 40 / SHA-256 64).
+# {32,64} 구간은 33·41자리 등 잘린 해시가 정상으로 둔갑하는 것을 허용했다.
+HASH_VALUE_RE = re.compile(r"^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$")
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -40,17 +49,17 @@ FORBIDDEN_PHRASES = [
 
 # 과단정 변형 패턴 클래스: 고정 문자열을 우회하는 어휘 변형("완벽히 입증",
 # "확실시", "의심의 여지 없이" 등)을 구조로 잡는다. 부정 문맥은 NEGATION_RE
-# 와 동일하게 면제한다.
+# 와 동일하게 면제한다. '재판에 필요' 같은 정상 서술은 포함하지 않는다.
 CERTAINTY_ASSERTION_RES: list[tuple[re.Pattern, str]] = [
     (
         re.compile(
-            r"(?:완벽히|명백히|분명히|확실히|명확히|의심의\s*여지\s*없이|100%|100\s*퍼센트)\s*"
+            r"(?:완벽히|완전히|전적으로|절대적으로|명백히|분명히|확실히|명확히|결정적으로|의심의\s*여지\s*없이|100\s*퍼센트)\s*"
             r"(?:증명|입증|확인|밝혀)"
         ),
         "과단정 표현 (부사+증명/입증류)",
     ),
     (
-        re.compile(r"(?:확실시|확정적|틀림없|재판에\s*필요)\s*(?:된|이다|으로|임|함|하다)?"),
+        re.compile(r"(?:확실시|확정적|틀림없)\s*(?:된|이다|으로|임|함|하다)?"),
         "과단정 표현 (확실시/확정적/틀림없)",
     ),
     (
@@ -70,12 +79,13 @@ def scan_certainty_variants(text: str) -> list[str]:
                 break
     return hits
 
-# 금지 문구 직후에 이어지면 과단정이 아닌 부정/한정 문맥으로 보고 건너뛴다.
-# 예: "유출의심 아님", "조작 가능성을 배제할 수 없다", "확실시되지 않았다"
+# 금지 문구 직후에 이어지면 과단정이 아닌 부정/한정/완화 문맥으로 보고 건너뛴다.
+# 예: "유출의심 아님", "조작 가능성을 배제할 수 없다", "확실시되지 않았다",
+# "입증되었다고 보기는 어렵다"
 NEGATION_RE = re.compile(
-    r"^\s*(?:을|를|이|가|은|는|되|됨|다|의)?\s*"
-    r"(?:아님|아니|않|없|불가|금지|못|불가능|배제|단정할 수 없|확인할 수 없|알 수 없"
-    r"|되지\s*않|안\s*되|되지\s*못|여부는\s*확인|여부를\s*확인|이라고\s*볼\s*수\s*없|으로\s*볼\s*수\s*없|로\s*볼\s*수\s*없)"
+    r"^\s*(?:을|를|이|가|은|는|되|됨|다|의|보기는|보기|할|이라고|으로|로)?\s*"
+    r"(?:아님|아니|않|없|불가|금지|못|불가능|배제|어렵|단정할 수 없|확인할 수 없|알 수 없"
+    r"|되지\s*않|안\s*되|되지\s*못|여부는\s*확인|여부를\s*확인|볼\s*수\s*없)"
 )
 
 
@@ -227,57 +237,73 @@ def load_evidence_hashes(evidence_paths: list[str]) -> set[str]:
             for item in items:
                 if isinstance(item, dict):
                     for key, val in item.items():
-                        if isinstance(val, str) and re.match(r"^[a-fA-F0-9]{32,64}$", val):
+                        if isinstance(val, str) and HASH_VALUE_RE.match(val):
                             hashes.add(val.lower())
     return hashes
+
+
+def _normalize_file_token(tok: str) -> str:
+    """파일 토큰 정규화: 경로는 basename으로, 비교는 소문자(Windows/macOS
+    파일시스템은 대소문자 무관)로 통일한다."""
+    return tok.strip().replace("\\", "/").rstrip("/").split("/")[-1].casefold()
 
 
 def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[str]]:
     """evidence JSON에서 {해시: [파일명...]} 매핑을 추출한다.
 
-    지원 스키마: 최상위/중첩 dict의 (path|file|filename|name)↔(sha256|sha1|md5|hash)
-    인접 필드 쌍, 그리고 "파일명 ... 64hex" 형태의 텍스트 표.
-    파일명은 basename으로 정규화해 저장한다 (보고서에는 보통 파일명만 적힌다).
+    지원 스키마: dict의 (path|file|filename|name)↔(sha256|sha1|md5|hash) 필드 쌍,
+    부모 dict의 파일명 + 자식 dict의 해시(중첩 스키마), 그리고 "파일명 ... 64hex"
+    형태의 텍스트 표.
     """
     pairs: dict[str, list[str]] = {}
 
     def _add(h: str, fname: str):
         h = h.strip().lower()
-        fname = fname.strip().replace("\\", "/").rstrip("/").split("/")[-1]
-        if not re.match(r"^[a-fA-F0-9]{32,64}$", h) or not fname:
+        fname = _normalize_file_token(fname)
+        if not HASH_VALUE_RE.match(h) or not fname:
             return
         pairs.setdefault(h, [])
         if fname not in pairs[h]:
             pairs[h].append(fname)
 
-    def _walk(obj):
+    # 파일명 후보 키 우선순위 — dict 순서가 아닌 명시적 우선순위로 고정.
+    # 'name'은 확장자가 있는(=실제 파일명인) 값만 인정해 도구명/기관명 오염 방지.
+    def _fname_candidates(obj: dict) -> list[str]:
+        found: list[str] = []
+        for key in ("filename", "file_name", "file", "path", "target"):
+            v = obj.get(key)
+            if isinstance(v, str) and v.strip():
+                found.append(v)
+                break
+        name_v = obj.get("name")
+        if isinstance(name_v, str) and re.search(r"\.[A-Za-z0-9]{1,8}$", name_v.strip()):
+            found.append(name_v)
+        return found
+
+    def _walk(obj, parent_fname: str | None = None):
         if isinstance(obj, list):
             for item in obj:
-                _walk(item)
+                _walk(item, parent_fname)
             return
         if not isinstance(obj, dict):
             return
+        # 이 객체 안의 해시들: 같은 객체의 파일명 후보, 없으면 부모의 파일명
+        fnames = _fname_candidates(obj)
+        inherited = fnames or ([parent_fname] if parent_fname else [])
         for key, val in obj.items():
             if not isinstance(val, str):
                 continue
             val_clean = val.strip()
-            is_hash = re.match(r"^[a-fA-F0-9]{32,64}$", val_clean) and re.search(
+            if HASH_VALUE_RE.match(val_clean) and re.search(
                 r"sha|md5|hash|digest", key, re.IGNORECASE
-            )
-            if not is_hash:
-                continue
-            # 이 해시와 같은 객체(또는 부모 객체) 안의 파일명 후보를 찾는다
-            candidates = [
-                v for k2, v in obj.items()
-                if isinstance(v, str) and re.search(r"^(path|file|filename|file_name|name|target)$", k2, re.IGNORECASE)
-            ]
-            if candidates:
-                _add(val_clean, candidates[0])
-                continue
-            # 부모 dict를 못 보는 중첩 구조: 상위 객체 순회에서 처리되므로 패스
+            ):
+                for fname in inherited:
+                    _add(val_clean, fname)
+        # 자식 순회: 이 객체의 파일명을 물려준다 (file/meta 중첩 스키마 결합)
+        child_fname = fnames[0] if fnames else parent_fname
         for val in obj.values():
             if isinstance(val, (dict, list)):
-                _walk(val)
+                _walk(val, child_fname)
 
     for p in evidence_paths:
         path = Path(p)
@@ -292,10 +318,14 @@ def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[s
             _walk(data)
         except Exception:
             for line in text.splitlines():
+                parsed = False
                 try:
                     _walk(json.loads(line))
+                    parsed = True
                 except Exception:
                     pass
+                if parsed:
+                    continue  # JSON 라인은 표 regex 이중 처리 생략
                 # 텍스트 표 형태: "파일명 <경로/확장자> ... 64hex"
                 for m in re.finditer(r"([^\s|]+\.[A-Za-z0-9]{1,8})\s*\|?\s*([a-fA-F0-9]{64})\b", line):
                     _add(m.group(2), m.group(1))
@@ -307,27 +337,44 @@ def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[s
 def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str]]) -> list[str]:
     """해시-파일명 인접성 검증 (Proximity Binding).
 
-    보고서에서 64hex 해시가 나온 같은 줄(또는 그 줄의 인접 토큰)에 적힌
-    파일명이, evidence의 해당 해시 소유 파일명과 일치하는지 대조한다.
-    정상 해시를 악의적 서술(다른 파일명)에 재사용하면 FAIL.
+    보고서에서 해시가 나온 줄의 ±2줄 윈도우에 적힌 파일명이, evidence의 해당
+    해시 소유 파일명과 일치하는지 대조한다. 정상 해시를 악의적 서술(다른
+    파일명)에 재사용하면 FAIL. 파일명 후보는 basename+casefold로 정규화하고,
+    소수점 버전(2.3)·IP·URL 등 확장자에 영문자가 없는 유사 토큰은 제외한다.
     """
     violations: list[str] = []
+    seen: set[tuple[str, int]] = set()
     if not evidence_pairs:
         return violations
-    for line in report_text.splitlines():
+    lines = report_text.splitlines()
+    # 확장자에 최소 1개 영문자를 요구해 2.3 / 192.168.1.10 / example.com 배제.
+    # 확장자 뒤 한국어 조사(의/은/는/이/가/을/를/도/에/에서/와/과/로)를 허용해
+    # "secret.zip의 해시" 형태의 파일명 토큰도 잡는다.
+    file_token_re = re.compile(
+        r"([^\s|]+\.[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]{0,7})(?:의|은|는|이|가|을|를|도|에|에서|와|과|로|으로|랑|이랑)?(?=[\s,.:;)\]|가-힣]|$)"
+    )
+    for li, line in enumerate(lines):
         for m in re.finditer(r"\b([a-fA-F0-9]{64})\b", line):
             h = m.group(1).lower()
             owners = evidence_pairs.get(h)
             if not owners:
                 continue  # 미등록 해시는 기존 '근거 없는 해시' 검사가 처리
-            # 이 해시와 같은 줄에 등장한 파일 같은 토큰 수집
-            line_files = set(re.findall(r"([^\s|]+\.[A-Za-z0-9]{1,8})", line))
-            if not line_files:
+            # 해시와 파일명이 인접(같은 줄 또는 ±2줄)한 파일명 수집
+            window_files: set[str] = set()
+            for wli in range(max(0, li - 2), min(len(lines), li + 3)):
+                for fm in file_token_re.finditer(lines[wli]):
+                    window_files.add(_normalize_file_token(fm.group(1)))
+            if not window_files:
                 continue
-            if not any(owner in line_files for owner in owners):
+            owners_norm = [_normalize_file_token(o) for o in owners]
+            if not any(o in window_files for o in owners_norm):
+                key = (h, li)
+                if key in seen:
+                    continue
+                seen.add(key)
                 violations.append(
-                    f"해시-파일 결합 불일치: 해시 {h[:16]}... 가 같은 줄에서 "
-                    f"{sorted(line_files)[:2]} 와 함께 서술되었으나 evidence에서 이 해시의 소유 파일은 "
+                    f"해시-파일 결합 불일치: 해시 {h[:16]}... 가 인접 줄에서 "
+                    f"{sorted(window_files)[:2]} 와 함께 서술되었으나 evidence에서 이 해시의 소유 파일은 "
                     f"{owners[:2]} 임 — 정상 해시를 다른 파일 서술에 재사용했는지 확인하십시오"
                 )
     return violations
@@ -531,7 +578,7 @@ IMPOSSIBLE_JUDICIAL_PROCEDURE_PATTERNS: list[tuple[re.Pattern, str]] = [
 
 def run_forensic_health_check() -> dict:
     """Run comprehensive Section 5.1 & Section 6 forensic factuality health check suite.
-    Scores 10 categories (10 points each = 100 points total).
+    Scores 12 categories (10 points each = 120 points total; pass mark 100%).
     Returns health check report with score and test results.
     """
     import io
@@ -599,6 +646,22 @@ def run_forensic_health_check() -> dict:
         (
             "evidence_first_protocol",
             "<evidence>2026-08-30T10:00:00Z</evidence> [INSUFFICIENT_DATA] 추가 분석 필요.",
+            lambda out, code: code == 0 and len(out.get("errors", [])) == 0,
+        ),
+        # 11. Benign regression: legitimate artifacts must PASS (review-found
+        #     false positives — 제44조의2, "재판에 필요", 버전 2.3, 시행예정일)
+        (
+            "benign_real_articles_pass",
+            "정보통신망법 제44조의2 위반 혐의로 기재한다. 이 자료는 재판에 필요하다. "
+            "분석 도구 버전 2.3으로 산출하였다. 개정법은 2027-01-01 시행 예정이다. "
+            "민법 제2조의2에 따른 신의성실 원칙도 언급한다.",
+            lambda out, code: code == 0 and len(out.get("errors", [])) == 0,
+        ),
+        # 12. Benign regression: checksum-style notes with negated/softened claims
+        (
+            "benign_negation_pass",
+            "해당 행위의 완전한 입증은 어렵다. 유출이 확실시되지 않아 미확인으로 둔다. "
+            "100% 확인 불가한 부분은 미측정으로 기록한다. 조작 가능성을 배제할 수 없다.",
             lambda out, code: code == 0 and len(out.get("errors", [])) == 0,
         ),
     ]
@@ -702,7 +765,8 @@ def main(argv=None):
             if orphan:
                 errors.append(f"근거 없는 해시 {len(orphan)}개: {sorted(list(orphan))[:3]} — evidence 파일에 없는 해시를 보고서에 쓰지 말 것")
         elif args.evidence:
-            errors.append(f"해시 {len(report_hashes)}개가 보고서에 있으나 evidence({args.evidence})에 해당 해시 없음 — audit_timestamps.py --json 결과 또는 .lazyforensic/audit_trail.jsonl 을 --evidence 로 전달해야 함")
+            ev_names = ", ".join(Path(p).name for p in args.evidence)
+            errors.append(f"해시 {len(report_hashes)}개가 보고서에 있으나 evidence({ev_names})에 해당 해시 없음 — audit_timestamps.py --json 결과 또는 .lazyforensic/audit_trail.jsonl 을 --evidence 로 전달해야 함")
         else:
             # --evidence 가 아예 없으면 grounding 근거 자체가 없다. 과거에는
             # WARN(통과)으로 두어 '감사 생략 + 조작 해시'라는 핵심 위협이
@@ -715,8 +779,8 @@ def main(argv=None):
             )
 
     # 2-1) 해시-파일명 인접성 검증 (Proximity Binding): 정상 해시를 다른
-    #      파일 서술에 재사용하는 증거 조작을 차단한다.
-    report_hashes = {h.lower() for h in extract_hashes(text)}
+    #      파일 서술에 재사용하는 증거 조작을 차단한다. report_hashes 는
+    #      위에서 1회 계산한 것을 재사용한다.
     if report_hashes and args.evidence:
         evidence_pairs = load_evidence_hash_file_pairs(args.evidence)
         for v in check_hash_file_binding(text, evidence_pairs):
@@ -729,17 +793,34 @@ def main(argv=None):
 
     # 4-0) 타임라인 grounding 없이도 성립하는 절대 검증: 현재 연도(그리고 month/day
     #    정합성)를 초과하는 시각 인용은 그 자체로 날조다. --timeline 유무와 무관하게 FAIL.
-    now = datetime.now()
-    for ts in extract_timestamps(text):
-        ts_date = ts.split(" ")[0]
-        try:
-            if datetime.strptime(ts_date, "%Y-%m-%d") > now:
+    #    단, '시행 예정/계획/예상' 등 미래 문맥은 정상 서술이므로 WARN으로 강등한다.
+    #    타임존은 KST로 고정해 실행 머신 TZ과 무관하게 판정한다.
+    now = datetime.now(KST)
+    FUTURE_CONTEXT_RE = re.compile(r"예정|시행|계획|예상|예고|발효\s*예|until|scheduled|planned", re.IGNORECASE)
+    future_hits: set[str] = set()
+    for line in text.splitlines():
+        for ts in extract_timestamps(line):
+            ts_date = ts.split(" ")[0]
+            try:
+                is_future = datetime.strptime(ts_date, "%Y-%m-%d").replace(tzinfo=KST) > now
+            except ValueError:
+                # 월/일 오기(예: 2024-13-45)도 정합성 오류로 본다
+                if ts not in future_hits:
+                    future_hits.add(ts)
+                    errors.append(f"불가능한 날짜 형식: '{ts}' — 달력에 존재하지 않는 날짜입니다")
+                continue
+            if not is_future:
+                continue
+            if FUTURE_CONTEXT_RE.search(line) and ts not in future_hits:
+                future_hits.add(ts)
+                warnings.append(
+                    f"미래 시각({ts})이 예정/시행/계획 문맥에 사용됨 — 사건 서술이 아니라면 문제없으나, 사건 시각으로는 근거 없음"
+                )
+            elif ts not in future_hits:
+                future_hits.add(ts)
                 errors.append(
                     f"미래 시각 날조: '{ts}' — 현재({now.strftime('%Y-%m-%d %H:%M')})보다 미래 시점의 사건 서술은 존재할 수 없습니다"
                 )
-        except ValueError:
-            # 월/일 오기(예: 2024-13-45)도 정합성 오류로 본다
-            errors.append(f"불가능한 날짜 형식: '{ts}' — 달력에 존재하지 않는 날짜입니다")
 
     # 4) 타임라인 grounding (optional): 보고서 내 시각이 timeline에 있는지.
     #    미확인/미측정 표기가 '있는 줄'의 시각은 건너뛴다 (전역 치환 아닌 per-item 판정).
@@ -795,12 +876,15 @@ def main(argv=None):
     }
 
     # 가지번호(제N조의M) 허용 상한 — 초과 인용은 날조 (예: 민법 제1118조의99)
+    # 주의: 상한은 법 개정마다 변한다. 정보통신망법 제44조의7(도청) 등 실존
+    # 조문을 차단하지 않도록 실측 상한을 유지할 것.
     STATUTE_SUBARTICLES: dict[str, int] = {
         "민법": 2,
         "형법": 2,
         "형사소송법": 6,
         "개인정보보호법": 5,
-        "정보통신망법": 0,
+        "정보통신망법": 7,  # 제44조의2~제44조의7 실존
+        "정보통신망 이용촉진 및 정보보호 등에 관한 법률": 7,
         "부정경쟁방지법": 0,
         "전자문서법": 0,
         "민사소송법": 6,
@@ -851,9 +935,13 @@ def main(argv=None):
                     )
 
     # 5-2) 판례 연도 검사 (미래 연도 판결 날조 FAIL 차단)
+    #    사건부호 판정은 문맥 요건을 충족한 후보만 검사한다: 임의 숫자+한글
+    #    조합(예: "2024자연 12345")을 판례로 오탐하는 것을 방지하기 위해
+    #    법원명 선행 또는 선고/판결/결정/사건/호 후행 어미를 요구한다.
     PRECEDENT_RE = re.compile(
         r"(?:대법원|서울고등법원|서울중앙지방법원|[가-힣]{2,6}지방법원|[가-힣]{2,6}고등법원|헌법재판소)?\s*"
         r"(?P<year>\d{4})\s*(?P<code>[가-힣]{1,4})\s*(?P<num>\d+)\b"
+        r"(?=\s*(?:선고|판결|결정|사건|호|판시|대법원|지방법원|고등법원))"
     )
     VALID_CASE_CODES = {
         # 민사
@@ -881,9 +969,9 @@ def main(argv=None):
         code = m.group("code")
         num = m.group("num")
         case_str = f"{year}{code}{num}"
-        if year > 2026:
+        if year > CURRENT_YEAR:
             errors.append(
-                f"판례 허위 날조 발견: 미래 연도 판결 인용 {case_str} (현재 2026년 이후 판결은 존재할 수 없음)"
+                f"판례 허위 날조 발견: 미래 연도 판결 인용 {case_str} (현재 {CURRENT_YEAR}년 이후 판결은 존재할 수 없음)"
             )
         elif year < 1948:
             errors.append(
@@ -942,9 +1030,9 @@ def main(argv=None):
     for m in FUTURE_ACADEMIC_CITATION_RE.finditer(text):
         cite_str = m.group("citation")
         pub_year = int(m.group("year") or m.group("year2"))
-        if pub_year > 2026:
+        if pub_year > CURRENT_YEAR:
             errors.append(
-                f"학술논문/학술지 날조 발견: 미래 연도 학술 논문 '{cite_str}' ({pub_year}년) - 현재 연도(2026년)보다 미래의 학술 출판물은 날조된 환각입니다 (Section 5.1 #3 위반)"
+                f"학술논문/학술지 날조 발견: 미래 연도 학술 논문 '{cite_str}' ({pub_year}년) - 현재 연도({CURRENT_YEAR}년)보다 미래의 학술 출판물은 날조된 환각입니다 (Section 5.1 #3 위반)"
             )
 
     # 5-4) <evidence> 태그 인용 검증 (Section 3.2 #1 Evidence-First)
