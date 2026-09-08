@@ -127,13 +127,14 @@ function extractTarget(sources) {
 	return '';
 }
 
-const GUARD_KEYWORD_RE = /보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|검토해줘|검증해줘|검증|할루시네이션|할루체크|팩트체크|거짓말검사|사실확인|무결성검사|verify|\/verify|\/할루체크|\/검증|법적.*검토/i;
+const GUARD_KEYWORD_RE = /보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|검토해줘|검증해줘|검증|할루시네이션|할루체크|팩트체크|거짓말검사|사실확인|무결성검사|verify|\/verify|\/할루체크|\/검증|법적.*검토|요약해줘|요약파일|요약 파일|기록해줘|기록해|정리해줘|정리해|결론정리|summary|findings|\/요약|\/기록/i;
+const REPORT_PATH_HINT_RE = /report|보고서|감정서|소견서|의견서|진단서|확인서|분석서|결과서|draft|초안|analysis|opinion|summary|findings|notes|요약|기록/i;
 const READ_CAP_BYTES = 2 * 1024 * 1024; // shouldGuard 내용 훑기 상한
 
 function shouldGuard(targetFile, rawTexts) {
 	const keywordHit = GUARD_KEYWORD_RE.test(rawTexts.join('\n'));
 	const reportExt = /\.(md|html|txt)$/i.test(targetFile);
-	const reportPathHint = /report|보고서|감정서|소견서|의견서|진단서|확인서|draft|초안|analysis|opinion/i.test(targetFile);
+	const reportPathHint = REPORT_PATH_HINT_RE.test(targetFile);
 	if (keywordHit && reportExt) return true;
 	if (reportPathHint && reportExt) return true;
 	if (reportExt && fs.existsSync(targetFile)) {
@@ -143,7 +144,20 @@ function shouldGuard(targetFile, rawTexts) {
 			fs.readSync(fd, buf, 0, buf.length, 0);
 			fs.closeSync(fd);
 			const text = buf.toString('utf-8');
-			if (text.length > 500 && /(사건|감정|해시|SHA-256|증거)/.test(text)) return true;
+			// 본문 폴백: 포렌식 기술 패턴 조합 시 발동.
+			// 1) 64hex 해시가 본문에 있으면 길이 불문 무조건 발동 — 짧은
+			//    "요약" 파일에 해시를 끼워 넣는 우회를 원천 차단한다.
+			// 2) 그 외: 200자 이상 + 마커 2개 이상 동시 존재.
+			// 3) 기존 폴백 유지: 500자 이상 + 사건/감정/해시/증거 키워드.
+			if (/[a-fA-F0-9]{64}/.test(text)) return true;
+			if (text.length > 200) {
+				const forensicMarkers = [
+					/SHA-?256|MD5/i.test(text),
+					/감정|증거|사건|포렌식|타임스탬프|timestamp/i.test(text),
+				];
+				if (forensicMarkers.filter(Boolean).length >= 2) return true;
+				if (text.length > 500 && /(사건|감정|해시|SHA-256|증거)/.test(text)) return true;
+			}
 		} catch {}
 	}
 	return false;
@@ -172,6 +186,20 @@ function evidenceCandidates(targetFile) {
 		join(root, '.lazyforensic', 'audit_trail.jsonl'),
 	];
 	return candidates.filter((p) => fs.existsSync(p));
+}
+
+// timeline 자동 탐색: 보고서 옆/작업 디렉터리의 timeline json — 시각 grounding
+function timelineCandidates(targetFile) {
+	const dir = path.dirname(path.resolve(targetFile));
+	const candidates = [
+		join(dir, 'timeline.json'),
+		join(dir, 'timeline_events.json'),
+		join(dir, 'events.json'),
+		join(process.cwd(), 'timeline.json'),
+		join(process.cwd(), 'timeline_events.json'),
+		join(process.cwd(), 'events.json'),
+	];
+	return candidates.find((p) => fs.existsSync(p));
 }
 
 // Python 탐색: OS별 최적 순서 및 Windows Store alias 오탐 배제
@@ -227,9 +255,13 @@ async function main() {
 
 	const evidence = evidenceCandidates(targetFile);
 	const ledger = ledgerCandidate(targetFile);
+	const timeline = timelineCandidates(targetFile);
 	const args = [verifyScript, targetFile];
 	if (evidence.length > 0) {
 		args.push('--evidence', ...evidence, '--morph-grounding');
+	}
+	if (timeline) {
+		args.push('--timeline', timeline);
 	}
 	if (ledger) {
 		args.push('--claim-ledger', ledger);
