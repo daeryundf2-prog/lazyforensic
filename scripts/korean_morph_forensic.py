@@ -120,12 +120,37 @@ def extract_forensic_morphemes(text: str, min_len: int = 2) -> list[str]:
             pass
 
     # Regex fallback
+    known_terms = {w for w, _ in FORENSIC_DOMAIN_TERMS} | FORENSIC_PROCEDURAL_TERMS
+    known_terms_lower = {w.lower() for w in known_terms}
+
+    predicates = (
+        r"(?:되었습니|되었습니다|되었으며|되었고|되었다|됩니다|된다|되다|"
+        r"하였습니|하였습니다|하였으며|하였고|하였다|하여|합니다|한다|하다|"
+        r"했습니|했습니다|했다|"
+        r"이며|이고|이다|입니다)$"
+    )
     particles = r"(?:은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|에게|이나|나|으로서|으로써)$"
+
     words = re.findall(r"[가-힣a-zA-Z0-9_]+", text)
     fallback_tokens = []
     for w in words:
         if re.match(r"^[0-9]+[.)]?$", w):
             continue
+
+        # If w is directly a known domain or procedural term, preserve it
+        if w.lower() in known_terms_lower:
+            fallback_tokens.append(w)
+            continue
+
+        # Strip predicate endings first (e.g. 복원하였다 -> 복원, 측정되었습니다 -> 측정)
+        stripped_pred = re.sub(predicates, "", w)
+        if stripped_pred and stripped_pred != w:
+            clean_pred = stripped_pred.rstrip(".,;:-~`!@#$%^&*()[]{}")
+            if len(clean_pred) >= min_len:
+                fallback_tokens.append(clean_pred)
+                continue
+
+        # Strip particles (e.g. 하드디스크의 -> 하드디스크)
         stripped = re.sub(particles, "", w)
         clean_w = stripped.rstrip(".,;:-~`!@#$%^&*()[]{}")
         if len(clean_w) >= min_len:
@@ -143,7 +168,8 @@ def calculate_forensic_grounding(
     ev_terms = set(extract_forensic_morphemes(evidence_text))
     rep_terms = set(extract_forensic_morphemes(report_text))
     if filter_procedural:
-        rep_terms = rep_terms - FORENSIC_PROCEDURAL_TERMS
+        proc_lower = {p.lower() for p in FORENSIC_PROCEDURAL_TERMS}
+        rep_terms = {t for t in rep_terms if t.lower() not in proc_lower}
 
     if not rep_terms:
         return {
