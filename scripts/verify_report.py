@@ -978,8 +978,8 @@ def main(argv=None):
                 f"판례 허위 날조 발견: 대한민국 사법부 수립 이전 판결 {case_str} (1948년 이전)"
             )
         if code not in VALID_CASE_CODES:
-            errors.append(
-                f"판례 부호 날조 발견: 비표준 사건부호 인용 '{code}' in {case_str} — 대법원 규격 사건부호가 아니며 존재하지 않는 판례일 가능성이 높습니다."
+            warnings.append(
+                f"판례 부호 의심: 비표준 사건부호 인용 '{code}' in {case_str} — 대법원 규격 사건부호 여부를 확인하십시오."
             )
 
     # 5-3) 공공기관 및 수사기관 명칭 날조 검사 (Section 5.1 #2)

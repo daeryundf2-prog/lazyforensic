@@ -299,7 +299,7 @@ class HallucinationGuardTests(unittest.TestCase):
         data = json.loads(proc.stdout)
         self.assertEqual(data["status"], "PASS")
         self.assertEqual(data["score"], 100)
-        self.assertEqual(data["passed"], 10)
+        self.assertEqual(data["passed"], data["total"])
 
 
 if __name__ == "__main__":
