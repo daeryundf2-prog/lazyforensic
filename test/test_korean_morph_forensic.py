@@ -4,7 +4,10 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
+try:
+    import pytest  # noqa: F401
+except ImportError:
+    pytest = None  # type: ignore
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

@@ -4,7 +4,10 @@
 import sys
 from pathlib import Path
 
-import pytest
+try:
+    import pytest  # noqa: F401  (pytest 수집용, unittest 환경에서는 없어도 동작)
+except ImportError:
+    pytest = None  # type: ignore
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
