@@ -41,6 +41,10 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 
 무라이선스 제3자 콘텐츠 — `mengto-skills/`(Meng To/DesignCode 카탈로그), `design-systems/`(VoltAgent 브랜드 카탈로그, 제3자 상표), `vendor/antv-infographic/`, `skills/slopslap/`(upstream private), 그리고 이들에 의존하던 UI 피커 스킬(`ui-studio`, `design-system`, `frontend-ui-ux`) — 은 배포 라이선스 검증을 끝내지 못해 **제거**했다. `NOTICE` 참고. HTML 뷰어 스타일은 인라인 CSS로 직접 작성한다. 필요하면 권리를 확보해 별도 옵션 팩으로 재도입한다.
 
+## 제거된 미배선 헬퍼 (고립 유산)
+
+`skills/video-editor/helpers/pack_transcripts.py`와 `helpers/transcribe_batch.py`는 `SKILL.md`·테스트·타 헬퍼 어디에서도 참조되지 않는 고립 유산이라 **제거**했다. 전사 일괄 파이프라인이 필요하면 `skills/forensic-video/scripts/`(watch/whisper/transcribe BYO 체인)를 쓸 것. 대용량 트랜스크립트는 `verify_report.py`의 지연 I/O(스트리밍 해시+청크 읽기) 경로로 처리한다.
+
 ## 법령 MCP
 
 소스는 `korean-law-mcp/`에 있다. 빌드와 `LAW_OC`가 없으면 조회하지 않는다. 법률 자문 엔진이 아니다. 이 레포에서 `fly deploy`를 하지 않는다.

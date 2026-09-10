@@ -195,19 +195,26 @@ LAW_CITATION_RE = re.compile(r"제\s*\d+\s*조(?:\s*의\s*\d+)?(?:\s*제?\s*\d+\
 LAW_SOURCE_MARKER_RE = re.compile(r"korean_law|LawSearch|법제처|국가법령정보센터")
 
 
-def read_text_smart(path: Path) -> tuple[str, str, bool]:
+def read_text_smart(path: Path, max_bytes: int = 8 * 1024 * 1024) -> tuple[str, str, bool]:
     """BOM/UTF-16/CP949를 순서대로 시도한다. 모두 실패하면 치환 문자로 읽고 lossy=True.
 
     구버전의 errors="ignore" 는 UTF-16 (Windows PowerShell Out-File 기본값) 입력을
     그대로 mojibake 로 만들어 금지 문구·해시 검출을 모두 놓쳤다.
+    대용량 파일은 앞 max_bytes까지만 읽고 lossy=True로 표시한다 (Lazy Read:
+    전체 로딩 OOM 방지, 잘림은 호출자가 경고한다).
     """
-    raw = path.read_bytes()
+    size = path.stat().st_size if path.exists() else 0
+    truncated = size > max_bytes
+    with open(path, "rb") as f:
+        raw = f.read(max_bytes + 1 if truncated else max_bytes)
+    if truncated:
+        raw = raw[:max_bytes]
     for enc in ("utf-8-sig", "utf-16", "cp949"):
         try:
-            return raw.decode(enc), enc, False
+            return raw.decode(enc), enc + ("(truncated)" if truncated else ""), truncated
         except (UnicodeDecodeError, UnicodeError):
             continue
-    return raw.decode("utf-8", errors="replace"), "utf-8(lossy)", True
+    return raw.decode("utf-8", errors="replace"), "utf-8(lossy)" + ("(truncated)" if truncated else ""), True
 
 
 def load_evidence_hashes(evidence_paths: list[str]) -> set[str]:
@@ -341,12 +348,38 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
     해시 소유 파일명과 일치하는지 대조한다. 정상 해시를 악의적 서술(다른
     파일명)에 재사용하면 FAIL. 파일명 후보는 basename+casefold로 정규화하고,
     소수점 버전(2.3)·IP·URL 등 확장자에 영문자가 없는 유사 토큰은 제외한다.
+
+    스키마 강제 2종 추가:
+    - 표 행 엄격: 해시가 마크다운 표 행(`|`) 안에 있으면 같은 행에 소유
+      파일명이 있어야 한다. 같은 행에 다른 파일명만 있으면 즉시 위반.
+    - 미결합 경고: ±2줄 윈도우에 파일명이 전혀 없으면 스키마 위반(WARN)으로
+      기록한다 (3줄 이상 떨어진 변칙 서술 방지).
     """
     violations: list[str] = []
     seen: set[tuple[str, int]] = set()
     if not evidence_pairs:
         return violations
     lines = report_text.splitlines()
+    # <evidence> 태그 안의 해시는 태그 귀속으로 이미 그라운딩되므로
+    # 미결합 스키마 경고에서 제외한다 (태그 밖 서술만 검사).
+    tag_spans: list[tuple[int, int]] = [
+        (m.start(), m.end()) for m in EVIDENCE_TAG_RE.finditer(report_text)
+    ]
+    line_offsets: list[int] = []
+    _off = 0
+    for ln in lines:
+        line_offsets.append(_off)
+        _off += len(ln) + 1
+
+    def _in_evidence_tag(abs_pos: int) -> bool:
+        return any(s <= abs_pos < e for s, e in tag_spans)
+
+    # 태그 귀속 해시 집합: 본문에 <evidence>H</evidence>로 한 번이라도
+    # 인용된 해시는 파일명 동행 없이도 그라운딩된 것으로 본다 (재언급 오탐 방지).
+    tagged_hashes: set[str] = set()
+    for tm in EVIDENCE_TAG_RE.finditer(report_text):
+        for hm in re.finditer(r"\b([a-fA-F0-9]{64})\b", tm.group(1)):
+            tagged_hashes.add(hm.group(1).lower())
     # 확장자에 최소 1개 영문자를 요구해 2.3 / 192.168.1.10 / example.com 배제.
     # 확장자 뒤 한국어 조사(의/은/는/이/가/을/를/도/에/에서/와/과/로)를 허용해
     # "secret.zip의 해시" 형태의 파일명 토큰도 잡는다.
@@ -359,14 +392,38 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
             owners = evidence_pairs.get(h)
             if not owners:
                 continue  # 미등록 해시는 기존 '근거 없는 해시' 검사가 처리
+            abs_pos = line_offsets[li] + m.start()
+            in_tag = _in_evidence_tag(abs_pos)
             # 해시와 파일명이 인접(같은 줄 또는 ±2줄)한 파일명 수집
             window_files: set[str] = set()
             for wli in range(max(0, li - 2), min(len(lines), li + 3)):
                 for fm in file_token_re.finditer(lines[wli]):
                     window_files.add(_normalize_file_token(fm.group(1)))
-            if not window_files:
-                continue
             owners_norm = [_normalize_file_token(o) for o in owners]
+            if not window_files:
+                if h in tagged_hashes:
+                    continue  # 태그 귀속 해시는 파일명 동행 불필요
+                key = (h, li)
+                if key not in seen:
+                    seen.add(key)
+                    violations.append(
+                        f"[SCHEMA-WARN] 해시-파일 결합 스키마 위반: 해시 {h[:16]}... 주변 ±2줄에 파일명이 없어 "
+                        f"어느 파일의 해시인지 검증할 수 없음 — 해시와 파일명을 같은 표 행 또는 인접 줄에 기재하십시오"
+                    )
+                continue
+            # 표 행 엄격: '|' 포함 행에서는 같은 행의 파일명을 우선 대조한다.
+            if "|" in line:
+                same_row = {_normalize_file_token(fm.group(1)) for fm in file_token_re.finditer(line)}
+                if same_row and not any(o in same_row for o in owners_norm):
+                    key = (h, li)
+                    if key not in seen:
+                        seen.add(key)
+                        violations.append(
+                            f"해시-파일 결합 불일치(표 행): 해시 {h[:16]}... 와 같은 행에 "
+                            f"{sorted(same_row)[:2]} 가 있으나 evidence 소유 파일은 "
+                            f"{owners[:2]} 임 — 표 행의 파일명-해시 쌍을 확인하십시오"
+                        )
+                    continue
             if not any(o in window_files for o in owners_norm):
                 key = (h, li)
                 if key in seen:
@@ -785,7 +842,10 @@ def main(argv=None):
     if report_hashes and args.evidence:
         evidence_pairs = load_evidence_hash_file_pairs(args.evidence)
         for v in check_hash_file_binding(text, evidence_pairs):
-            errors.append(v)
+            if v.startswith("[SCHEMA-WARN]"):
+                warnings.append(v[len("[SCHEMA-WARN] "):])
+            else:
+                errors.append(v)
 
     # 3) Chain of Custody 빈칸 검증: 해시 없음 + 결론이 '일치'이면 경고
     if "미측정" not in text and "미확인" not in text:
