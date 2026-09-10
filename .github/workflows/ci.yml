@@ -13,8 +13,8 @@ jobs:
         # Windows 에서도 훅/파서의 경로·인코딩 동작을 검증한다
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install pytest
@@ -44,10 +44,10 @@ jobs:
   node-syntax:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
       - name: Syntax-check all hook scripts
         run: |
           for f in scripts/*.mjs; do node --check "$f"; done
@@ -62,10 +62,10 @@ jobs:
   korean-law-mcp:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
       - name: Install (no lifecycle scripts) and build
         working-directory: korean-law-mcp
         run: |
