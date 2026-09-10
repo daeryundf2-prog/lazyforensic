@@ -599,6 +599,42 @@ class StatutoryBoundsTests(unittest.TestCase):
             self.assertEqual(res_full.returncode, 0)
             self.assertEqual(json.loads(res_full.stdout)["verdict"], "PASS")
 
+    def test_law_cache_verification_and_escalation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_file = Path(tmp) / "law_cache.json"
+            cache_data = {
+                "statute": "개인정보보호법",
+                "articles": ["제32조의2", "제71조"]
+            }
+            cache_file.write_text(json.dumps(cache_data, ensure_ascii=False), encoding="utf-8")
+
+            # 1. Report cites valid article present in law-cache -> passes
+            report_valid = Path(tmp) / "report_valid.md"
+            report_valid.write_text("# 법률 분석서\n피고인은 개인정보보호법 제32조의2 위반에 해당한다.\n", encoding="utf-8")
+            res1 = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "verify_report.py"), str(report_valid), "--law-cache", str(cache_file), "--json"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            data1 = json.loads(res1.stdout)
+            self.assertEqual(data1["verdict"], "PASS")
+            self.assertFalse(any("korean_law MCP 출처 표기 없음" in w for w in data1.get("warnings", [])))
+
+            # 2. Report cites missing article absent in law-cache -> fails and escalates to ERROR
+            report_invalid = Path(tmp) / "report_invalid.md"
+            report_invalid.write_text("# 법률 분석서\n피고인은 개인정보보호법 제999조 및 형법 제200조 위반에 해당한다.\n", encoding="utf-8")
+            res2 = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "verify_report.py"), str(report_invalid), "--law-cache", str(cache_file), "--json"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(res2.returncode, 1)
+            data2 = json.loads(res2.stdout)
+            self.assertEqual(data2["verdict"], "FAIL")
+            self.assertTrue(any("법령 캐시" in e and "존재하지 않음" in e for e in data2["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()

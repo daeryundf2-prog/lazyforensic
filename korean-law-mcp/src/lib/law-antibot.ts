@@ -1,3 +1,6 @@
+import { appendFileSync, mkdirSync } from "node:fs"
+import { join, resolve } from "node:path"
+
 /**
  * law.go.kr JS 안티봇 우회 (클라우드 IP 대응)
  *
@@ -41,11 +44,27 @@ export function parseAntibotUrl(html: string): string | null {
 
 /**
  * ToS 동의 게이트 — law.go.kr JS 챌린지 우회는 제공처 약관의 회색 지대라
- * 명시적 opt-in(LAW_TOS_ACK=1) 없이는 우회를 쓰지 않는다. 미동의 시 우회
- * 시도 자체를 끝내고 원본 응답을 유지한다 (단독 진단 용도의 exit 78 규약).
+ * 명시적 opt-in(LAW_TOS_ACK=1) 없이는 우회를 쓰지 않는다. 동의 시 감사 로그
+ * (.lazyforensic/antibot_consent.log)에 시각과 약관 버전을 기록하고 우회를 허용한다.
  */
+function logAntibotConsent(): void {
+  try {
+    const dir = resolve(process.cwd(), ".lazyforensic")
+    mkdirSync(dir, { recursive: true })
+    const logPath = join(dir, "antibot_consent.log")
+    const entry = `[${new Date().toISOString()}] LAW_TOS_ACK=1 consent active (terms version: 2026.09, bypass: enabled)\n`
+    appendFileSync(logPath, entry, "utf8")
+  } catch {
+    // best-effort logging
+  }
+}
+
 function hasAntibotConsent(): boolean {
-  return process.env.LAW_TOS_ACK === "1"
+  if (process.env.LAW_TOS_ACK === "1") {
+    logAntibotConsent()
+    return true
+  }
+  return false
 }
 
 /** timeout이 걸린 단발 fetch */

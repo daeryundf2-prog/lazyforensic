@@ -904,16 +904,44 @@ def main(argv=None):
         preview = ", ".join(citations[:3]) + (f" 외 {len(citations) - 3}" if len(citations) > 3 else "")
         warnings.append(f"조문 인용({preview})이 있으나 korean_law MCP 출처 표기 없음 — MCP 응답과 대조 전까지 미확인으로 둘 것")
 
-    # 5-0) --law-cache 스켈레톤: MCP 응답캐시(JSON)를 근거파일로 접수만 한다.
-    #      자동대조는 미완성이므로 WARN을 유지하고 FAIL로 승격하지 않는다.
+    # 5-0) --law-cache 실대조: korean_law MCP 응답캐시(JSON)를 기반으로 조문 실존 여부를 대조한다.
     if args.law_cache:
         try:
             cache_path = Path(args.law_cache)
             cache_text = cache_path.read_text(encoding="utf-8", errors="replace")
-            json.loads(cache_text)  # 형식 확인용 (내용 대조는 후속 과제)
-            warnings.append(
-                f"법령대조용 MCP 응답캐시({cache_path.name}) 접수 — 자동대조 미완성, 원문 대조 전까지 미확인 유지"
-            )
+            json.loads(cache_text)  # 유효한 JSON 형식 검증
+            clean_cache = re.sub(r"\s+", "", cache_text)
+
+            missing_citations = []
+            matched_citations = []
+
+            for cit in citations:
+                clean_cit = re.sub(r"\s+", "", cit)
+                if clean_cit in clean_cache:
+                    matched_citations.append(cit)
+                    continue
+
+                m = re.search(r"제\s*(\d+)\s*(?:조(?:의\s*(\d+))?)", cit)
+                found = False
+                if m:
+                    art_token = f"제{m.group(1)}조"
+                    if m.group(2):
+                        art_token += f"의{m.group(2)}"
+                    if art_token in clean_cache:
+                        found = True
+                if found:
+                    matched_citations.append(cit)
+                else:
+                    missing_citations.append(cit)
+
+            if missing_citations:
+                missing_str = ", ".join(missing_citations)
+                errors.append(
+                    f"조문 인용({missing_str})이 법령 캐시({cache_path.name})에 존재하지 않음 — 허위 조문 날조로 차단 (FAIL)"
+                )
+            elif matched_citations:
+                # 모든 조문이 캐시와 일치하면 출처 미표기 경고(WARN)를 정상 그라운딩으로 해제
+                warnings = [w for w in warnings if not ("조문 인용" in w and "korean_law MCP 출처 표기 없음" in w)]
         except Exception as exc:
             warnings.append(f"법령대조용 MCP 응답캐시 읽기 실패({args.law_cache}): {exc} — 원문 대조 전까지 미확인 유지")
 
