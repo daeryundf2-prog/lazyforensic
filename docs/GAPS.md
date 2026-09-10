@@ -35,7 +35,7 @@ python이 아예 없는 Windows에서는 검증 자체가 불가능해 경고 �
 
 `evidence_guard.mjs`는 **best-effort 가드**다. stdin JSON(1.5초 데드라인) + 환경변수 + CLI 인자의 경로/명령 **필드만** 검사하며, 호스트가 stdin을 주지 않거나, 매처 밖의 도구를 쓰거나, 직접 `python open(..., 'w')` 등 호스트 미후킹 경로로 쓰면 우회된다. OS 수준 읽기전용(`chmod 444`)을 대체하지 않는다.
 보고서 본문(content)은 검사하지 않는다 — 본문 언급만으로 쓰기가 막히는 과차단을 막기 위함이다.
-PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파일이다. 해시가 `null`이면 2GiB 초과로 의도적으로 건너뛴 것이다(부재≠실패).
+PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파일이다. 해시가 `null`이면 2GiB 초과로 의도적으로 건너뛴 것이다(부재≠실패). 각 행은 이전행 원문의 sha256을 `prev_hash`로 연결한 해시체인이다(위변조 탐지용, HMAC 아님).
 
 ## 제거된 제3자 트리 (라이선스)
 
@@ -53,7 +53,7 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 
 코드로 끝나지 않는 결정/외부 기록이 필요한 항목. 해결되면 이 목록에서 지운다.
 
-1. **law.go.kr 안티봇 우회의 ToS/정책 검토 (배포 전 필수)** — `korean-law-mcp/src/lib/law-antibot.ts`가 법제처의 난독화 JS 챌린지를 파싱해 우회하고, Chrome UA 스푼핑(`fetch-with-retry.ts`)을 쓴다. 실용적이지만 데이터 제공처 약관의 회색 지대다. 공개 배포/상용 제공 전에 권리 관계 확인과 판단 기록이 필요하다.
+1. **law.go.kr 안티봇 우회의 ToS/정책 검토 (배포 전 필수)** — `korean-law-mcp/src/lib/law-antibot.ts`가 법제처의 난독화 JS 챌린지를 파싱해 우회하고, Chrome UA 스푼핑(`fetch-with-retry.ts`)을 쓴다. 실용적이지만 데이터 제공처 약관의 회색 지대다. 우회 사용 시 `LAW_TOS_ACK=1` 명시적 동의가 필요하며, 미설정 시 우회를 쓰지 않고 원본 응답을 유지한다. 공개 배포/상용 제공 전에 권리 관계 확인과 판단 기록이 필요하다.
 2. **korean-law-mcp CHANGELOG 4.10.0 항목 누락** — vendored 소스의 `CHANGELOG.md` 최신 항목이 4.9.7인데 package.json/CLAUDE.md는 4.10.0이다. 폐지법령 기능의 정확한 변경 내역을 업스트림 기록으로 확인해야 쓸 수 있어 비워 뒀다. 임의로 채우면 그것이 조작이다.
 3. **CI Node.js 20 지원 종료 경고 (해결)** — `actions/checkout@v5`·`setup-node@v5`·`setup-python@v6` + Node 24로 상향했다.
 4. **해시-파일 결합 오류는 부분 완화** — `verify_report.py`의 `check_hash_file_binding`이 파일명-해시 인접성(±2줄)을 대조해 경고한다. 완전 검증은 아니라 위 "검증 게이트" 섹션과 동일 한계가 남는다. 후보 개선: audit_trail에 파일-해시 바인딩을 저장하고 강제 차단으로 승격.

@@ -39,6 +39,15 @@ export function parseAntibotUrl(html: string): string | null {
   return null
 }
 
+/**
+ * ToS 동의 게이트 — law.go.kr JS 챌린지 우회는 제공처 약관의 회색 지대라
+ * 명시적 opt-in(LAW_TOS_ACK=1) 없이는 우회를 쓰지 않는다. 미동의 시 우회
+ * 시도 자체를 끝내고 원본 응답을 유지한다 (단독 진단 용도의 exit 78 규약).
+ */
+function hasAntibotConsent(): boolean {
+  return process.env.LAW_TOS_ACK === "1"
+}
+
 /** timeout이 걸린 단발 fetch */
 async function fetchOnce(url: string, headers: Headers, timeout: number): Promise<Response> {
   const controller = new AbortController()
@@ -63,6 +72,8 @@ export async function followLawAntibot(
 ): Promise<Response | null> {
   let current = response
   let hopped = false
+
+  if (!hasAntibotConsent()) return null
 
   for (let hop = 0; hop < maxHops; hop++) {
     let text: string

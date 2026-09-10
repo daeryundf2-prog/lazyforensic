@@ -713,6 +713,7 @@ def main(argv=None):
     parser.add_argument("--evidence", nargs="*", default=[], help="Evidence files (audit json, audit_trail.jsonl, timeline json, etc.) for hash grounding")
     parser.add_argument("--timeline", help="Timeline events.json for timestamp grounding (optional)")
     parser.add_argument("--claim-ledger", help="Optional path to claim-ledger.md for Section 6 verification")
+    parser.add_argument("--law-cache", help="korean_law MCP 응답 캐시 JSON (법령대조 근거파일, 스켈레톤 — 자동대조 미완성)")
     parser.add_argument("--allow-historical", action="store_true", help="역사적 부처명 인용 허용 (오류 대신 경고 처리)")
     parser.add_argument("--morph-grounding", action="store_true", help="Kiwi 형태소 기반 증거-보고서 용어 일치도 검증 (Section 5.2)")
     parser.add_argument("--high-fidelity", action="store_true", help="Local High-Fidelity gate: require evidence files and <evidence> tags plus morpheme overlap (no Vertex API)")
@@ -842,6 +843,19 @@ def main(argv=None):
     if citations and not LAW_SOURCE_MARKER_RE.search(text):
         preview = ", ".join(citations[:3]) + (f" 외 {len(citations) - 3}" if len(citations) > 3 else "")
         warnings.append(f"조문 인용({preview})이 있으나 korean_law MCP 출처 표기 없음 — MCP 응답과 대조 전까지 미확인으로 둘 것")
+
+    # 5-0) --law-cache 스켈레톤: MCP 응답캐시(JSON)를 근거파일로 접수만 한다.
+    #      자동대조는 미완성이므로 WARN을 유지하고 FAIL로 승격하지 않는다.
+    if args.law_cache:
+        try:
+            cache_path = Path(args.law_cache)
+            cache_text = cache_path.read_text(encoding="utf-8", errors="replace")
+            json.loads(cache_text)  # 형식 확인용 (내용 대조는 후속 과제)
+            warnings.append(
+                f"법령대조용 MCP 응답캐시({cache_path.name}) 접수 — 자동대조 미완성, 원문 대조 전까지 미확인 유지"
+            )
+        except Exception as exc:
+            warnings.append(f"법령대조용 MCP 응답캐시 읽기 실패({args.law_cache}): {exc} — 원문 대조 전까지 미확인 유지")
 
     # 5-1) 법령 조문 상한 경계 검사 (허위 조문 날조 FAIL 차단, 공백 유연성 및 중복 스팬 제거)
     STATUTE_BOUNDS = {

@@ -171,15 +171,17 @@ class GeminiCatalogTests(unittest.TestCase):
             cwd=str(ROOT),
             env=env,
         )
-        # then — 빌드 유무와 무관하게 fail-closed(exit 78)이며 어떤 분기인지 말해 준다.
+        # then — fail-closed이며 어떤 분기인지 말해 준다: 빌드없음 78, 키없음 79.
         # (빌드는 setup_korean_law.mjs 를 실행한 환경에만 존재하므로 환경 의존 없이 양쪽 분기를 검증)
-        self.assertEqual(proc.returncode, 78)
-        self.assertIn("disabled", proc.stderr)
         build_exists = (ROOT / "korean-law-mcp" / "build" / "index.js").is_file()
         if build_exists:
+            self.assertEqual(proc.returncode, 79)
+            self.assertIn("disabled", proc.stderr)
             self.assertIn("LAW_OC", proc.stderr)
             self.assertIn("Statutes must not be fabricated", proc.stderr)
         else:
+            self.assertEqual(proc.returncode, 78)
+            self.assertIn("disabled", proc.stderr)
             self.assertIn("build/index.js is missing", proc.stderr)
             self.assertIn("setup_korean_law", proc.stderr)
 

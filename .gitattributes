@@ -1,5 +1,6 @@
 # Large optional MCP deps are local builds, not distribution artifacts
 korean-law-mcp/node_modules/ export-ignore
+korean-law-mcp/node_modules export-ignore
 korean-law-mcp/build/ export-ignore
 # Local audit trails and outputs
 .lazyforensic/ export-ignore

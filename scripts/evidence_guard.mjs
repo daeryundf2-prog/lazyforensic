@@ -155,9 +155,19 @@ const PROTECTED_PATTERNS = [
 	{ re: /\$usnjrnl/i, label: '$UsnJrnl' },
 	{ re: /\/dev\/.*(sda|nvme|rdisk)/i, label: 'raw block device' },
 ];
+// 인라인 코드 실행 우회 벡터: 인터프리터 한 줄 실행은 쓰기를 숨길 수 있어
+// 읽기전용 판정과 무관하게 차단한다 (python -c/-m 계열은 기존 검사 유지).
+const INLINE_EXEC_RES = [
+	/\bperl\b[^|&;\n]*\s-e\b/i,
+	/\bruby\b[^|&;\n]*\s-e\b/i,
+	/\bpowershell\b[^|&;\n]*\s-enc(odedcommand)?\b/i,
+];
 
 function findViolation(texts) {
 	for (const text of texts) {
+		for (const re of INLINE_EXEC_RES) {
+			if (re.test(text)) return 'inline code execution (use a script file + audit instead)';
+		}
 		// 읽기전용 검사 명령은 증거 경로·확장자 언급을 허용한다($MFT·로우 디바이스
 		// 패턴은 읽기라도 직접 접근 위험이 남아 차단 유지). 판정은 토큰이 아니라
 		// 명령(텍스트) 단위로 한다 — "sha256sum evidence/x.raw"의 경로 토큰만
@@ -290,6 +300,16 @@ async function main() {
 		}
 		if (entry.sha256 || stat.size > MAX_AUDIT_BYTES) {
 			try {
+				// 해시체인(위변조 탐지용, HMAC 아님): 이전행 원문의 sha256을
+				// 다음행 prev_hash로 연결한다. 단일 파일(audit_trail.jsonl) 유지.
+				let prev_hash = null;
+				try {
+					if (fs.existsSync(auditLogPath)) {
+						const lines = fs.readFileSync(auditLogPath, 'utf8').split('\n').filter(Boolean);
+						if (lines.length > 0) prev_hash = crypto.createHash('sha256').update(lines[lines.length - 1], 'utf8').digest('hex');
+					}
+				} catch {}
+				entry.prev_hash = prev_hash;
 				fs.appendFileSync(auditLogPath, JSON.stringify(entry) + '\n', 'utf8');
 			} catch {}
 		}

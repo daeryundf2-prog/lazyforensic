@@ -59,8 +59,15 @@ python -m pytest test/ -v   # 권장: 173개 테스트 (수 초). pytest 없으�
    ```
    키는 콘솔/로그에 출력되지 않는다.
 
-빌드가 없거나 키가 없으면 `node scripts/korean_law_mcp.mjs`가 exit 78 + 안내 메시지로 끝나고,
+빌드가 없으면 `node scripts/korean_law_mcp.mjs`가 exit 78(빌드없음 안내)로 끝나고,
+키(`LAW_OC`)가 없으면 exit 79(키없음 안내)로 끝나며,
 스킬은 "조문을 만들지 않는다"는 원칙만 남는다.
+
+> 용량 실측: `node_modules` 약 680MB는 로컬 빌드 산출물이며 배포물이 아니다.
+> 시간 실측: `npm install`+`build`는 네트워크에 따라 수 분 소요된다(최초 1회만).
+> 상태 확인: `node scripts/setup_korean_law.mjs --check` — 빌드/키 유무를 출력한다.
+> 미빌드 상태에서는 법령 조회를 시도하지 않고 exit 78로 종료한다(fail-closed).
+> 경량 배포 시 `node_modules`는 제외된다(`.gitattributes` export-ignore).
 
 ## 5분 워크플로 (실측 예시)
 
@@ -118,8 +125,12 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 
 - **증개 가드에 쓰기가 막힌다**: 사본도 같은 확장자(`.raw`, `.E01`)면 차단된다. 사본은
   `img.raw.analysis.txt`처럼 확장자를 바꾸거나 `evidence/` 밖에서 작업하라.
-- **`korean_law`가 exit 78**: 빌드(`setup_korean_law.mjs`)와 `LAW_OC` 키 둘 중 하나가 없다.
-  메시지가 어느 쪽인지 알려 준다. **키가 없다고 조문을 만들어내지 않는다** — 정상 동작이다.
+- **증거 디렉토리 원클릭 잠금**: `sh scripts/lock_evidence.sh [evidence_dir]` (Windows는
+  `lock_evidence.ps1`) — `chmod 444` 상당의 OS 읽기전용으로 훅 가드를 보강한다.
+  `perl -e`/`ruby -e`/`powershell -enc` 인라인 실행은 증거 경로와 무관하게 차단된다.
+- **`korean_law`가 exit 78(빌드없음)/79(키없음)**: `node scripts/setup_korean_law.mjs --check`로
+  어느 쪽인지 확인한다. exit 79는 `LAW_OC` 미설정 — **키가 없다고 조문을 만들어내지 않는다**.
+  exit 78은 `setup_korean_law.mjs` 미실행 — 정상 동작이다.
 - **영상 스킬이 조용히 안 될 때**: `python skills/forensic-video/scripts/setup.py --check` —
   무엇이 없는지 + 플랫폼별 설치 명령을 출력한다.
 - **Windows에 python이 없어서**: 검증 게이트가 경고 후 통과한다(비활성). `python3` 설치를 권장.
