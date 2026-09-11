@@ -621,7 +621,8 @@ class StatutoryBoundsTests(unittest.TestCase):
             self.assertEqual(data1["verdict"], "PASS")
             self.assertFalse(any("korean_law MCP 출처 표기 없음" in w for w in data1.get("warnings", [])))
 
-            # 2. Report cites missing article absent in law-cache -> fails and escalates to ERROR
+            # 2. Report cites missing article absent in law-cache -> WARN by default (B2-1 오탐 방지),
+            #    errors 승격은 --strict와 함께일 때만. 제999조는 상한(76조) 위반 별도 FAIL이라 verdict FAIL 유지.
             report_invalid = Path(tmp) / "report_invalid.md"
             report_invalid.write_text("# 법률 분석서\n피고인은 개인정보보호법 제999조 및 형법 제200조 위반에 해당한다.\n", encoding="utf-8")
             res2 = subprocess.run(
@@ -633,7 +634,19 @@ class StatutoryBoundsTests(unittest.TestCase):
             self.assertEqual(res2.returncode, 1)
             data2 = json.loads(res2.stdout)
             self.assertEqual(data2["verdict"], "FAIL")
-            self.assertTrue(any("법령 캐시" in e and "존재하지 않음" in e for e in data2["errors"]))
+            self.assertTrue(any("법령 캐시" in w and "존재하지 않음" in w for w in data2.get("warnings", [])))
+            self.assertFalse(any("법령 캐시" in e for e in data2.get("errors", [])))
+            # 2b. --strict와 함께면 법령 캐시 미존재가 errors로 승격
+            res2s = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "verify_report.py"), str(report_invalid), "--law-cache", str(cache_file), "--strict", "--json"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(res2s.returncode, 1)
+            data2s = json.loads(res2s.stdout)
+            self.assertEqual(data2s["verdict"], "FAIL")
+            self.assertTrue(any("법령 캐시" in e and "존재하지 않음" in e for e in data2s["errors"]))
 
 
 if __name__ == "__main__":

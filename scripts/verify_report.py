@@ -936,12 +936,20 @@ def main(argv=None):
 
             if missing_citations:
                 missing_str = ", ".join(missing_citations)
-                errors.append(
-                    f"조문 인용({missing_str})이 법령 캐시({cache_path.name})에 존재하지 않음 — 허위 조문 날조로 차단 (FAIL)"
+                msg = (
+                    f"조문 인용({missing_str})이 법령 캐시({cache_path.name})에 존재하지 않음 — "
+                    f"원문 대조 전까지 미확인 유지"
                 )
+                # B2-1: 조건부 FAIL 승격 — strict와 함께일 때만 errors, 기본은 WARN 유지(오탐 방지).
+                if getattr(args, "strict", False):
+                    errors.append(msg + " — 허위 조문 날조로 차단 (FAIL)")
+                else:
+                    warnings.append(msg + " (WARN)")
             elif matched_citations:
                 # 모든 조문이 캐시와 일치하면 출처 미표기 경고(WARN)를 정상 그라운딩으로 해제
-                warnings = [w for w in warnings if not ("조문 인용" in w and "korean_law MCP 출처 표기 없음" in w)]
+                # 단, --strict에서는 인간 대조를 위해 WARN 유지(오탐 방지).
+                if not getattr(args, "strict", False):
+                    warnings = [w for w in warnings if not ("조문 인용" in w and "korean_law MCP 출처 표기 없음" in w)]
         except Exception as exc:
             warnings.append(f"법령대조용 MCP 응답캐시 읽기 실패({args.law_cache}): {exc} — 원문 대조 전까지 미확인 유지")
 

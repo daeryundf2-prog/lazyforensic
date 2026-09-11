@@ -310,6 +310,11 @@ async function main() {
 					}
 				} catch {}
 				entry.prev_hash = prev_hash;
+				// B2-2: LAZYFORENSIC_HMAC_KEY 있을 때만 HMAC-SHA256 서명 추가, 없으면 기존 체인 유지.
+				try {
+					const hmacKey = process.env.LAZYFORENSIC_HMAC_KEY;
+					if (hmacKey) entry.hmac = crypto.createHmac('sha256', hmacKey).update([entry.timestamp, entry.file, entry.sha256 || '', entry.prev_hash || ''].join('|'), 'utf8').digest('hex');
+				} catch {}
 				fs.appendFileSync(auditLogPath, JSON.stringify(entry) + '\n', 'utf8');
 			} catch {}
 		}

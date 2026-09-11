@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac as hmac_mod
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -105,6 +107,13 @@ def verify_audit_chain(
                     f"Expected prev_hash='{previous_line_hash}', but record specifies '{current_prev_hash}'"
                 )
 
+        # B2-2: HMAC 서명 있으면 검증(키 있을 때만, 없으면 기존 체인 유지)
+        _hmac_key = os.environ.get("LAZYFORENSIC_HMAC_KEY")
+        if _hmac_key and entry.get("hmac"):
+            _msg = "|".join([str(entry.get("timestamp") or ""), str(entry.get("file") or ""), str(entry.get("sha256") or ""), str(entry.get("prev_hash") or "")])
+            _exp = hmac_mod.new(_hmac_key.encode("utf-8"), _msg.encode("utf-8"), hashlib.sha256).hexdigest()
+            if not hmac_mod.compare_digest(_exp, str(entry.get("hmac"))):
+                errors.append(f"Line {line_num}: HMAC verification failed (audit_trail tamper suspected)")
         # Compute hash of current line for the next iteration
         previous_line_hash = hashlib.sha256(raw_line.encode("utf-8")).hexdigest()
 
