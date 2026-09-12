@@ -54,6 +54,14 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 
 `video-editor/manim-video/REFERENCE.md`는 참고 문서다. 교육 영상 렌더 파이프라인이 아니다.
 
+## 로컬 STT / 미디어 매칭 / PII (v1.0.2 추가분의 한계)
+
+- `scripts/local_stt.py`는 화자 분리(diarization)를 하지 않는다. "누가 말했는가"가 필요한 문항은 전사 결과를 '미확인'으로 두고 별도 도구를 쓴다.
+- `scripts/image_similarity.py`의 지각 해시는 강한 크롭·회전·색반전에 약하다. 유사도 부재는 '없음'이 아니라 '해시 근접 없음'이다.
+- `scripts/video_fingerprint.py`는 화면 내용만 비교한다 — 오디오 지문·강한 편집(속도 변경, 크롭)은 잡지 못한다.
+- `scripts/pii_mask.py`는 정규식 기반이라 이름·주소 같은 비정형 PII는 탐지하지 못하고, 날짜-계좌번호 같은 경계는 패턴으로만 구분한다. 마스킹본도 사람 검토가 필요하다.
+- `scripts/local_only_audit.py`는 정적 검사라 subprocess가 띄운 외부 바이너리의 송신은 못 본다. 실제 반출 차단은 OS 방화벽·네트워크 격리의 몫이다.
+
 ## 후속 과제 (알려진 미해결 — v1.0.1 시점)
 
 코드로 끝나지 않는 결정/외부 기록이 필요한 항목. 해결되면 이 목록에서 지운다.

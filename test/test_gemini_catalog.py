@@ -231,7 +231,7 @@ class GeminiCatalogTests(unittest.TestCase):
 
     def test_plugin_version_and_lane_copy(self):
         data = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "1.0.1")
+        self.assertEqual(data["version"], "1.0.2")
         self.assertIn("lanes", data["interface"]["longDescription"].lower())
         self.assertIn("not a forensic acquisition or court-admissibility suite", json.dumps(data, ensure_ascii=False).lower())
         self.assertTrue((ROOT / "docs" / "GAPS.md").is_file())

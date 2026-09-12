@@ -118,7 +118,14 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | AI 사용 흔적 포렌식 (md/txt/E01 역추적) | ✅ | `skills/ai-trace-detector/SKILL.md` |
 | 딥페이크/AI 합성 미디어 1차 감사 (SHA-256, C2PA/JUMBF, 2D FFT) | ✅ | `python scripts/analyze_deepfake_evidence.py <파일> --output 리포트.md` — 최종 판정은 다중 탐지기 앙상블 별도 수행 |
 | 영상 대화록(Whisper) | 🔒 동의 필요 | `--upload-audio` 명시 동의 없이 외부 전송 금지 |
+| 로컬 STT 배치·verbatim·키워드 히트 | ✅ | `python scripts/local_stt.py <파일|폴더> --keywords "키워드"` — faster-whisper/openai-whisper/whisper.cpp 자동탐지, 엔진 없으면 지어내지 않고 exit 3 |
+| 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
+| 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
+| 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
+| 외부 반출 가능 경로 정적 감사 | ✅ | `python scripts/local_only_audit.py` — 네트워크 송신 지점을 GATED/UNGATED로 분류 |
 | 법령/판례 조회 | 🟡 키 필요 | 위 "법령 조회" 참고 |
+| OSINT 사용자명 검색 | 🟡 BYO | sherlock 설치 시 `sherlock <닉네임>` — 미설치 시 지원 안 함 |
+| HWP·HWPX·PDF 신구대비 | 🟡 외부 | `obundh/korean-munseo-diff` 별도 설치 |
 | 무결성 훅 (쓰기 차단/감사 로그) | 🟡 Antigravity | best-effort. OS 읽기전용(`chmod 444`) 병행 권장 |
 
 ## 트러블슈팅
@@ -139,6 +146,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 - **감사 체인 검증**: `python scripts/verify_audit_chain.py` (기본 `.lazyforensic/audit_trail.jsonl`, 파일 없으면 PASS·empty session)
 - JSON 출력은 `python scripts/verify_audit_chain.py --json`, 빈 체인 거부(엄격 모드)는 `--no-empty` 추가
 - 깨짐 시 `FAIL` 줄번호·`prev_hash` 기대값을 출력하므로 해당 줄부터 원본 대조 후 재생성하라
+- **평가 코퍼스**: `test/fixtures/eval/`에 정답지 포함 알려진-답 코퍼스가 있다(카톡 대화·문서·로그·이미지 47파일 + `EVAL.md` 11문항 + `ANSWER_KEY.md`). 플러그인/모델 변경 후 에이전트에게 EVAL.md를 던져 부재 환각·재현율을 회귀 검증할 수 있다. 오디오 픽스처는 저작권 문제로 미포함 — 로컬 오디오를 넣어 STT 문항을 검증할 것.
 
 ## 정직 선언 / 아키텍처
 
