@@ -9,6 +9,7 @@ local_stt.py — 로컬 전용 STT 배치 전사기
   1. faster-whisper (pip 패키지) — word timestamps 지원
   2. openai-whisper (pip 패키지)
   3. whisper.cpp / transcribe.cpp 계열 바이너리 (whisper-cli, main, transcribe-cli)
+  4. moonshine (pip 패키지 useful-moonshine) — ⚠️ 영어 전용, 한국어 증거엔 부적합
 
 엔진이 하나도 없으면 전사를 지어내지 않고 exit 3 + 안내로 종료한다(fail-closed).
 
@@ -53,6 +54,8 @@ def detect_engine() -> str | None:
     for binary in ("whisper-cli", "whisper.cpp", "main", "transcribe-cli"):
         if shutil.which(binary):
             return f"binary:{binary}"
+    if importlib.util.find_spec("moonshine"):
+        return "moonshine"  # 영어 전용 — 최후순위
     return None
 
 
@@ -117,6 +120,23 @@ def transcribe_binary(binary: str, path: Path, lang: str | None) -> dict:
     return {"engine": binary, "segments": segments}
 
 
+def transcribe_moonshine(path: Path, model_size: str) -> dict:
+    """moonshine.transcribe는 타임스탬프 없이 문장 리스트를 반환한다.
+    영어 전용 엔진 — 한국어 증거에는 쓰지 않는다."""
+    import moonshine  # type: ignore
+
+    model = model_size if model_size.startswith("moonshine/") else f"moonshine/{model_size}"
+    if model.endswith("/turbo"):
+        model = "moonshine/base"  # turbo 매핑 없음 — base로 폴백
+    lines = moonshine.transcribe(str(path), model)
+    segments = [
+        {"start": None, "end": None, "text": t.strip()}
+        for t in lines if t and t.strip()
+    ]
+    return {"engine": model, "segments": segments,
+            "note": "moonshine은 세그먼트 타임스탬프를 제공하지 않음"}
+
+
 def transcribe_file(path: Path, engine: str, lang: str | None, verbatim: bool, model_size: str) -> dict:
     if engine == "faster-whisper":
         return transcribe_faster_whisper(path, lang, verbatim, model_size)
@@ -124,6 +144,8 @@ def transcribe_file(path: Path, engine: str, lang: str | None, verbatim: bool, m
         return transcribe_openai_whisper(path, lang, verbatim, model_size)
     if engine.startswith("binary:"):
         return transcribe_binary(engine.split(":", 1)[1], path, lang)
+    if engine == "moonshine":
+        return transcribe_moonshine(path, model_size)
     raise RuntimeError(f"unknown engine: {engine}")
 
 

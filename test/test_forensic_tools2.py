@@ -36,6 +36,7 @@ pdf_audit = load_module("pdf_audit", "scripts/pdf_audit.py")
 archive_survey = load_module("archive_survey", "scripts/archive_survey.py")
 sqlite_survey = load_module("sqlite_survey", "scripts/sqlite_survey.py")
 video_integrity = load_module("video_integrity", "scripts/video_integrity.py")
+audio_fp = load_module("audio_fingerprint", "scripts/audio_fingerprint.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -277,6 +278,28 @@ class DedupTests(unittest.TestCase):
             groups = [g for g in groups if Path(g["files"][0]).is_file()]
             self.assertEqual(len(groups), 1)
             self.assertEqual(len(groups[0]["files"]), 2)
+
+
+class AudioFingerprintTests(unittest.TestCase):
+    def test_no_fpcalc_exit_3(self):
+        if audio_fp._require_fpcalc():
+            self.skipTest("fpcalc installed")
+        self.assertEqual(audio_fp.main(["/tmp/x.mp3"]), 3)
+
+    def test_hamming_similarity(self):
+        same = [0xDEADBEEF, 0x12345678, 0xFFFFFFFF]
+        self.assertEqual(audio_fp.hamming_similarity(same, same), 1.0)
+        self.assertEqual(audio_fp.hamming_similarity(same, [0, 0, 0]), 0.0)
+        # 길이가 다르면 짧은 쪽 기준
+        self.assertEqual(audio_fp.hamming_similarity(same, same[:1]), 1.0)
+        self.assertEqual(audio_fp.hamming_similarity([], same), 0.0)
+
+    def test_survey_version_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.txt").write_text("x", encoding="utf-8")
+            report = survey_mod.survey(Path(tmp), [], run_stt=False)
+        self.assertEqual(report["survey_version"], 2)
+        self.assertIn("audio_fp", report["steps"])
 
 
 class SetupEnvTests(unittest.TestCase):

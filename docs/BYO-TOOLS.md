@@ -11,6 +11,8 @@
 | **CrisperWhisper** | verbatim STT — 필러음·말더듬·단어 타임스탬프 보존. 증거 녹취에 표준 Whisper보다 적합 | faster-whisper로 HF에서 자동 다운로드 | `local_stt.py --model nyrahealth/CrisperWhisper --verbatim` |
 | **transcribe.cpp** | whisper.cpp 확장, 16개 모델 계열 로컬 STT | GitHub 빌드 | `local_stt.py`의 binary 엔진 탐지 |
 | **Subtitle Edit** | 전사문 사람 검토·수정 GUI (로컬 전용, MIT) | 릴리스 다운로드 | `local_stt.py` 산출물을 수동 교정할 때 |
+| **Moonshine** (`useful-moonshine`) | 스트리밍 설계 초경량 STT — ⚠️ **영어 전용** | `pip install useful-moonshine` | `local_stt.py`가 자동 탐지(최후순위). 한국어 증거엔 부적합 |
+| **chromaprint (fpcalc)** | 오디오 내용 지문 — 재인코딩된 같은 녹음 탐지 | `brew install chromaprint` / `winget install chromaprint` | `audio_fingerprint.py` 자동 활성화 |
 | **korean-munseo-diff** | HWP·HWPX·PDF 신구대비표 (공무원 개정 문서용) | `github.com/obundh/korean-munseo-diff` | 바이너리 .hwp는 이걸로 — HWPX는 `extract_hwpx.py`가 커버 |
 | **Unlimited-OCR** (Baidu) | 40p+ PDF 통째 OCR | GitHub | 스캔 증거 문서 대량 텍스트화 후 `keyword_report.py` |
 | **Upscayl** | 저해상도 이미지 업스케일 (로컬, 오픈소스) | 릴리스 다운로드 | 증거 사진 선명화 — 단, 업스케일본은 파생물로 표시 |

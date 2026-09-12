@@ -118,7 +118,8 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | AI 사용 흔적 포렌식 (md/txt/E01 역추적) | ✅ | `skills/ai-trace-detector/SKILL.md` |
 | 딥페이크/AI 합성 미디어 1차 감사 (SHA-256, C2PA/JUMBF, 2D FFT) | ✅ | `python scripts/analyze_deepfake_evidence.py <파일> --output 리포트.md` — 최종 판정은 다중 탐지기 앙상블 별도 수행 |
 | 영상 대화록(Whisper) | 🔒 동의 필요 | `--upload-audio` 명시 동의 없이 외부 전송 금지 |
-| 로컬 STT 배치·verbatim·키워드 히트 | ✅ | `python scripts/local_stt.py <파일|폴더> --keywords "키워드"` — faster-whisper/openai-whisper/whisper.cpp 자동탐지, 엔진 없으면 지어내지 않고 exit 3 |
+| 로컬 STT 배치·verbatim·키워드 히트 | ✅ | `python scripts/local_stt.py <파일|폴더> --keywords "키워드"` — faster-whisper/openai-whisper/whisper.cpp/moonshine 자동탐지, 엔진 없으면 지어내지 않고 exit 3 |
+| 오디오 내용 지문·유사 쌍 | 🟡 BYO | `python scripts/audio_fingerprint.py <폴더>` — fpcalc(chromaprint) 필요, 재인코딩된 같은 녹음도 지문 유사도로 탐지 |
 | 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
@@ -136,7 +137,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | SQLite 증거 DB 조사 | ✅ | `python scripts/sqlite_survey.py <파일|폴더>` — immutable 읽기전용, 테이블/행 수/무결성. `--sample 테이블 N`으로 표본 확인 |
 | 영상 손상·잘림 감지 | 🟡 BYO | `python scripts/video_integrity.py <파일|폴더>` — ffmpeg/ffprobe 필요, 디코드 오류·moov 위치·duration 불일치 |
 | 증거 통합 선조사 (위 도구 전부 한 번에) | ✅ | `python scripts/case_survey.py <폴더> [--keywords ...] [--stt] -o survey.json --markdown survey.md` — 단계별 실패도 '실패'로 기록 |
-| 다른 컴퓨터 환경 복제 | ✅ | `python scripts/setup_forensic_env.py --check` / 실행 시 venv+선택 의존성 설치 |
+| 다른 컴퓨터 환경 복제 | ✅ | `python scripts/setup_forensic_env.py --check` / 실행 시 venv+선택 의존성 설치 (Windows는 `scripts/setup_forensic_env.ps1`) |
 | 법령/판례 조회 | 🟡 키 필요 | 위 "법령 조회" 참고 |
 | OSINT 사용자명 검색 | 🟡 BYO | `python scripts/osint_username.py <닉네임>` — sherlock 미설치 시 exit 3. 닉네임이 외부 사이트에 쿼리로 노출되므로 반출 승인 필요 |
 | 바이너리 HWP(.hwp) 파싱·신구대비 | 🟡 외부 | `obundh/korean-munseo-diff` 별도 설치 — HWPX는 위 `extract_hwpx.py`로 가능. 다운로드 후보목록 전체는 [`docs/BYO-TOOLS.md`](docs/BYO-TOOLS.md) |

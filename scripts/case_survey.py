@@ -21,7 +21,14 @@ case_survey.py — 증거 디렉터리 통합 선조사 파이프라인
    11. sqlite_survey      — SQLite DB 스키마·행 수·무결성 (읽기 전용)
    12. video_fingerprint  — 영상 지문 목록 (ffmpeg 필요)
    13. video_integrity    — 영상 손상·잘림 감지 (ffmpeg 필요)
-   14. local_stt          --stt 지정 시 (로컬 엔진 필요)
+   14. audio_fingerprint  — 오디오 내용 지문 유사 쌍 (fpcalc 필요)
+   15. local_stt          --stt 지정 시 (로컬 엔진 필요)
+
+스키마 계약 (survey_version):
+    리포트 JSON의 survey_version은 단계 구성이 바뀔 때 올라간다.
+    소비자는 모르는 steps 키를 무시해야 하고, 각 단계의 status가
+    'ok'가 아니면 result 대신 error/stderr가 온다고 가정해야 한다.
+    v1: 8단계 / v2: +archives·pdf·sqlite·video_integrity·audio_fp
 
 사용:
     python scripts/case_survey.py case/ -o survey.json
@@ -72,7 +79,7 @@ def _run_step(name: str, fn) -> dict:
 
 def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
     report: dict = {
-        "survey_version": 1,
+        "survey_version": 2,
         "generated_at": datetime.now(KST).isoformat(),
         "root": str(root.resolve()),
         "steps": {},
@@ -212,6 +219,23 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
                             for f in sorted(files)]}
     report["steps"]["video_integrity"] = _run_step("video_integrity", step_vintegrity)
 
+    def step_audio_fp():
+        mod = _load("audio_fingerprint")
+        if not mod._require_fpcalc():
+            raise RuntimeError("fpcalc(chromaprint) 없음 — 오디오 지문 생략")
+        files = [p for p in root.rglob("*")
+                 if p.is_file() and p.suffix.lower() in mod.AUDIO_EXTS]
+        records = []
+        for f in sorted(files):
+            try:
+                records.append(mod.fingerprint(f))
+            except RuntimeError as e:
+                records.append({"file": str(f), "error": str(e)})
+        ok = [r for r in records if "fingerprint" in r]
+        return {"audio_files": len(records),
+                "similar_pairs": mod.find_pairs(ok)}
+    report["steps"]["audio_fp"] = _run_step("audio_fp", step_audio_fp)
+
     if run_stt:
         def step_stt():
             mod = _load("local_stt")
@@ -246,7 +270,8 @@ def to_markdown(report: dict) -> str:
         "signatures": "시그니처 위장 감사", "dedup": "중복 파일",
         "archives": "아카이브 내부", "pdf": "PDF 감사",
         "sqlite": "SQLite DB 조사", "videos": "영상 지문",
-        "video_integrity": "영상 무결성", "stt": "로컬 STT",
+        "video_integrity": "영상 무결성", "audio_fp": "오디오 지문",
+        "stt": "로컬 STT",
     }
     for key, step in report["steps"].items():
         title = names.get(key, key)
@@ -305,6 +330,11 @@ def to_markdown(report: dict) -> str:
             lines.append(f"## {title}: {r['video_files']}개 영상, 이상 {len(bad)}건")
             for x in bad:
                 lines.append(f"- {x['file']}: {'; '.join(x.get('notes', [])) or x.get('error', '')}")
+        elif key == "audio_fp":
+            lines.append(f"## {title}: {r['audio_files']}개 오디오, "
+                         f"유사 쌍 {len(r['similar_pairs'])}건")
+            for p in r["similar_pairs"]:
+                lines.append(f"- {p['a']} ↔ {p['b']} (유사도 {p['similarity']})")
         elif key == "stt":
             for f in r["files"]:
                 if "error" in f:
