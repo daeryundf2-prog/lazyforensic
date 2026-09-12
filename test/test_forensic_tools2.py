@@ -37,6 +37,8 @@ archive_survey = load_module("archive_survey", "scripts/archive_survey.py")
 sqlite_survey = load_module("sqlite_survey", "scripts/sqlite_survey.py")
 video_integrity = load_module("video_integrity", "scripts/video_integrity.py")
 audio_fp = load_module("audio_fingerprint", "scripts/audio_fingerprint.py")
+merge_tl = load_module("merge_timeline", "scripts/merge_timeline.py")
+evidence_sheet = load_module("court_evidence_sheet", "scripts/court_evidence_sheet.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -300,6 +302,78 @@ class AudioFingerprintTests(unittest.TestCase):
             report = survey_mod.survey(Path(tmp), [], run_stt=False)
         self.assertEqual(report["survey_version"], 2)
         self.assertIn("audio_fp", report["steps"])
+
+
+class MergeTimelineTests(unittest.TestCase):
+    def test_manifest_and_kakao_merge_sorted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("x", encoding="utf-8")
+            m = manifest_mod.build_manifest(root)
+            mf = root / "m.json"
+            mf.write_text(json.dumps(m), encoding="utf-8")
+            kf = root / "k.json"
+            kf.write_text(json.dumps({"records": [
+                {"type": "message", "timestamp": "2026-03-05 14:22:00",
+                 "sender": "김", "message": "hi"},
+                {"type": "message", "timestamp": None, "sender": "이",
+                 "message": "no-time"},
+            ]}), encoding="utf-8")
+            merged = merge_tl.merge([str(mf)], [str(kf)], [], [], {})
+            self.assertEqual(len(merged["events"]), 2)  # 파일1 + 시각있는 메시지1
+            ts = [e["timestamp"] for e in merged["events"]]
+            self.assertEqual(ts, sorted(ts))
+
+    def test_stt_without_anchor_is_unanchored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "call.wav.transcript.json"
+            f.write_text(json.dumps({"segments": [
+                {"start": 49.0, "end": 55.0, "text": "돈 보낼게"}]}),
+                encoding="utf-8")
+            merged = merge_tl.merge([], [], [], [str(f)], {})
+            # 앵커 없는 상대시각은 벽시계로 지어내지 않는다
+            self.assertEqual(len(merged["events"]), 0)
+            self.assertEqual(len(merged["unanchored_stt"]), 1)
+            # 앵커 주면 절대시각으로 변환
+            merged2 = merge_tl.merge([], [], [], [str(f)],
+                                     {"call.wav": "2026-03-05T14:00:00+09:00"})
+            self.assertEqual(merged2["events"][0]["timestamp"],
+                             "2026-03-05T14:00:49+09:00")
+
+
+class CourtEvidenceSheetTests(unittest.TestCase):
+    def test_manifest_to_sheet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ev.wav").write_text("x", encoding="utf-8")
+            m = manifest_mod.build_manifest(root)
+            mf = root / "m.json"
+            mf.write_text(json.dumps(m), encoding="utf-8")
+            out = root / "sheet.md"
+            code = evidence_sheet.main(
+                [str(mf), "--party", "을", "--start", "3",
+                 "--purpose", "ev.wav=통화 내용 입증", "-o", str(out)])
+            self.assertEqual(code, 0)
+            md = out.read_text(encoding="utf-8")
+            self.assertIn("을 제3호증", md)
+            self.assertIn("통화 내용 입증", md)
+            self.assertIn("초안", md)  # 검토 필수 문구
+
+    def test_survey_json_also_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            survey = {"steps": {"manifest": {"result": {"files": [
+                {"path": "a.txt", "sha256": "ab", "size": 1,
+                 "mtime": "2026-01-01T00:00:00+09:00"}]}}}}
+            f = Path(tmp) / "s.json"
+            f.write_text(json.dumps(survey), encoding="utf-8")
+            files = evidence_sheet.load_files(f)
+            self.assertEqual(files[0]["path"], "a.txt")
+
+    def test_bad_input_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "x.json"
+            f.write_text("{}", encoding="utf-8")
+            self.assertEqual(evidence_sheet.main([str(f)]), 2)
 
 
 class SetupEnvTests(unittest.TestCase):

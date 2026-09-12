@@ -120,6 +120,9 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 영상 대화록(Whisper) | 🔒 동의 필요 | `--upload-audio` 명시 동의 없이 외부 전송 금지 |
 | 로컬 STT 배치·verbatim·키워드 히트 | ✅ | `python scripts/local_stt.py <파일|폴더> --keywords "키워드"` — faster-whisper/openai-whisper/whisper.cpp/moonshine 자동탐지, 엔진 없으면 지어내지 않고 exit 3 |
 | 오디오 내용 지문·유사 쌍 | 🟡 BYO | `python scripts/audio_fingerprint.py <폴더>` — fpcalc(chromaprint) 필요, 재인코딩된 같은 녹음도 지문 유사도로 탐지 |
+| 다중 소스 타임라인 병합 | ✅ | `python scripts/merge_timeline.py --manifest m.json --kakao k.json --exif e.json [--stt t.json --anchor "파일=시각"]` → `events.json` (STT 상대시각은 --anchor 없이 벽시계로 올리지 않음) |
+| 서증 목록표 초안 | ✅ | `python scripts/court_evidence_sheet.py <manifest.json> --party 갑` — 관행 양식 **초안**(제출 전 검토 필수), 입증취지는 `--purpose` 지정분만 기재 |
+| CLI 래퍼 | ✅ | `bin/lazyforensic scan\|stt\|pii\|manifest\|timeline\|sheet ...` — `bin/`을 PATH에 추가 |
 | 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |

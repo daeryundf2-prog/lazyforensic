@@ -33,6 +33,33 @@ Antigravity + Gemini 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**�
 | 카카오 DB 래퍼 (txt만) | `../kakao-db-decryptor/SKILL.md` | — |
 | 메모리 래퍼 (BYO MemProcFS) | `../memory-triage/SKILL.md` | — |
 
+### 스크립트 직행 (스킬 없이 `scripts/`를 바로 실행 — 전부 로컬 전용)
+
+| 자연어 요청 | 실행 |
+| :--- | :--- |
+| 폴더 전체 선조사·서베이·스캔해줘 | `python scripts/case_survey.py <폴더> [--markdown out.md]` |
+| 이 폴더 변조됐는지·해시 목록·매니페스트 | `python scripts/evidence_manifest.py <폴더> -o m.json` / `--verify` |
+| 개인정보 있는지·주민번호·계좌 마스킹 | `python scripts/pii_mask.py <대상>` |
+| 키워드가 어디 나오는지·단어 찾아줘 | `python scripts/keyword_report.py <폴더> "키워드"` |
+| 녹음 받아쓰기·전사·녹취록 | `python scripts/local_stt.py <대상> [--verbatim] [--keywords ...]` |
+| 녹음에서 말하는 구간·무음 | `python scripts/audio_survey.py <대상>` |
+| 이 사진이랑 비슷한 거·같은 사진 | `python scripts/image_similarity.py <폴더> [--query 사진]` |
+| 이 영상이랑 같은 영상·영상 지문 | `python scripts/video_fingerprint.py <영상> --scan <폴더>` |
+| 이 영상 손상됐는지·잘렸는지·재생 안 돼 | `python scripts/video_integrity.py <대상>` |
+| 같은 녹음 다른 파일·음성 중복 | `python scripts/audio_fingerprint.py <폴더>` (fpcalc 필요) |
+| 사진 정보·촬영시각·EXIF | `python scripts/exif_audit.py <대상>` |
+| 확장자랑 다른 파일·위장 파일 | `python scripts/signature_check.py <폴더>` |
+| 같은 파일 중복 | `python scripts/dedup_files.py <폴더>` |
+| 압축파일 안에 뭐 있는지·zip 안 검사 | `python scripts/archive_survey.py <대상>` |
+| PDF 암호·PDF 이상한지 | `python scripts/pdf_audit.py <대상>` |
+| 카톡 DB·db 파일 안에 뭐 있는지 | `python scripts/sqlite_survey.py <대상>` |
+| 여러 시각 합쳐서 타임라인 | `python scripts/merge_timeline.py --manifest/--kakao/--exif/--stt` |
+| 서증 목록·증거설명서 초안 | `python scripts/court_evidence_sheet.py <manifest.json> --party 갑` |
+| 닉네임이 어디 사이트에 있는지 | `python scripts/osint_username.py <닉네임>` (⚠️ 외부 쿼리 — 의뢰인 동의 필요) |
+| 다른 컴퓨터에서 환경 설치 | `python scripts/setup_forensic_env.py [--check]` |
+
+터미널 단축: `bin/lazyforensic scan|stt|pii|manifest|sig|dedup|similar|exif|kw|archive|pdf|db|vcheck|vfp|afp|osint|timeline|sheet|audit|setup`
+
 ## Visual
 
 | 요청 | 파일 |
