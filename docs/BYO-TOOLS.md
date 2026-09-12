@@ -22,6 +22,7 @@
 | **검색 API 무료 티어** (Exa·Tavily·SerpAPI·Brave) | OSINT 웹 검색 보조 | 각 사이트 키 발급 | `osint_username.py` 보조 — 외부 쿼리이므로 allowlist 검토 대상 |
 | **untrunc** | moov 손상 mp4 복구 (정상 참조 파일 필요) | GitHub | `video_integrity.py`가 DAMAGED/UNREADABLE로 잡은 파일의 복구 시도 |
 | **qpdf / pikepdf** | PDF 정밀 파싱·암호 해제·객체 스트림 검사 | `brew install qpdf` / `pip install pikepdf` | `pdf_audit.py`가 못 보는 객체 스트림 내부, 암호 해제본 생성 |
+| **Gemini Transcribe 3.5** | 클라우드 STT — 녹음분 **화자분리 최대 3명**(로컬 스택에 없는 유일 기능) | AI Studio/API | ⚠️ **증거 오디오를 외부 업로드** — 의뢰인 서면 동의 없이 사용 금지. `local_stt.py`가 못 하는 화자분리가 필요한 경우의 최후 옵션 |
 
 ## 워크플로 보조
 
@@ -33,6 +34,8 @@
 | **Letta CLI / Orca** | 장기메모리 LLM / 멀티작업 에이전트 IDE |
 | **ego lite** | 에이전트 전용 Chromium — 로그인 필요 사이트 자동화 |
 | **Tailscale tsnet 단일 도구** | 계정 없이 홈서버 외부 접속 — 다른 컴퓨터의 포렌식 환경 원격 작업 시 |
+| **Magnitude** | 로컬 LLM 자동 설치 — 사양 확인→모델 추천→설정을 AI가 대행 | 다른 컴퓨터에서 로컬 분석 환경을 새로 꾸릴 때 초기 셋업 보조 |
+| **GenOffice / Office CLI** | Office 파일 읽기·생성·PDF 편집 CLI | `court_evidence_sheet.py`의 Markdown 초안을 제출용 DOCX/HWPX로 변환할 때 |
 
 ## 문서·보고서 품질
 
@@ -40,12 +43,14 @@
 |---|---|
 | **bluenyx 한국어 문장 검토 스킬** | 보고서·대본 문체 검토 (9개 문서 유형) |
 | **avoid-ai-writing / patina** | AI 문체 습관 제거 — 의뢰인 제출 문서 최종 다듬기 |
+| **jurisupport-plugins** | 변호사 감수 한국 법률 문서 초안 Claude 스킬 | legal-forensic-consult 레인의 법률 문서 초안 품질 참고 — 출력물은 항상 변호사 검토 전 단계 |
 
 ## 증거 수집·환경 참고사항
 
 - **구글 지도 타임라인은 이제 단말기에만 있다** — PC 브라우저에서 타임라인이 삭제됨(온디바이스 전환). 위치 증거는 반드시 단말에서 수집해야 한다.
 - **로컬 LLM도 완전한 비공개가 아니다** — 로컬 추론도 캐시·디토크나이저 흔적 같은 사이드채널로 프롬프트/생성문이 복원될 수 있다는 보고가 있다. "로컬이니까 안전"이 아니라 "외부 전송이 없다"가 정확한 표현이다.
 - **로컬 모델 다운로드 자체도 흔적** — HF 모델 다운로드는 외부 요청이다. 새 컴퓨터 셋업 시 `setup_forensic_env.py`가 어떤 외부 호스트에 접속하는지는 스크립트와 `.local_only_allowlist`에 명시돼 있다.
+- **전문분야 지식 DB는 그래프DB가 효과적**이라는 실무 조언 — legal-forensic-consult에 판례·실무서적(PDF) 지식베이스를 붙일 때 Neo4j류 그래프 구조를 검토할 것.
 
 ## 규칙
 
