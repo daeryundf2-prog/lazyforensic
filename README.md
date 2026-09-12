@@ -158,6 +158,9 @@ python -m pytest test/ -v
 
 ## 라이선스
 
-본 레포 코드는 MIT ([`LICENSE`](LICENSE)). `korean-law-mcp/`는 상위 MIT 라이선스를 그대로 따른다
-([`NOTICE`](NOTICE)). 무라이선스 제3자 디자인 카탈로그(mengto-skills, design-systems 등)는
-배포 리스크 때문에 제거되어 있다 — 자세한 사유는 [`NOTICE`](NOTICE)와 [`docs/GAPS.md`](docs/GAPS.md).
+본 레포 코드는 MIT ([`LICENSE`](LICENSE)). 한국 법령 MCP 서버는 별도 레포
+[`daeryundf2-prog/korean-law-mcp`](https://github.com/daeryundf2-prog/korean-law-mcp)로 분리되어 있고
+동일하게 MIT다 ([`NOTICE`](NOTICE)). `node scripts/setup_korean_law.mjs`가 최초 실행 시
+해당 레포를 `./korean-law-mcp/`로 클론해 빌드한다. 무라이선스 제3자 디자인 카탈로그
+(mengto-skills, design-systems 등)는 배포 리스크 때문에 제거되어 있다 — 자세한 사유는
+[`NOTICE`](NOTICE)와 [`docs/GAPS.md`](docs/GAPS.md).

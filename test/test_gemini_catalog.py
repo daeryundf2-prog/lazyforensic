@@ -194,7 +194,7 @@ class GeminiCatalogTests(unittest.TestCase):
 
         ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("timeline_report.html", ignored)
-        self.assertIn("korean-law-mcp/build/", ignored)
+        self.assertIn("korean-law-mcp/", ignored)
         self.assertIn(".env", ignored)
 
     def test_session_start_does_not_leak_law_key(self):

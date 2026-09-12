@@ -47,7 +47,8 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 
 ## 법령 MCP
 
-소스는 `korean-law-mcp/`에 있다. 빌드와 `LAW_OC`가 없으면 조회하지 않는다. 법률 자문 엔진이 아니다. 이 레포에서 `fly deploy`를 하지 않는다.
+소스는 별도 레포 [`daeryundf2-prog/korean-law-mcp`](https://github.com/daeryundf2-prog/korean-law-mcp)에 있고,
+`node scripts/setup_korean_law.mjs`가 `./korean-law-mcp/`로 클론해 빌드한다. 빌드와 `LAW_OC`가 없으면 조회하지 않는다. 법률 자문 엔진이 아니다. 이 레포에서 `fly deploy`를 하지 않는다.
 
 ## Manim
 

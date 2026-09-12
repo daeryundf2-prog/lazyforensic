@@ -27,8 +27,8 @@ infographic_preview.html
 timeline_strip.png
 
 # Generated dependencies / build output
-korean-law-mcp/build/
-korean-law-mcp/node_modules/
+# korean-law-mcp is a separate repo — cloned on demand by setup_korean_law.mjs
+korean-law-mcp/
 
 # LazyForensic audit trails (per-case, best-effort)
 .lazyforensic/

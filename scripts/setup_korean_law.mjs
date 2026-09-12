@@ -47,8 +47,19 @@ if (process.argv.includes("--check")) {
 }
 
 if (!existsSync(join(pkg, "package.json"))) {
-	process.stderr.write("[lazyforensic] korean-law-mcp/package.json is missing.\n");
-	process.exit(1);
+	// korean-law-mcp lives in its own repo; clone it into place on first setup.
+	process.stdout.write("[lazyforensic] cloning korean-law-mcp …\n");
+	const clone = spawnSync(
+		"git",
+		["clone", "--depth", "1", "https://github.com/daeryundf2-prog/korean-law-mcp.git", pkg],
+		{ cwd: root, stdio: "inherit", shell: process.platform === "win32", windowsHide: true },
+	);
+	if (clone.error || clone.status !== 0) {
+		process.stderr.write(
+			"[lazyforensic] korean-law-mcp clone failed — clone https://github.com/daeryundf2-prog/korean-law-mcp into ./korean-law-mcp manually.\n",
+		);
+		process.exit(1);
+	}
 }
 
 function run(command, args) {
