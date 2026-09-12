@@ -150,7 +150,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 
 - **증개 가드에 쓰기가 막힌다**: 사본도 같은 확장자(`.raw`, `.E01`)면 차단된다. 사본은
   `img.raw.analysis.txt`처럼 확장자를 바꾸거나 `evidence/` 밖에서 작업하라.
-- **증거 디렉토리 원클릭 잠금**: `sh scripts/lock_evidence.sh [evidence_dir]` (Windows는
+- **증거 디렉토리 읽기전용 설정**: `sh scripts/lock_evidence.sh [evidence_dir]` (Windows는
   `lock_evidence.ps1`) — `chmod 444` 상당의 OS 읽기전용으로 훅 가드를 보강한다.
   `perl -e`/`ruby -e`/`powershell -enc` 인라인 실행은 증거 경로와 무관하게 차단된다.
 - **`korean_law`가 exit 78(빌드없음)/79(키없음)**: `node scripts/setup_korean_law.mjs --check`로

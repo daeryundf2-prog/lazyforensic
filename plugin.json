@@ -1,7 +1,7 @@
 {
   "name": "lazyforensic",
   "version": "1.0.2",
-  "description": "Google Antigravity + Gemini 3.8 Flash forensic assistant — 4 lanes (help/forensic/visual/legal). Not a forensic acquisition or court-admissibility suite. Organizes evidence, parses Kakao text exports, renders timelines, drafts reports, and guards integrity via SHA-256 audit hooks.",
+  "description": "Google Antigravity + Gemini 3.8 Flash forensic assistant — 4 lanes (help/forensic/visual/legal). Not a forensic acquisition or court-admissibility suite. Organizes evidence, parses Kakao text exports, renders timelines, drafts reports, and records SHA-256 audit hooks for change detection.",
   "author": {
     "name": "daeryundf2-prog",
     "url": "https://github.com/daeryundf2-prog"

@@ -17,6 +17,6 @@
 - **Stable Signature (Meta FAIR, ICCV 2023)**:
   - LDM의 **VAE Decoder 가중치에 k-bit 서명을 직접 각인**. 어떤 프롬프트나 시드로 생성해도 출력물에 서명 영구 내장. [facebookresearch/stable_signature](https://github.com/facebookresearch/stable_signature)
 - **Tree-Ring Watermark (Wen et al., NeurIPS 2023)**:
-  - 초기 노이즈 $x_T$의 **푸리에 도메인에 동심원 링 패턴 M 주입**. DDIM Inversion으로 역추적 검증. 회전/크롭/이동 불변성 보장. [YuxinWenRick/tree-ring-watermark](https://github.com/YuxinWenRick/tree-ring-watermark)
+  - 초기 노이즈 $x_T$의 **푸리에 도메인에 동심원 링 패턴 M 주입**. DDIM Inversion으로 역추적 검증. 논문은 회전/크롭/이동에 대한 불변성을 주장한다(실제 강건성은 구현·공격 조건에 따라 달라짐). [YuxinWenRick/tree-ring-watermark](https://github.com/YuxinWenRick/tree-ring-watermark)
 - **RingID (IEEE S&P)**: 디퓨전 모델을 위한 동심원 링 코드북 임베딩.
 - **StegaStamp / HiDDeN**: 딥러닝 기반 비가시적 하이퍼링크 은닉 및 Print & Scan 내구성 제공.
