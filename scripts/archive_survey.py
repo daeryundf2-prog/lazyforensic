@@ -36,7 +36,7 @@ TAR_EXTS = {".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz"}
 EXEC_EXTS = {".exe", ".dll", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".jar", ".com", ".msi"}
 DOC_LIKE = {".pdf", ".doc", ".docx", ".hwp", ".hwpx", ".jpg", ".png", ".txt", ".xlsx"}
 ZIP_BOMB_RATIO = 100
-ZIP_BOMB_MIN = 1024 * 1024  # 1MB 압축본이 ratio>100이면 의심
+ZIP_BOMB_MIN = 1024 * 1024  # 원본이 1MB 초과인데 압축률 100배 넘으면 의심
 
 
 def _sig_mod():
@@ -82,7 +82,7 @@ def _audit_member(sig, name: str, ext: str, head: bytes, size: int, comp_size: i
         flags.append(f"시그니처불일치({detected})")
     if encrypted:
         flags.append("암호화멤버")
-    if comp_size > ZIP_BOMB_MIN and size / max(comp_size, 1) > ZIP_BOMB_RATIO:
+    if size > ZIP_BOMB_MIN and comp_size > 0 and size / comp_size > ZIP_BOMB_RATIO:
         flags.append("압축폭탄의심")
     if ext in ARCHIVE_EXTS or ext in TAR_EXTS:
         flags.append("중첩아카이브")

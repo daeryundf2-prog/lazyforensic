@@ -345,6 +345,15 @@ class ArchiveSurveyTests(unittest.TestCase):
             self.assertTrue(any("실행형" in f for f in flagged["invoice.pdf.exe"]))
             self.assertEqual(archive_survey.main([str(zpath)]), 1)
 
+    def test_zip_bomb_ratio_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = Path(tmp) / "bomb.zip"
+            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("big.bin", b"\x00" * (2 * 1024 * 1024))
+            r = archive_survey.audit_archive(zpath)
+            self.assertTrue(any("압축폭탄" in f
+                                for m in r["members"] for f in m["flags"]))
+
     def test_clean_zip_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             zpath = Path(tmp) / "ok.zip"
