@@ -129,6 +129,12 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 오디오 발화 구간 선조사 | ✅ | `python scripts/audio_survey.py <파일|폴더>` — WAV stdlib 직독, 그 외는 ffmpeg 경유. STT 전 스크리닝용 |
 | 이미지 EXIF 감사 | ✅ | `python scripts/exif_audit.py <파일|폴더>` — Pillow 필요, 촬영일시·기기·GPS·편집흔적 표면 조사 |
 | 증거형 키워드 검색 리포트 | ✅ | `python scripts/keyword_report.py <폴더> "키워드"` — file:line:원문+SHA-256, 부재도 '전수 검색 미검출'로 기록 |
+| 파일 위장 감사 (매직바이트 vs 확장자) | ✅ | `python scripts/signature_check.py <폴더>` — 'jpg인 척하는 exe' 등 스크리닝, 불일치 시 exit 1 |
+| 중복 파일 탐지 | ✅ | `python scripts/dedup_files.py <폴더>` — SHA-256 정확 중복 + Pillow 있으면 유사 이미지 그룹 |
+| 아카이브 내부 감사 (추출 없이) | ✅ | `python scripts/archive_survey.py <파일|폴더>` — zip/tar 멤버 해시·이중확장자·압축폭탄·중첩 아카이브 |
+| PDF 구조 감사 | ✅ | `python scripts/pdf_audit.py <파일|폴더>` — 암호화·JavaScript·임베딩 첨부·메타데이터 표면 조사 |
+| SQLite 증거 DB 조사 | ✅ | `python scripts/sqlite_survey.py <파일|폴더>` — immutable 읽기전용, 테이블/행 수/무결성. `--sample 테이블 N`으로 표본 확인 |
+| 영상 손상·잘림 감지 | 🟡 BYO | `python scripts/video_integrity.py <파일|폴더>` — ffmpeg/ffprobe 필요, 디코드 오류·moov 위치·duration 불일치 |
 | 증거 통합 선조사 (위 도구 전부 한 번에) | ✅ | `python scripts/case_survey.py <폴더> [--keywords ...] [--stt] -o survey.json --markdown survey.md` — 단계별 실패도 '실패'로 기록 |
 | 다른 컴퓨터 환경 복제 | ✅ | `python scripts/setup_forensic_env.py --check` / 실행 시 venv+선택 의존성 설치 |
 | 법령/판례 조회 | 🟡 키 필요 | 위 "법령 조회" 참고 |

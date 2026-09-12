@@ -16,8 +16,12 @@ case_survey.py — 증거 디렉터리 통합 선조사 파이프라인
     6. image_similarity   — 유사 이미지 쌍 (Pillow 필요)
     7. signature_check    — 확장자 vs 매직바이트 위장 감사
     8. dedup_files        — 정확 중복 + 유사 이미지 그룹
-    9. video_fingerprint  — 영상 지문 목록 (ffmpeg 필요)
-   10. local_stt          --stt 지정 시 (로컬 엔진 필요)
+    9. archive_survey     — zip/tar 내부 위장·암호화 멤버 (추출 없이)
+   10. pdf_audit          — PDF 암호화·능동 콘텐츠·메타데이터
+   11. sqlite_survey      — SQLite DB 스키마·행 수·무결성 (읽기 전용)
+   12. video_fingerprint  — 영상 지문 목록 (ffmpeg 필요)
+   13. video_integrity    — 영상 손상·잘림 감지 (ffmpeg 필요)
+   14. local_stt          --stt 지정 시 (로컬 엔진 필요)
 
 사용:
     python scripts/case_survey.py case/ -o survey.json
@@ -154,6 +158,32 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
                 "similar_groups": mod.similar_image_groups(root)}
     report["steps"]["dedup"] = _run_step("dedup", step_dedup)
 
+    def step_archives():
+        mod = _load("archive_survey")
+        records = mod.scan(root)
+        flagged = [m for r in records for m in r.get("members", []) if m["flags"]]
+        return {"archives": len(records), "flagged_members": len(flagged),
+                "records": records}
+    report["steps"]["archives"] = _run_step("archives", step_archives)
+
+    def step_pdf():
+        mod = _load("pdf_audit")
+        records = mod.scan(root)
+        return {"pdf_files": len(records),
+                "flagged": sum(1 for r in records
+                               if r.get("suspicious") or r.get("encrypted")),
+                "records": records}
+    report["steps"]["pdf"] = _run_step("pdf", step_pdf)
+
+    def step_sqlite():
+        mod = _load("sqlite_survey")
+        records = mod.scan(root)
+        return {"db_files": len(records),
+                "broken": sum(1 for r in records
+                              if r.get("is_sqlite") and not r.get("integrity_ok")),
+                "records": records}
+    report["steps"]["sqlite"] = _run_step("sqlite", step_sqlite)
+
     def step_videos():
         mod = _load("video_fingerprint")
         if not mod._require_ffmpeg():
@@ -170,6 +200,17 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
                 fps.append({"file": str(f), "error": str(e)})
         return {"video_files": len(files), "fingerprints": fps}
     report["steps"]["videos"] = _run_step("videos", step_videos)
+
+    def step_vintegrity():
+        mod = _load("video_integrity")
+        if not mod._require_ffmpeg():
+            raise RuntimeError("ffmpeg 없음 — video_integrity 생략")
+        files = [p for p in root.rglob("*")
+                 if p.is_file() and p.suffix.lower() in mod.VIDEO_EXTS]
+        return {"video_files": len(files),
+                "records": [mod.audit_video(f, run_decode=True)
+                            for f in sorted(files)]}
+    report["steps"]["video_integrity"] = _run_step("video_integrity", step_vintegrity)
 
     if run_stt:
         def step_stt():
@@ -203,7 +244,9 @@ def to_markdown(report: dict) -> str:
         "keywords": "키워드 검색", "audio": "오디오 발화 구간",
         "exif": "이미지 EXIF", "similar_images": "유사 이미지",
         "signatures": "시그니처 위장 감사", "dedup": "중복 파일",
-        "videos": "영상 지문", "stt": "로컬 STT",
+        "archives": "아카이브 내부", "pdf": "PDF 감사",
+        "sqlite": "SQLite DB 조사", "videos": "영상 지문",
+        "video_integrity": "영상 무결성", "stt": "로컬 STT",
     }
     for key, step in report["steps"].items():
         title = names.get(key, key)
@@ -237,8 +280,31 @@ def to_markdown(report: dict) -> str:
         elif key == "dedup":
             lines.append(f"## {title}: 정확 중복 {len(r['exact_groups'])}그룹, "
                          f"유사 이미지 {len(r['similar_groups'])}그룹")
+        elif key == "archives":
+            lines.append(f"## {title}: {r['archives']}개 아카이브, "
+                         f"플래그 멤버 {r['flagged_members']}개")
+            for rec in r["records"]:
+                for m in rec.get("members", []):
+                    if m["flags"]:
+                        lines.append(f"- {rec['file']}::{m['name']} — {', '.join(m['flags'])}")
+        elif key == "pdf":
+            lines.append(f"## {title}: {r['pdf_files']}개 PDF, 주의 필요 {r['flagged']}건")
+            for rec in r["records"]:
+                for n in rec.get("notes", []):
+                    lines.append(f"- {rec['file']}: {n}")
+        elif key == "sqlite":
+            lines.append(f"## {title}: {r['db_files']}개 DB, 무결성 이상 {r['broken']}건")
+            for rec in r["records"]:
+                if rec.get("tables"):
+                    lines.append(f"- {rec['file']}: 테이블 {len(rec['tables'])}개, "
+                                 f"총 {rec.get('total_rows', 0)}행")
         elif key == "videos":
             lines.append(f"## {title}: {r['video_files']}개 영상 지문 생성")
+        elif key == "video_integrity":
+            bad = [x for x in r["records"] if x["status"] != "OK"]
+            lines.append(f"## {title}: {r['video_files']}개 영상, 이상 {len(bad)}건")
+            for x in bad:
+                lines.append(f"- {x['file']}: {'; '.join(x.get('notes', [])) or x.get('error', '')}")
         elif key == "stt":
             for f in r["files"]:
                 if "error" in f:

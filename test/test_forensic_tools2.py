@@ -32,6 +32,10 @@ survey_mod = load_module("case_survey", "scripts/case_survey.py")
 setup_env = load_module("setup_forensic_env", "scripts/setup_forensic_env.py")
 sigcheck = load_module("signature_check", "scripts/signature_check.py")
 dedup = load_module("dedup_files", "scripts/dedup_files.py")
+pdf_audit = load_module("pdf_audit", "scripts/pdf_audit.py")
+archive_survey = load_module("archive_survey", "scripts/archive_survey.py")
+sqlite_survey = load_module("sqlite_survey", "scripts/sqlite_survey.py")
+video_integrity = load_module("video_integrity", "scripts/video_integrity.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -214,7 +218,8 @@ class CaseSurveyTests(unittest.TestCase):
         steps = report["steps"]
         # manifest/pii/keywords/audio/exif/similar_images/videos 단계가 기록된다
         for k in ("manifest", "pii", "keywords", "audio", "exif",
-                  "similar_images", "signatures", "dedup", "videos"):
+                  "similar_images", "signatures", "dedup", "archives",
+                  "pdf", "sqlite", "videos", "video_integrity"):
             self.assertIn(k, steps)
         m = steps["manifest"]
         self.assertEqual(m["status"], "ok")
@@ -280,6 +285,128 @@ class SetupEnvTests(unittest.TestCase):
 
     def test_check_json(self):
         self.assertEqual(setup_env.main(["--check", "--json"]), 0)
+
+
+def _make_pdf(path: Path, extra: bytes = b"") -> None:
+    body = (b"%PDF-1.4\n"
+            b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+            b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+            b"3 0 obj << /Type /Page /Parent 2 0 R >> endobj\n"
+            b"4 0 obj << /Author " + "(테스터)".encode("utf-8") +
+            b" /Producer (unit-test) >> endobj\n"
+            + extra +
+            b"\nstartxref\n0\n%%EOF\n")
+    path.write_bytes(body)
+
+
+class PdfAuditTests(unittest.TestCase):
+    def test_clean_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "doc.pdf"
+            _make_pdf(f)
+            r = pdf_audit.audit_pdf(f)
+            self.assertTrue(r["is_pdf"])
+            self.assertFalse(r["encrypted"])
+            self.assertFalse(r["suspicious"])
+            self.assertEqual(r["page_count"], 1)
+            self.assertEqual(r["metadata"]["author"], "테스터")
+
+    def test_encrypted_and_js_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "evil.pdf"
+            _make_pdf(f, b"5 0 obj << /Encrypt 6 0 R /JavaScript (app.alert) "
+                          b"/OpenAction 7 0 R >> endobj")
+            r = pdf_audit.audit_pdf(f)
+            self.assertTrue(r["encrypted"])
+            self.assertTrue(r["suspicious"])
+            self.assertIn("javascript", r["active_signals"])
+            self.assertEqual(pdf_audit.main([str(f)]), 1)
+
+    def test_non_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "doc.pdf"
+            f.write_bytes(b"not a pdf at all")
+            r = pdf_audit.audit_pdf(f)
+            self.assertFalse(r["is_pdf"])
+
+
+class ArchiveSurveyTests(unittest.TestCase):
+    def test_double_ext_and_exec_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = Path(tmp) / "pack.zip"
+            with zipfile.ZipFile(zpath, "w") as z:
+                z.writestr("invoice.pdf.exe", b"MZ" + b"\x00" * 30)
+                z.writestr("readme.txt", "안녕")
+            r = archive_survey.audit_archive(zpath)
+            self.assertEqual(r["type"], "zip")
+            flagged = {m["name"]: m["flags"] for m in r["members"] if m["flags"]}
+            self.assertIn("invoice.pdf.exe", flagged)
+            self.assertTrue(any("이중확장자" in f for f in flagged["invoice.pdf.exe"]))
+            self.assertTrue(any("실행형" in f for f in flagged["invoice.pdf.exe"]))
+            self.assertEqual(archive_survey.main([str(zpath)]), 1)
+
+    def test_clean_zip_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = Path(tmp) / "ok.zip"
+            with zipfile.ZipFile(zpath, "w") as z:
+                z.writestr("a.txt", "hello")
+            r = archive_survey.audit_archive(zpath)
+            self.assertTrue(all(not m["flags"] for m in r["members"]))
+            self.assertEqual(archive_survey.main([str(zpath)]), 0)
+
+
+class SqliteSurveyTests(unittest.TestCase):
+    def test_tables_and_integrity(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "chat.db"
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE messages (id INTEGER, body TEXT)")
+            conn.executemany("INSERT INTO messages VALUES (?, ?)",
+                             [(1, "a"), (2, "b"), (3, "c")])
+            conn.commit()
+            conn.close()
+            r = sqlite_survey.survey_db(db)
+            self.assertTrue(r["is_sqlite"])
+            self.assertTrue(r["integrity_ok"])
+            tables = {t["name"]: t for t in r["tables"]}
+            self.assertEqual(tables["messages"]["row_count"], 3)
+            self.assertIn("body", tables["messages"]["columns"])
+
+    def test_non_db_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "fake.db"
+            f.write_bytes(b"not sqlite")
+            r = sqlite_survey.survey_db(f)
+            self.assertFalse(r["is_sqlite"])
+            self.assertIn("error", r)
+
+
+class VideoIntegrityTests(unittest.TestCase):
+    def test_no_ffmpeg_exit_3(self):
+        if video_integrity._require_ffmpeg():
+            self.skipTest("ffmpeg installed")
+        self.assertEqual(video_integrity.main(["/tmp/x.mp4"]), 3)
+
+    @unittest.skipUnless(
+        __import__("shutil").which("ffmpeg") is not None, "ffmpeg not installed")
+    def test_ok_and_damaged(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            ok = Path(tmp) / "ok.mp4"
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                 "-i", "testsrc=duration=1:size=64x64:rate=5", str(ok)],
+                check=True)
+            r = video_integrity.audit_video(ok)
+            self.assertEqual(r["status"], "OK")
+            self.assertGreater(r["duration"], 0)
+            # 잘린 파일 — 앞부분만 남김
+            cut = Path(tmp) / "cut.mp4"
+            data = ok.read_bytes()
+            cut.write_bytes(data[: len(data) // 3])
+            r2 = video_integrity.audit_video(cut)
+            self.assertIn(r2["status"], ("DAMAGED", "UNREADABLE"))
 
 
 if __name__ == "__main__":

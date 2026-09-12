@@ -15,6 +15,11 @@
 | **Unlimited-OCR** (Baidu) | 40p+ PDF 통째 OCR | GitHub | 스캔 증거 문서 대량 텍스트화 후 `keyword_report.py` |
 | **Upscayl** | 저해상도 이미지 업스케일 (로컬, 오픈소스) | 릴리스 다운로드 | 증거 사진 선명화 — 단, 업스케일본은 파생물로 표시 |
 | **claude-video (`/watch`)** | 영상 링크→프레임+전사+AI 분석 | `github.com/bradautomates/claude-video` | 프레임 추출은 `forensic-video`와 겹침 — 영상 '내용 읽기'용 |
+| **kordoc** | HWPX 글자 100% 보존 검증된 파서/리팩터링 사례 | GitHub | `extract_hwpx.py`가 못 읽는 구조(표·서식)가 필요할 때 |
+| **Camofox** | OSINT용 어사이드 연동 브라우저 (봇 탐지 회피 설계) | GitHub | sherlock이 막히는 사이트 수동 확인용. ⚠️ 외부 접속 — 동의 필요 |
+| **검색 API 무료 티어** (Exa·Tavily·SerpAPI·Brave) | OSINT 웹 검색 보조 | 각 사이트 키 발급 | `osint_username.py` 보조 — 외부 쿼리이므로 allowlist 검토 대상 |
+| **untrunc** | moov 손상 mp4 복구 (정상 참조 파일 필요) | GitHub | `video_integrity.py`가 DAMAGED/UNREADABLE로 잡은 파일의 복구 시도 |
+| **qpdf / pikepdf** | PDF 정밀 파싱·암호 해제·객체 스트림 검사 | `brew install qpdf` / `pip install pikepdf` | `pdf_audit.py`가 못 보는 객체 스트림 내부, 암호 해제본 생성 |
 
 ## 워크플로 보조
 
@@ -25,6 +30,7 @@
 | **ARTEMIS** (google) | 안드로이드 자연어 자동화 — 모바일 앱 반복 조작 자동화에 응용 |
 | **Letta CLI / Orca** | 장기메모리 LLM / 멀티작업 에이전트 IDE |
 | **ego lite** | 에이전트 전용 Chromium — 로그인 필요 사이트 자동화 |
+| **Tailscale tsnet 단일 도구** | 계정 없이 홈서버 외부 접속 — 다른 컴퓨터의 포렌식 환경 원격 작업 시 |
 
 ## 문서·보고서 품질
 
@@ -32,6 +38,12 @@
 |---|---|
 | **bluenyx 한국어 문장 검토 스킬** | 보고서·대본 문체 검토 (9개 문서 유형) |
 | **avoid-ai-writing / patina** | AI 문체 습관 제거 — 의뢰인 제출 문서 최종 다듬기 |
+
+## 증거 수집·환경 참고사항
+
+- **구글 지도 타임라인은 이제 단말기에만 있다** — PC 브라우저에서 타임라인이 삭제됨(온디바이스 전환). 위치 증거는 반드시 단말에서 수집해야 한다.
+- **로컬 LLM도 완전한 비공개가 아니다** — 로컬 추론도 캐시·디토크나이저 흔적 같은 사이드채널로 프롬프트/생성문이 복원될 수 있다는 보고가 있다. "로컬이니까 안전"이 아니라 "외부 전송이 없다"가 정확한 표현이다.
+- **로컬 모델 다운로드 자체도 흔적** — HF 모델 다운로드는 외부 요청이다. 새 컴퓨터 셋업 시 `setup_forensic_env.py`가 어떤 외부 호스트에 접속하는지는 스크립트와 `.local_only_allowlist`에 명시돼 있다.
 
 ## 규칙
 

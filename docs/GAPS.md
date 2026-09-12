@@ -68,6 +68,12 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/exif_audit.py`의 EXIF는 자유롭게 편집 가능하다. '기록된 값'이지 '진실'이 아니며, EXIF 부재는 메신저 경유 흔적일 뿐 조작 증거가 아니다.
 - `scripts/osint_username.py`는 sherlock BYO다. 조회 닉네임이 외부 사이트에 노출되므로 의뢰인 동의 없이 쓰지 않는다.
 - `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다.
+- `scripts/signature_check.py`는 선두 수십 바이트만 본다. 시그니처를 위조한 파일·UNKNOWN(시그니처 없는 텍스트류)은 정상일 수 있다.
+- `scripts/dedup_files.py`는 정확 중복만 확실하다. 유사 그룹은 이미지뿐이고 '어느 쪽이 원본인가'는 판정하지 않는다.
+- `scripts/archive_survey.py`는 zip/tar만 본다 — RAR/7z는 외부 도구. 플래그는 '수동 확인 필요 신호'이지 악성 판정이 아니다.
+- `scripts/pdf_audit.py`는 바이트 패턴 표면 감사다 — PDF 1.5+ 객체 스트림에 숨은 /Encrypt·/JavaScript는 못 잡는다. 정밀 파싱은 qpdf/pikepdf 영역.
+- `scripts/sqlite_survey.py`는 immutable 읽기전용으로 열지만 스키마·행 수만 본다 — 어느 컬럼이 메시지인지 같은 해석은 수동이다.
+- `scripts/video_integrity.py`는 '어디까지 읽히나' 진단이다 — 복구 자체는 untrunc 등 별도 도구. ffprobe/ffmpeg가 없으면 실행 자체가 안 된다(exit 3).
 
 ## 후속 과제 (알려진 미해결 — v1.0.1 시점)
 
