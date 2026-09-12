@@ -17,6 +17,9 @@ local_stt.py — 로컬 전용 STT 배치 전사기
     python scripts/local_stt.py audio/call.wav --lang ko
     python scripts/local_stt.py audio/ --keywords "돈,송금,계좌" --out stt_report.json
     python scripts/local_stt.py audio/ --verbatim               # 필러음 보존 모드
+    python scripts/local_stt.py a.wav --model nyrahealth/CrisperWhisper
+    # faster-whisper는 HF 리포 ID도 받는다 — CrisperWhisper는 필러음·
+    # 말더듬까지 verbatim 전사하는 파인튜닝 모델 (증거 녹취에 적합)
 
 출력 (파일별 + 요약):
     - <입력>.transcript.json  : 타임스탬프 세그먼트 전사

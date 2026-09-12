@@ -28,6 +28,8 @@ audio = load_module("audio_survey", "scripts/audio_survey.py")
 exif = load_module("exif_audit", "scripts/exif_audit.py")
 osint = load_module("osint_username", "scripts/osint_username.py")
 kwr = load_module("keyword_report", "scripts/keyword_report.py")
+survey_mod = load_module("case_survey", "scripts/case_survey.py")
+setup_env = load_module("setup_forensic_env", "scripts/setup_forensic_env.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -199,6 +201,45 @@ class KeywordReportTests(unittest.TestCase):
         hits = kwr.search_file(eval_dir / "chats" / "kakao_export_2026-03.txt",
                                ["프로젝트 겨울나무"], 0)
         self.assertEqual(len(hits), 1)
+
+
+class CaseSurveyTests(unittest.TestCase):
+    def test_survey_eval_corpus(self):
+        eval_dir = FIXTURES / "eval"
+        if not eval_dir.is_dir():
+            self.skipTest("eval fixtures absent")
+        report = survey_mod.survey(eval_dir, ["프로젝트 겨울나무"], run_stt=False)
+        steps = report["steps"]
+        # manifest/pii/keywords/audio/exif/similar_images/videos 단계가 기록된다
+        for k in ("manifest", "pii", "keywords", "audio", "exif",
+                  "similar_images", "videos"):
+            self.assertIn(k, steps)
+        m = steps["manifest"]
+        self.assertEqual(m["status"], "ok")
+        self.assertEqual(m["result"]["file_count"], 47)
+        kw = steps["keywords"]
+        self.assertEqual(kw["status"], "ok")
+        self.assertGreaterEqual(kw["result"]["total_hits"], 1)
+
+    def test_survey_missing_dir_exit_2(self):
+        self.assertEqual(survey_mod.main(["/nonexistent-xyz"]), 2)
+
+    def test_markdown_renders(self):
+        eval_dir = FIXTURES / "eval"
+        if not eval_dir.is_dir():
+            self.skipTest("eval fixtures absent")
+        report = survey_mod.survey(eval_dir, [], run_stt=False)
+        md = survey_mod.to_markdown(report)
+        self.assertIn("파일 매니페스트", md)
+        self.assertIn("47개 파일", md)
+
+
+class SetupEnvTests(unittest.TestCase):
+    def test_check_runs(self):
+        self.assertEqual(setup_env.main(["--check"]), 0)
+
+    def test_check_json(self):
+        self.assertEqual(setup_env.main(["--check", "--json"]), 0)
 
 
 if __name__ == "__main__":
