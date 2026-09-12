@@ -21,6 +21,7 @@ desktop.ini
 # Output test files
 *.tmp
 *.log
+!test/fixtures/eval/logs/app.log
 scratch/
 timeline_report.html
 infographic_preview.html
