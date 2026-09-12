@@ -39,7 +39,7 @@ Google Antigravity + Gemini 3.8 Flash 용 **디지털 포렌식 보조** 플러�
 수동으로 실행해야 한다.
 
 ```bash
-git clone https://github.com/daeryundf2-prog/lazyforensic- && cd lazyforensic-
+git clone https://github.com/daeryundf2-prog/lazyforensic && cd lazyforensic
 python -m pytest test/ -v   # 권장: 173개 테스트 (수 초). pytest 없으면 python -m unittest discover -s test (147개)
 ```
 
