@@ -123,9 +123,15 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
 | 외부 반출 가능 경로 정적 감사 | ✅ | `python scripts/local_only_audit.py` — 네트워크 송신 지점을 GATED/UNGATED로 분류 |
+| 증거 매니페스트 (체인 오브 커스터디 초안) | ✅ | `python scripts/evidence_manifest.py <폴더> -o m.json` / `--verify m.json` — 변경·신규·삭제 파일 탐지 |
+| HWPX 텍스트 추출 | ✅ | `python scripts/extract_hwpx.py <파일|폴더>` — stdlib 전용, 바이너리 .hwp는 외부 도구 영역 |
+| 신구대비 텍스트 비교 | ✅ | `python scripts/doc_diff.py old.txt new.txt --markdown` — 현행/신안/비고 표 |
+| 오디오 발화 구간 선조사 | ✅ | `python scripts/audio_survey.py <파일|폴더>` — WAV stdlib 직독, 그 외는 ffmpeg 경유. STT 전 스크리닝용 |
+| 이미지 EXIF 감사 | ✅ | `python scripts/exif_audit.py <파일|폴더>` — Pillow 필요, 촬영일시·기기·GPS·편집흔적 표면 조사 |
+| 증거형 키워드 검색 리포트 | ✅ | `python scripts/keyword_report.py <폴더> "키워드"` — file:line:원문+SHA-256, 부재도 '전수 검색 미검출'로 기록 |
 | 법령/판례 조회 | 🟡 키 필요 | 위 "법령 조회" 참고 |
-| OSINT 사용자명 검색 | 🟡 BYO | sherlock 설치 시 `sherlock <닉네임>` — 미설치 시 지원 안 함 |
-| HWP·HWPX·PDF 신구대비 | 🟡 외부 | `obundh/korean-munseo-diff` 별도 설치 |
+| OSINT 사용자명 검색 | 🟡 BYO | `python scripts/osint_username.py <닉네임>` — sherlock 미설치 시 exit 3. 닉네임이 외부 사이트에 쿼리로 노출되므로 반출 승인 필요 |
+| 바이너리 HWP(.hwp) 파싱·신구대비 | 🟡 외부 | `obundh/korean-munseo-diff` 별도 설치 — HWPX는 위 `extract_hwpx.py`로 가능 |
 | 무결성 훅 (쓰기 차단/감사 로그) | 🟡 Antigravity | best-effort. OS 읽기전용(`chmod 444`) 병행 권장 |
 
 ## 트러블슈팅
