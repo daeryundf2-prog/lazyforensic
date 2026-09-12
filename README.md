@@ -156,6 +156,18 @@ python -m pytest test/ -v
 
 `.github/workflows/ci.yml`: Ubuntu/Windows 유닛 테스트 + 훅 가드 단언, korean-law-mcp 빌드+vitest.
 
+## Lazy 생태계 (레포 경계)
+
+- `LAZYANTIGRAVITY` — 런타임 우산: 훅 집계·공유 스킬 물질화·번들 MCP 런타임
+- `lazyforensic` (본 레포) — 포렌식/한국법률 도메인 플러그인
+- `lazyothers` — 리걸 문서·HWP·humanize 도메인 플러그인
+- `lazyagentic` — 규칙 전용 거버넌스 플러그인 (Dual-Mount `~/agentic`)
+- [`korean-law-mcp`](https://github.com/daeryundf2-prog/korean-law-mcp) — 한국법 조회 MCP 서버.
+  본 레포가 `setup_korean_law.mjs`로 클론·빌드해 사용하고, LAZYANTIGRAVITY는 빌드본을 번들한다.
+
+공유 자산: `scripts/coverage_audit.mjs`는 lazyforensic(캐노니컬)·lazyothers·LAZYANTIGRAVITY
+3곳에 바이트 동일 사본으로 유지된다 — 수정 시 3곳 동기화 필수 (파일 헤더 주석 참조).
+
 ## 라이선스
 
 본 레포 코드는 MIT ([`LICENSE`](LICENSE)). 한국 법령 MCP 서버는 별도 레포
