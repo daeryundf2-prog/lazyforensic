@@ -74,7 +74,7 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/pdf_audit.py`는 바이트 패턴 표면 감사다 — PDF 1.5+ 객체 스트림에 숨은 /Encrypt·/JavaScript는 못 잡는다. 정밀 파싱은 qpdf/pikepdf 영역.
 - `scripts/sqlite_survey.py`는 immutable 읽기전용으로 열지만 스키마·행 수만 본다 — 어느 컬럼이 메시지인지 같은 해석은 수동이다.
 - `scripts/video_integrity.py`는 '어디까지 읽히나' 진단이다 — 복구 자체는 untrunc 등 별도 도구. ffprobe/ffmpeg가 없으면 실행 자체가 안 된다(exit 3).
-- `scripts/audio_fingerprint.py`는 fpcalc(chromaprint) BYO다 — 재인코딩은 잡지만 편집된 구간 일치는 못 잡는다. 유사도는 '동일 녹취' 판정이 아니다.
+- `scripts/audio_fingerprint.py`는 fpcalc(chromaprint) BYO다 — 재인코딩은 잡지만 편집된 구간 일치는 못 잡는다. 유사도는 '동일 녹취' 판정이 아니다. 순수음·정적 신호 같은 퇴화 오디오는 서로 다른 소리도 지문이 같아질 수 있다(chromaprint 자체 한계 — 실제 음성/음악에서 유효).
 - `scripts/local_stt.py`의 moonshine 엔진은 영어 전용이고 세그먼트 타임스탬프를 주지 않는다 — 한국어 증거에는 쓰지 않는다(자동탐지 최후순위).
 
 ## 후속 과제 (알려진 미해결 — v1.0.1 시점)
