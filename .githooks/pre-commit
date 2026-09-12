@@ -1,0 +1,19 @@
+#!/bin/sh
+# lazyforensic pre-commit — 커밋 시점 기계 차단:
+#   1) 새 UNGATED 외부 송신 경로 유입 (local_only_audit)
+#   2) 파서 회귀 (pytest 전체 — 수 초)
+# 활성화: git config core.hooksPath .githooks
+
+set -e
+
+echo "[pre-commit] local_only_audit"
+python3 scripts/local_only_audit.py >/dev/null || {
+    echo "UNGATED 외부 송신 경로가 추가됐습니다. scripts/local_only_audit.py 를 직접 실행해 확인하세요." >&2
+    exit 1
+}
+
+echo "[pre-commit] pytest"
+python3 -m pytest test/ -q >/dev/null 2>&1 || {
+    echo "테스트 실패 — python3 -m pytest test/ -v 로 확인하세요." >&2
+    exit 1
+}

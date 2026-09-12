@@ -152,7 +152,8 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 - **감사 체인 검증**: `python scripts/verify_audit_chain.py` (기본 `.lazyforensic/audit_trail.jsonl`, 파일 없으면 PASS·empty session)
 - JSON 출력은 `python scripts/verify_audit_chain.py --json`, 빈 체인 거부(엄격 모드)는 `--no-empty` 추가
 - 깨짐 시 `FAIL` 줄번호·`prev_hash` 기대값을 출력하므로 해당 줄부터 원본 대조 후 재생성하라
-- **평가 코퍼스**: `test/fixtures/eval/`에 정답지 포함 알려진-답 코퍼스가 있다(카톡 대화·문서·로그·이미지 47파일 + `EVAL.md` 11문항 + `ANSWER_KEY.md`). 플러그인/모델 변경 후 에이전트에게 EVAL.md를 던져 부재 환각·재현율을 회귀 검증할 수 있다. 오디오 픽스처는 저작권 문제로 미포함 — 로컬 오디오를 넣어 STT 문항을 검증할 것.
+- **평가 코퍼스**: `test/fixtures/eval/`에 정답지 포함 알려진-답 코퍼스가 있다(카톡 대화·문서·로그·이미지 47파일 + `EVAL.md` 11문항 + `ANSWER_KEY.md`). 플러그인/모델 변경 후 에이전트에게 EVAL.md를 던져 부재 환각·재현율을 회귀 검증할 수 있다. 오디오 픽스처는 저작권 문제로 미포함 — 로컬 오디오를 넣어 STT 문항을 검증할 것. 코퍼스 불변식은 `test/test_eval_corpus.py`가 커밋 레벨에서 잠근다.
+- **커밋 게이트**: `git config core.hooksPath .githooks`를 설정하면 pre-commit이 `local_only_audit`(새 UNGATED 외부 송신 차단) + pytest 전체를 자동 실행한다. CI에도 같은 감사가 있다 — 의도된 외부 경로는 검토 후 `.local_only_allowlist`에 `파일 종류`로 등재할 것.
 
 ## 정직 선언 / 아키텍처
 

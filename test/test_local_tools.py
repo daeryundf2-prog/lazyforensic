@@ -209,6 +209,24 @@ class LocalOnlyAuditTests(unittest.TestCase):
             code = audit_local.main(["--root", str(root), "--json"])
             self.assertEqual(code, 0)
 
+    def test_allowlist_marks_reviewed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            dl = root / "scripts" / "downloader.ps1"
+            dl.write_text("Invoke-WebRequest -Uri $u -OutFile $z\n", encoding="utf-8")
+            (root / ".local_only_allowlist").write_text(
+                "scripts/downloader.ps1 http_call\n", encoding="utf-8")
+            code = audit_local.main(["--root", str(root), "--json"])
+            self.assertEqual(code, 0)
+            findings = audit_local.scan_file(dl, root,
+                                             {("scripts/downloader.ps1", "http_call")})
+            self.assertEqual(findings[0]["status"], "REVIEWED")
+
+    def test_plugin_repo_has_no_ungated(self):
+        # 실제 레포에 새 UNGATED 경로가 생기면 이 테스트가 실패한다
+        self.assertEqual(audit_local.main(["--json"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
