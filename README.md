@@ -136,6 +136,9 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 - **Windows에 python이 없어서**: 검증 게이트가 경고 후 통과한다(비활성). `python3` 설치를 권장.
 - **카카오톡 파일이 깨져 보인다**: UTF-8/CP949/UTF-16을 자동 판별한다. 그래도 실패하면
   모바일 앱에서 텍스트로 재내보내기하고, 파일을 다른 인코딩으로 재저장하지 말 것.
+- **감사 체인 검증**: `python scripts/verify_audit_chain.py` (기본 `.lazyforensic/audit_trail.jsonl`, 파일 없으면 PASS·empty session)
+- JSON 출력은 `python scripts/verify_audit_chain.py --json`, 빈 체인 거부(엄격 모드)는 `--no-empty` 추가
+- 깨짐 시 `FAIL` 줄번호·`prev_hash` 기대값을 출력하므로 해당 줄부터 원본 대조 후 재생성하라
 
 ## 정직 선언 / 아키텍처
 
