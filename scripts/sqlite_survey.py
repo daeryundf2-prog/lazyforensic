@@ -29,6 +29,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+import urllib.parse
 from pathlib import Path
 
 SQLITE_EXTS = {".db", ".sqlite", ".sqlite3", ".db3"}
@@ -52,8 +53,9 @@ def is_sqlite(path: Path) -> bool:
 
 
 def connect_ro(path: Path) -> sqlite3.Connection:
-    """immutable 읽기 전용 연결 — 원본·-wal·-shm을 절대 건드리지 않는다."""
-    uri = f"file:{path.resolve()}?mode=ro&immutable=1"
+    """immutable 읽기 전용 연결 — 원본·-wal·-shm을 절대 건드리지 않는다.
+    파일명의 ?·#·공백 등이 URI 파싱을 깨지 못하게 인코딩한다."""
+    uri = "file:" + urllib.parse.quote(str(path.resolve())) + "?mode=ro&immutable=1"
     return sqlite3.connect(uri, uri=True)
 
 

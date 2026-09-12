@@ -35,16 +35,19 @@ _PDF_RE = {
     "creation_date": re.compile(rb"/CreationDate\s*\(([^)]*)\)"),
     "mod_date": re.compile(rb"/ModDate\s*\(([^)]*)\)"),
 }
+# PDF 이름 토큰은 뒤에 영문자가 오면 같은 토큰이 아니다 — /EncryptMetadata가
+# /Encrypt로 오인되지 않게 전부 단어 경계로 검사한다.
 _ACTIVE_SIGNALS = [
-    (b"/JavaScript", "javascript"),
-    (b"/JS", "js_action"),
-    (b"/Launch", "launch_action"),
-    (b"/OpenAction", "open_action"),
-    (b"/AA", "additional_actions"),
-    (b"/EmbeddedFile", "embedded_file"),
-    (b"/RichMedia", "rich_media"),
+    (re.compile(rb"/JavaScript(?![a-zA-Z])"), "javascript"),
+    (re.compile(rb"/JS(?![a-zA-Z])"), "js_action"),
+    (re.compile(rb"/Launch(?![a-zA-Z])"), "launch_action"),
+    (re.compile(rb"/OpenAction(?![a-zA-Z])"), "open_action"),
+    (re.compile(rb"/AA(?![a-zA-Z])"), "additional_actions"),
+    (re.compile(rb"/EmbeddedFile(?![a-zA-Z])"), "embedded_file"),
+    (re.compile(rb"/RichMedia(?![a-zA-Z])"), "rich_media"),
 ]
-_PAGE_RE = re.compile(rb"/Type\s*/Page[^s]")
+_ENCRYPT_RE = re.compile(rb"/Encrypt(?![a-zA-Z])")
+_PAGE_RE = re.compile(rb"/Type\s*/Page(?!s)")
 
 
 def sha256_file(path: Path) -> str:
@@ -83,13 +86,13 @@ def audit_pdf(path: Path) -> dict:
     m = re.match(rb"%PDF-(\d+\.\d+)", data)
     rec["pdf_version"] = m.group(1).decode() if m else "unknown"
     rec["size_bytes"] = len(data)
-    rec["encrypted"] = b"/Encrypt" in data
+    rec["encrypted"] = bool(_ENCRYPT_RE.search(data))
     rec["linearized"] = b"/Linearized" in data[:1024]
     rec["page_count"] = len(_PAGE_RE.findall(data))
     rec["startxref_present"] = b"startxref" in data[-4096:]
     rec["eof_marker_present"] = b"%%EOF" in data[-4096:]
 
-    signals = [label for pat, label in _ACTIVE_SIGNALS if pat in data]
+    signals = [label for rx, label in _ACTIVE_SIGNALS if rx.search(data)]
     rec["active_signals"] = signals
     rec["suspicious"] = bool(signals)
 

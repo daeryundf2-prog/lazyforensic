@@ -94,7 +94,10 @@ def audit_video(path: Path, run_decode: bool = True) -> dict:
     fmt = info.get("format", {})
     streams = info.get("streams", [])
     rec["container"] = fmt.get("format_name", "?")
-    rec["duration"] = float(fmt.get("duration") or 0)
+    try:
+        rec["duration"] = float(fmt.get("duration") or 0)
+    except (TypeError, ValueError):
+        rec["duration"] = 0.0  # ffprobe가 "N/A"를 반환하는 컨테이너가 있다
     vstreams = [s for s in streams if s.get("codec_type") == "video"]
     astreams = [s for s in streams if s.get("codec_type") == "audio"]
     rec["video_streams"] = len(vstreams)

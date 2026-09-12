@@ -329,6 +329,15 @@ class PdfAuditTests(unittest.TestCase):
             r = pdf_audit.audit_pdf(f)
             self.assertFalse(r["is_pdf"])
 
+    def test_encrypt_metadata_not_flagged(self):
+        # /EncryptMetadata는 암호화 키가 아님 — 이름 경계 오탐 방지
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "meta.pdf"
+            _make_pdf(f, b"5 0 obj << /EncryptMetadata false >> endobj")
+            r = pdf_audit.audit_pdf(f)
+            self.assertFalse(r["encrypted"])
+            self.assertEqual(pdf_audit.main([str(f)]), 0)
+
 
 class ArchiveSurveyTests(unittest.TestCase):
     def test_double_ext_and_exec_flagged(self):
@@ -389,6 +398,20 @@ class SqliteSurveyTests(unittest.TestCase):
             r = sqlite_survey.survey_db(f)
             self.assertFalse(r["is_sqlite"])
             self.assertIn("error", r)
+
+    def test_special_chars_in_filename(self):
+        # 파일명의 ?·#·공백이 file: URI 파싱을 깨지 않아야 한다
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "case #1 (원본?).db"
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE t (a INTEGER)")
+            conn.execute("INSERT INTO t VALUES (1)")
+            conn.commit()
+            conn.close()
+            r = sqlite_survey.survey_db(db)
+            self.assertTrue(r["is_sqlite"])
+            self.assertEqual(r["total_rows"], 1)
 
 
 class VideoIntegrityTests(unittest.TestCase):
