@@ -30,6 +30,8 @@ osint = load_module("osint_username", "scripts/osint_username.py")
 kwr = load_module("keyword_report", "scripts/keyword_report.py")
 survey_mod = load_module("case_survey", "scripts/case_survey.py")
 setup_env = load_module("setup_forensic_env", "scripts/setup_forensic_env.py")
+sigcheck = load_module("signature_check", "scripts/signature_check.py")
+dedup = load_module("dedup_files", "scripts/dedup_files.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -212,7 +214,7 @@ class CaseSurveyTests(unittest.TestCase):
         steps = report["steps"]
         # manifest/pii/keywords/audio/exif/similar_images/videos 단계가 기록된다
         for k in ("manifest", "pii", "keywords", "audio", "exif",
-                  "similar_images", "videos"):
+                  "similar_images", "signatures", "dedup", "videos"):
             self.assertIn(k, steps)
         m = steps["manifest"]
         self.assertEqual(m["status"], "ok")
@@ -232,6 +234,44 @@ class CaseSurveyTests(unittest.TestCase):
         md = survey_mod.to_markdown(report)
         self.assertIn("파일 매니페스트", md)
         self.assertIn("47개 파일", md)
+
+
+class SignatureCheckTests(unittest.TestCase):
+    def test_detects_disguised_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "photo.jpg"
+            f.write_bytes(b"MZ" + b"\x00" * 30)  # PE를 jpg로 위장
+            r = sigcheck.audit_file(f)
+            self.assertEqual(r["status"], "MISMATCH")
+            self.assertEqual(r["detected"], "PE 실행파일")
+
+    def test_real_png_matches(self):
+        media = FIXTURES / "eval" / "media" / "red_square.png"
+        if not media.is_file():
+            self.skipTest("eval fixtures absent")
+        r = sigcheck.audit_file(media)
+        self.assertEqual(r["status"], "MATCH")
+
+    def test_text_files_unknown_not_mismatch(self):
+        eval_dir = FIXTURES / "eval"
+        if not eval_dir.is_dir():
+            self.skipTest("eval fixtures absent")
+        code = sigcheck.main([str(eval_dir), "--json"])
+        self.assertEqual(code, 0)  # 텍스트류는 UNKNOWN이라 MISMATCH가 아님
+
+
+class DedupTests(unittest.TestCase):
+    def test_exact_duplicates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("same", encoding="utf-8")
+            (root / "sub").mkdir()
+            (root / "sub" / "b.txt").write_text("same", encoding="utf-8")
+            (root / "c.txt").write_text("different", encoding="utf-8")
+            groups = dedup.exact_dups(list(root.rglob("*")))
+            groups = [g for g in groups if Path(g["files"][0]).is_file()]
+            self.assertEqual(len(groups), 1)
+            self.assertEqual(len(groups[0]["files"]), 2)
 
 
 class SetupEnvTests(unittest.TestCase):

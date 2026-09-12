@@ -14,8 +14,10 @@ case_survey.py — 증거 디렉터리 통합 선조사 파이프라인
     4. audio_survey       — 발화 구간 후보 지도
     5. exif_audit         — 이미지 메타데이터 (Pillow 필요)
     6. image_similarity   — 유사 이미지 쌍 (Pillow 필요)
-    7. video_fingerprint  — 영상 지문 목록 (ffmpeg 필요)
-    8. local_stt          --stt 지정 시 (로컬 엔진 필요)
+    7. signature_check    — 확장자 vs 매직바이트 위장 감사
+    8. dedup_files        — 정확 중복 + 유사 이미지 그룹
+    9. video_fingerprint  — 영상 지문 목록 (ffmpeg 필요)
+   10. local_stt          --stt 지정 시 (로컬 엔진 필요)
 
 사용:
     python scripts/case_survey.py case/ -o survey.json
@@ -136,6 +138,22 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
                 "similar_pairs": mod.find_pairs(records, 10)}
     report["steps"]["similar_images"] = _run_step("similar_images", step_images)
 
+    def step_signatures():
+        mod = _load("signature_check")
+        records = [mod.audit_file(f) for f in sorted(root.rglob("*")) if f.is_file()]
+        return {"total": len(records),
+                "mismatches": [r for r in records if r["status"] == "MISMATCH"],
+                "match": sum(1 for r in records if r["status"] == "MATCH")}
+    report["steps"]["signatures"] = _run_step("signatures", step_signatures)
+
+    def step_dedup():
+        mod = _load("dedup_files")
+        files = [p for p in sorted(root.rglob("*"))
+                 if p.is_file() and "__pycache__" not in p.parts]
+        return {"exact_groups": mod.exact_dups(files),
+                "similar_groups": mod.similar_image_groups(root)}
+    report["steps"]["dedup"] = _run_step("dedup", step_dedup)
+
     def step_videos():
         mod = _load("video_fingerprint")
         if not mod._require_ffmpeg():
@@ -184,6 +202,7 @@ def to_markdown(report: dict) -> str:
         "manifest": "파일 매니페스트", "pii": "개인정보 탐지",
         "keywords": "키워드 검색", "audio": "오디오 발화 구간",
         "exif": "이미지 EXIF", "similar_images": "유사 이미지",
+        "signatures": "시그니처 위장 감사", "dedup": "중복 파일",
         "videos": "영상 지문", "stt": "로컬 STT",
     }
     for key, step in report["steps"].items():
@@ -211,6 +230,13 @@ def to_markdown(report: dict) -> str:
             lines.append(f"## {title}: {r['image_files']}개 이미지, EXIF 있음 {present}")
         elif key == "similar_images":
             lines.append(f"## {title}: {r['image_files']}개 이미지, 유사 쌍 {len(r['similar_pairs'])}건")
+        elif key == "signatures":
+            lines.append(f"## {title}: {r['total']}개 파일, 위장 의심 {len(r['mismatches'])}건")
+            for m in r["mismatches"]:
+                lines.append(f"- {m['file']}: 확장자 {m['ext']} ≠ {m['detected']}")
+        elif key == "dedup":
+            lines.append(f"## {title}: 정확 중복 {len(r['exact_groups'])}그룹, "
+                         f"유사 이미지 {len(r['similar_groups'])}그룹")
         elif key == "videos":
             lines.append(f"## {title}: {r['video_files']}개 영상 지문 생성")
         elif key == "stt":
