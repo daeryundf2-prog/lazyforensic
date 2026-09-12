@@ -63,6 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: daeryundf2-prog/korean-law-mcp
+          path: korean-law-mcp
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
