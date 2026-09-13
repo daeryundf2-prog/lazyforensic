@@ -15,7 +15,12 @@ zip/tar 계열을 추출하지 않고 내부만 조사한다:
     python scripts/archive_survey.py package.zip --json
 
 알려진 한계:
-- tar 멤버는 스트리밍 해시를 지원하지만 gzip tar(tar.gz)도 커버한다.
+- 멤버 해시는 읽기 상한(64MB)까지만 계산한다 — 초과 시 sha256 대신
+  '읽기상한' 플래그를 단다. 압축폭탄이 감사기를 OOM으로 죽이지 못하게
+  복호를 중간에 끊는 fail-closed 방어다.
+- tar 계열은 멤버별 압축 크기를 헤더가 제공하지 않아 컨테이너 파일
+  크기를 대리값으로 쓴다 — .tar(비압축)에서는 ratio가 ~1이라
+  오탐이 없고, .tar.gz에서만 의미 있는 신호가 된다.
 - RAR/7z는 미지원 (외부 도구 영역 — 7z/unar 필요).
 - '악성 여부'가 아니라 '수동 확인 필요 신호'만 출력한다.
 """
@@ -37,6 +42,28 @@ EXEC_EXTS = {".exe", ".dll", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".ja
 DOC_LIKE = {".pdf", ".doc", ".docx", ".hwp", ".hwpx", ".jpg", ".png", ".txt", ".xlsx"}
 ZIP_BOMB_RATIO = 100
 ZIP_BOMB_MIN = 1024 * 1024  # 원본이 1MB 초과인데 압축률 100배 넘으면 의심
+HASH_CAP = 64 * 1024 * 1024  # 멤버 해시 읽기 상한 — 초과 시 해시 생략
+
+
+def _hash_member(fobj, cap: int = HASH_CAP) -> tuple[bytes, str | None, bool]:
+    """멤버를 1MB 청크로 증분 해시. cap 초과 시 즉시 읽기를 중단한다.
+
+    반환: (head 32B, sha256 또는 None, 상한 초과 여부)
+    f.read() 전체 복호는 압축폭탄이 감사기 자체를 OOM으로 죽이게 하므로
+    메모리·CPU를 상한 내로 묶는다.
+    """
+    h = hashlib.sha256()
+    head = fobj.read(32)
+    h.update(head)
+    total = len(head)
+    while True:
+        chunk = fobj.read(1024 * 1024)
+        if not chunk:
+            return head, h.hexdigest(), False
+        total += len(chunk)
+        if total > cap:
+            return head, None, True
+        h.update(chunk)
 
 
 def _sig_mod():
@@ -100,17 +127,18 @@ def audit_zip(path: Path, sig) -> dict:
                 encrypted = bool(info.flag_bits & 0x1)
                 head = b""
                 sha = None
+                capped = False
                 if not encrypted:
                     try:
                         with z.open(info) as f:
-                            head = f.read(32)
-                            f.seek(0)
-                            sha = hashlib.sha256(f.read()).hexdigest()
+                            head, sha, capped = _hash_member(f)
                     except (OSError, RuntimeError, zipfile.BadZipFile):
                         pass
                 m = _audit_member(sig, info.filename, Path(info.filename).suffix.lower(),
                                   head, info.file_size, info.compress_size, encrypted)
-                if sha:
+                if capped:
+                    m["flags"].append("읽기상한(해시생략)")
+                elif sha:
                     m["sha256"] = sha
                 rec["members"].append(m)
     except (OSError, zipfile.BadZipFile) as e:
@@ -120,6 +148,9 @@ def audit_zip(path: Path, sig) -> dict:
 
 def audit_tar(path: Path, sig) -> dict:
     rec: dict = {"file": str(path), "type": "tar", "members": []}
+    # tar 헤더에는 멤버별 압축 크기가 없다 — 컨테이너 파일 크기를 대리값으로
+    # 쓴다. .tar는 비압축이라 ratio ~1(오탐 없음), .tar.gz에서 폭탄 신호가 됨.
+    container_size = path.stat().st_size or 0
     try:
         with tarfile.open(path) as t:
             for info in t.getmembers():
@@ -127,16 +158,18 @@ def audit_tar(path: Path, sig) -> dict:
                     continue
                 head = b""
                 sha = None
+                capped = False
                 try:
                     f = t.extractfile(info)
                     if f:
-                        data = f.read()
-                        head, sha = data[:32], hashlib.sha256(data).hexdigest()
+                        head, sha, capped = _hash_member(f)
                 except (OSError, tarfile.TarError):
                     pass
                 m = _audit_member(sig, info.name, Path(info.name).suffix.lower(),
-                                  head, info.size, 0, False)
-                if sha:
+                                  head, info.size, container_size, False)
+                if capped:
+                    m["flags"].append("읽기상한(해시생략)")
+                elif sha:
                     m["sha256"] = sha
                 rec["members"].append(m)
     except (OSError, tarfile.TarError) as e:

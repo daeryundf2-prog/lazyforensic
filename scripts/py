@@ -1,0 +1,12 @@
+#!/bin/sh
+# py — venv 인지 python 리졸버 (POSIX)
+# 스킬·스크립트가 `python`을 부르기 전에 이 래퍼를 거치면,
+# setup_forensic_env가 만든 ~/.lfenv 설치분을 자동으로 찾는다.
+# 우선순위: $LF_PYTHON > ~/.lfenv > 시스템 python3
+if [ -n "${LF_PYTHON:-}" ]; then
+  exec "$LF_PYTHON" "$@"
+elif [ -x "$HOME/.lfenv/bin/python" ]; then
+  exec "$HOME/.lfenv/bin/python" "$@"
+else
+  exec python3 "$@"
+fi

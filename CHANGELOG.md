@@ -2,6 +2,20 @@
 
 이 레포의 실제 변경을 기록한다. 형식은 Keep a Changelog 를 따르고, 항목은 커밋 해시로 추적한다.
 
+### Added — lazyothers 브릿지·DLP 정리·Windows CLI
+
+- `scripts/evidence_export.py`: manifest/survey JSON → lazyothers `evidence.json` (`generate_evidence_doc.py`/`bind_court_pdf.py` 호환).
+- `scripts/dlp_log_table.py`: 확보된 로그 CSV를 4축 체크리스트 표로 재배열 (탐지 아님).
+- `bin/lazyforensic.ps1`/`lazyforensic.cmd`: Windows 네이티브 CLI 래퍼.
+- `scripts/py`: `~/.lfenv` venv를 자동 해석하는 python 리졸버.
+
+### Fixed — archive_survey 압축폭탄 검증 2중 무력화
+
+- tar 계열이 `comp_size=0` 하드코딩으로 폭탄 플래그를 영구 우회하던 결함 수정 — 컨테이너 파일 크기를 대리값으로 사용.
+- 멤버 해시가 전체 복호(`f.read()`)를 선행해 폭탄이 감사기를 OOM으로 죽이던 자기-DoS 수정 — 64MB 읽기 상한 + 증분 해시, 초과 시 `읽기상한(해시생략)` 플래그.
+- `setup_korean_law.mjs`가 korean-law-mcp를 main HEAD에서 무보정 clone하던 것을 커밋 핀으로 변경 (`KOREAN_LAW_MCP_REF`로 재지정 가능).
+- `setup_forensic_env.py`의 `venv.create()` 무보호 실패를 안내 메시지 + exit 1로 변경.
+
 ### Changed — session default Gemini 3.8 Flash
 
 - Plugin description, GEMINI.md, README, and Antigravity tool mapping now treat Gemini 3.8 Flash (High) as the session default. Verify lanes still use `Model: "pro"`.

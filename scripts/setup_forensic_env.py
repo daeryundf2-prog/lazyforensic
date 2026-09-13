@@ -107,7 +107,15 @@ def main(argv: list[str] | None = None) -> int:
     packages = [pkg for g in groups for pkg in DEP_GROUPS[g][1]]
 
     print(f"venv 생성: {env_dir}")
-    venv.create(env_dir, with_pip=True)
+    try:
+        venv.create(env_dir, with_pip=True)
+    except Exception as e:
+        # python3-venv 미설치(Debian/Ubuntu)나 권한 문제에서 traceback 대신 안내
+        print(f"venv 생성 실패: {e}", file=sys.stderr)
+        print("Debian/Ubuntu: sudo apt install python3-venv", file=sys.stderr)
+        print("macOS: xcode-select --install 또는 python.org 설치본 사용",
+              file=sys.stderr)
+        return 1
     pip = env_dir / ("Scripts/pip" if sys.platform == "win32" else "bin/pip")
 
     print(f"설치: {', '.join(packages)}")

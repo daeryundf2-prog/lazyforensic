@@ -54,6 +54,8 @@ Antigravity + Gemini 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**�
 | PDF 암호·PDF 이상한지 | `python scripts/pdf_audit.py <대상>` |
 | 카톡 DB·db 파일 안에 뭐 있는지 | `python scripts/sqlite_survey.py <대상>` |
 | 여러 시각 합쳐서 타임라인 | `python scripts/merge_timeline.py --manifest/--kakao/--exif/--stt` |
+| HWPX 문서 텍스트 추출·hwp 안에 뭐 있는지 | `python scripts/extract_hwpx.py <파일|폴더>` (바이너리 .hwp는 외부 도구 영역) |
+| 신구대비·두 문서 차이 비교 | `python scripts/doc_diff.py old.txt new.txt --markdown` |
 | 서증 목록·증거설명서 초안 | `python scripts/court_evidence_sheet.py <manifest.json> --party 갑` |
 | 서증을 법원 제출 문서로·lazyothers로 넘겨줘 | `python scripts/evidence_export.py <manifest.json> -o evidence.json` → lazyothers `generate_evidence_doc.py`/`bind_court_pdf.py`가 소비 |
 | DLP 로그 정리·유출 체크리스트 표 | `python scripts/dlp_log_table.py <로그.csv>` (탐지 아님 — 확보된 로그의 재배열) |
@@ -61,6 +63,7 @@ Antigravity + Gemini 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**�
 | 다른 컴퓨터에서 환경 설치 | `python scripts/setup_forensic_env.py [--check]` |
 
 터미널 단축: `bin/lazyforensic scan|stt|pii|manifest|sig|dedup|similar|exif|kw|archive|pdf|db|vcheck|vfp|afp|osint|timeline|sheet|export|dlp|audit|setup`
+venv 인지 리졸버: 위 표의 `python` 자리에 `scripts/py`를 쓰면 `~/.lfenv` 설치분을 자동으로 찾는다 (의존성 필요 스크립트에서 유용).
 
 ## Visual
 

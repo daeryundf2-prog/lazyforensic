@@ -48,17 +48,27 @@ if (process.argv.includes("--check")) {
 
 if (!existsSync(join(pkg, "package.json"))) {
 	// korean-law-mcp lives in its own repo; clone it into place on first setup.
-	process.stdout.write("[lazyforensic] cloning korean-law-mcp …\n");
-	const clone = spawnSync(
-		"git",
-		["clone", "--depth", "1", "https://github.com/daeryundf2-prog/korean-law-mcp.git", pkg],
-		{ cwd: root, stdio: "inherit", shell: process.platform === "win32", windowsHide: true },
-	);
-	if (clone.error || clone.status !== 0) {
-		process.stderr.write(
-			"[lazyforensic] korean-law-mcp clone failed — clone https://github.com/daeryundf2-prog/korean-law-mcp into ./korean-law-mcp manually.\n",
-		);
-		process.exit(1);
+	// Pinned to a commit so installs are reproducible — bump deliberately.
+	// Override with KOREAN_LAW_MCP_REF=<sha|tag|branch> if a newer ref is wanted.
+	const KOREAN_LAW_MCP_REF = process.env.KOREAN_LAW_MCP_REF || "44ff16ec884395a3e7424ca8ff76caa081c9390c";
+	process.stdout.write(`[lazyforensic] cloning korean-law-mcp @ ${KOREAN_LAW_MCP_REF} …\n`);
+	mkdirSync(pkg, { recursive: true });
+	const steps = [
+		["init"],
+		["remote", "add", "origin", "https://github.com/daeryundf2-prog/korean-law-mcp.git"],
+		["fetch", "--depth", "1", "origin", KOREAN_LAW_MCP_REF],
+		["checkout", "--detach", "FETCH_HEAD"],
+	];
+	for (const args of steps) {
+		const res = spawnSync("git", args, {
+			cwd: pkg, stdio: "inherit", shell: process.platform === "win32", windowsHide: true,
+		});
+		if (res.error || res.status !== 0) {
+			process.stderr.write(
+				"[lazyforensic] korean-law-mcp clone failed — clone https://github.com/daeryundf2-prog/korean-law-mcp into ./korean-law-mcp manually.\n",
+			);
+			process.exit(1);
+		}
 	}
 }
 
