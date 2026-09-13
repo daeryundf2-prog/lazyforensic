@@ -50,10 +50,16 @@ def _require_pillow():
         return None
 
 
+def _pixels(img):
+    if hasattr(img, "get_flattened_data"):
+        return img.get_flattened_data()
+    return img.getdata()
+
+
 def _to_gray64(img) -> list:
     """8x8 그레이스케일 픽셀 리스트."""
     small = img.convert("L").resize((8, 8))
-    return list(small.getdata())
+    return list(_pixels(small))
 
 
 def ahash(img) -> int:
@@ -68,7 +74,7 @@ def ahash(img) -> int:
 def dhash(img) -> int:
     """인접 픽셀 밝기 비교 (9x8로 리사이즈 후 행별 비교)."""
     small = img.convert("L").resize((9, 8))
-    px = list(small.getdata())
+    px = list(_pixels(small))
     bits = 0
     for row in range(8):
         for col in range(8):
@@ -124,7 +130,7 @@ def colorhist(img) -> list[float]:
     """4x4x4 = 64bin 정규화 RGB 히스토그램. 단색 이미지 구분용 보조 신호."""
     small = img.convert("RGB").resize((16, 16))
     hist = [0.0] * 64
-    for r, g, b in small.getdata():
+    for r, g, b in _pixels(small):
         hist[(r >> 6) * 16 + (g >> 6) * 4 + (b >> 6)] += 1.0
     total = sum(hist) or 1.0
     return [v / total for v in hist]
