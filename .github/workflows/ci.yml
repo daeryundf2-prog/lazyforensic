@@ -74,6 +74,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           repository: daeryundf2-prog/korean-law-mcp
           ref: 44ff16ec884395a3e7424ca8ff76caa081c9390c  # pin: reproducible supply chain
           path: korean-law-mcp
