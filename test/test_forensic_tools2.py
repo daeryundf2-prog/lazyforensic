@@ -39,6 +39,8 @@ video_integrity = load_module("video_integrity", "scripts/video_integrity.py")
 audio_fp = load_module("audio_fingerprint", "scripts/audio_fingerprint.py")
 merge_tl = load_module("merge_timeline", "scripts/merge_timeline.py")
 evidence_sheet = load_module("court_evidence_sheet", "scripts/court_evidence_sheet.py")
+evidence_export = load_module("evidence_export", "scripts/evidence_export.py")
+dlp_table = load_module("dlp_log_table", "scripts/dlp_log_table.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -374,6 +376,73 @@ class CourtEvidenceSheetTests(unittest.TestCase):
             f = Path(tmp) / "x.json"
             f.write_text("{}", encoding="utf-8")
             self.assertEqual(evidence_sheet.main([str(f)]), 2)
+
+
+class EvidenceExportTests(unittest.TestCase):
+    def test_manifest_to_lazyothers_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ev.wav").write_text("x", encoding="utf-8")
+            m = manifest_mod.build_manifest(root)
+            mf = root / "m.json"
+            mf.write_text(json.dumps(m), encoding="utf-8")
+            out = root / "evidence.json"
+            code = evidence_export.main(
+                [str(mf), "--party", "갑", "--start", "2",
+                 "--purpose", "ev.wav=통화 입증", "-o", str(out)])
+            self.assertEqual(code, 0)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            item = data["evidence_list"][0]
+            self.assertEqual(item["label"], "갑 제2호증")
+            self.assertEqual(item["title"], "ev.wav")
+            self.assertEqual(item["purpose"], "통화 입증")
+            self.assertTrue(item["sha256"])
+            self.assertTrue(Path(item["file"]).is_absolute())
+
+    def test_unprovided_purpose_stays_blank(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            survey = {"steps": {"manifest": {"result": {"files": [
+                {"path": "a.txt", "sha256": "ab", "size": 1,
+                 "mtime": "2026-01-01T00:00:00+09:00"}]}}}}
+            f = Path(tmp) / "s.json"
+            f.write_text(json.dumps(survey), encoding="utf-8")
+            code = evidence_export.main([str(f)])
+            self.assertEqual(code, 0)
+
+
+class DlpLogTableTests(unittest.TestCase):
+    def test_csv_to_grouped_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "logs.csv"
+            csv_path.write_text(
+                "timestamp,action,agent,phase\n"
+                "2026-09-01 11:00,usb mount,syslog,반출\n"
+                "2026-09-01 10:00,webhard login,dlp,검색/준비\n",
+                encoding="utf-8")
+            out = Path(tmp) / "t.md"
+            code = dlp_table.main([str(csv_path), "-o", str(out)])
+            self.assertEqual(code, 0)
+            md = out.read_text(encoding="utf-8")
+            self.assertIn("## 검색/준비", md)
+            self.assertIn("## 반출", md)
+            self.assertIn("탐지 아님", md)
+            self.assertLess(md.index("webhard login"), md.index("usb mount"))
+
+    def test_empty_csv_exit_3(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "empty.csv"
+            csv_path.write_text("a,b\n", encoding="utf-8")
+            self.assertEqual(dlp_table.main([str(csv_path)]), 3)
+
+    def test_missing_file_exit_2(self):
+        self.assertEqual(dlp_table.main(["/nonexistent/x.csv"]), 2)
+
+    def test_bad_col_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "l.csv"
+            csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
+            self.assertEqual(
+                dlp_table.main([str(csv_path), "--time-col", "nope"]), 2)
 
 
 class SetupEnvTests(unittest.TestCase):

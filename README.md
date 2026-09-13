@@ -136,7 +136,9 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 오디오 내용 지문·유사 쌍 | 🟡 BYO | `python scripts/audio_fingerprint.py <폴더>` — fpcalc(chromaprint) 필요, 재인코딩된 같은 녹음도 지문 유사도로 탐지 |
 | 다중 소스 타임라인 병합 | ✅ | `python scripts/merge_timeline.py --manifest m.json --kakao k.json --exif e.json [--stt t.json --anchor "파일=시각"]` → `events.json` (STT 상대시각은 --anchor 없이 벽시계로 올리지 않음) |
 | 서증 목록표 초안 | ✅ | `python scripts/court_evidence_sheet.py <manifest.json> --party 갑` — 관행 양식 **초안**(제출 전 검토 필수), 입증취지는 `--purpose` 지정분만 기재 |
-| CLI 래퍼 | ✅ | `bin/lazyforensic scan\|stt\|pii\|manifest\|timeline\|sheet ...` — `bin/`을 PATH에 추가 |
+| lazyothers 증거 JSON보내기 | ✅ | `python scripts/evidence_export.py <manifest.json> -o evidence.json` — lazyothers `generate_evidence_doc.py`/`bind_court_pdf.py`가 그대로 소비하는 형식 (scan→서증→표찰·병합 파이프라인) |
+| DLP 로그 체크리스트 정리 | ✅ | `python scripts/dlp_log_table.py <로그.csv>` — 확보된 로그의 시간순·4축 재배열. **탐지 아님** — 없는 로그는 만들지 않음 |
+| CLI 래퍼 | ✅ | `bin/lazyforensic scan\|stt\|pii\|manifest\|timeline\|sheet\|export\|dlp ...` — `bin/`을 PATH에 추가 |
 | 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |

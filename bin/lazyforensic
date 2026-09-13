@@ -37,6 +37,8 @@ lazyforensic — 증거 선조사 CLI 래퍼 (로컬 전용)
   lazyforensic osint <닉네임>         sherlock OSINT (외부 쿼리 — 동의 필요)
   lazyforensic timeline --manifest m.json ...   다중 소스 시각 병합
   lazyforensic sheet <manifest.json> [--party 갑] 서증 목록표 초안
+  lazyforensic export <manifest.json> -o e.json   lazyothers evidence.json 변환
+  lazyforensic dlp <로그.csv>          DLP 로그 → 체크리스트 표 (탐지 아님, 정리)
   lazyforensic audit                  외부 반출 경로 정적 감사
   lazyforensic setup [--check]        선택 의존성 환경 설치/진단
 EOF
@@ -64,6 +66,8 @@ case "$cmd" in
   osint)     exec "$PY" "$ROOT/scripts/osint_username.py" "$@" ;;
   timeline)  exec "$PY" "$ROOT/scripts/merge_timeline.py" "$@" ;;
   sheet)     exec "$PY" "$ROOT/scripts/court_evidence_sheet.py" "$@" ;;
+  export)    exec "$PY" "$ROOT/scripts/evidence_export.py" "$@" ;;
+  dlp)       exec "$PY" "$ROOT/scripts/dlp_log_table.py" "$@" ;;
   audit)     exec "$PY" "$ROOT/scripts/local_only_audit.py" "$@" ;;
   setup)     exec "$PY" "$ROOT/scripts/setup_forensic_env.py" "$@" ;;
   -h|--help|help) usage ;;
