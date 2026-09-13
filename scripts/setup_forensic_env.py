@@ -44,7 +44,21 @@ DEP_GROUPS = {
 BINARY_HINTS = {
     "ffmpeg": {"darwin": "brew install ffmpeg", "win32": "winget install Gyan.FFmpeg",
                "linux": "apt install ffmpeg"},
+    "fpcalc": {"darwin": "brew install chromaprint", "win32": "winget install chromaprint",
+               "linux": "apt install libchromaprint-tools"},
     "sherlock": {"any": "pip install sherlock-project (또는 이 스크립트의 osint 그룹)"},
+    "whisper-cli": {"any": "github.com/ggml-org/whisper.cpp 빌드"},
+    "transcribe-cli": {"any": "github.com/igitenv/transcribe.cpp 빌드"},
+}
+
+# 바이너리 → 활성화되는 스크립트
+BINARY_FEATURES = {
+    "ffmpeg": ["video_fingerprint.py", "video_integrity.py", "audio_survey.py(비WAV)"],
+    "ffprobe": ["video_integrity.py", "audio_survey.py(비WAV)"],
+    "fpcalc": ["audio_fingerprint.py"],
+    "whisper-cli": ["local_stt.py(whisper.cpp 엔진)"],
+    "transcribe-cli": ["local_stt.py(transcribe.cpp 엔진)"],
+    "sherlock": ["osint_username.py"],
 }
 
 
@@ -55,7 +69,8 @@ def check_environment() -> dict:
                  "kiwipiepy", "dissect"):
         mods[name] = importlib.util.find_spec(name) is not None
     bins = {b: bool(shutil.which(b))
-            for b in ("ffmpeg", "ffprobe", "whisper-cli", "sherlock")}
+            for b in ("ffmpeg", "ffprobe", "fpcalc", "whisper-cli",
+                      "transcribe-cli", "sherlock")}
     return {"python": sys.version.split()[0], "modules": mods, "binaries": bins}
 
 
@@ -64,7 +79,9 @@ def print_check(info: dict) -> None:
     for name, ok in info["modules"].items():
         print(f"  {'✅' if ok else '❌'} module {name}")
     for name, ok in info["binaries"].items():
-        print(f"  {'✅' if ok else '❌'} binary {name}")
+        feats = ", ".join(BINARY_FEATURES.get(name, []))
+        tail = f"  → {feats}" if feats else ""
+        print(f"  {'✅' if ok else '❌'} binary {name}{tail}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -102,15 +119,17 @@ def main(argv: list[str] | None = None) -> int:
 
     py = env_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     print(f"\n완료. 이 python으로 실행하세요:\n  {py} scripts/local_stt.py ...")
+    print("참고: bin/lazyforensic은 ~/.lfenv/bin/python을 자동으로 우선 사용합니다.")
 
     # 시스템 바이너리 안내
-    missing = [b for b in ("ffmpeg", "ffprobe") if not shutil.which(b)]
+    missing = [b for b in BINARY_HINTS if not shutil.which(b)]
     if missing:
         print("\n시스템 바이너리가 없습니다 (수동 설치 필요):")
         for b in missing:
             hint = BINARY_HINTS.get(b, {}).get(sys.platform) or \
                 BINARY_HINTS.get(b, {}).get("any", "")
-            print(f"  {b}: {hint}")
+            feats = ", ".join(BINARY_FEATURES.get(b, []))
+            print(f"  {b}: {hint}" + (f"   → 활성화: {feats}" if feats else ""))
     return 0
 
 

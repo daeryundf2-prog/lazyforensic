@@ -6,7 +6,14 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PY="${PY:-python3}"
+# 우선순위: $LF_PYTHON > setup_forensic_env.py가 만든 ~/.lfenv venv > 시스템 python3
+if [ -n "${LF_PYTHON:-}" ]; then
+  PY="$LF_PYTHON"
+elif [ -x "$HOME/.lfenv/bin/python" ]; then
+  PY="$HOME/.lfenv/bin/python"
+else
+  PY="${PY:-python3}"
+fi
 
 usage() {
   cat <<EOF

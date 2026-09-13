@@ -43,6 +43,20 @@ git clone https://github.com/daeryundf2-prog/lazyforensic && cd lazyforensic
 python -m pytest test/ -v   # 권장: 173개 테스트 (수 초). pytest 없으면 python -m unittest discover -s test (147개)
 ```
 
+### C. 다른 컴퓨터에서 한 방 세팅 (선택 의존성 포함)
+
+```bash
+git clone https://github.com/daeryundf2-prog/lazyforensic.git
+cd lazyforensic && sh bootstrap.sh        # Windows는 scripts/setup_forensic_env.ps1
+export PATH="$PWD/bin:$PATH"              # 셸 설정에 추가하면 영구 적용
+```
+
+`bootstrap.sh`가 하는 일: python3 확인 → `~/.lfenv` 가상환경 생성 → 선택 의존성
+(pillow·faster-whisper·sherlock·kiwipiepy) 설치 → 없는 시스템 바이너리
+(ffmpeg·fpcalc·whisper-cli 등)의 플랫폼별 설치 명령 안내.
+`bin/lazyforensic`은 `~/.lfenv/bin/python`을 자동으로 우선 사용하므로 별도 활성화가
+없다. 진단만 하려면 `sh bootstrap.sh --check`.
+
 ## 법령 조회 (선택 — 한국법 MCP)
 
 법령·판례 인용 검증용 MCP 서버가 번들되어 있다. **키가 없으면 서버가 조용히 비활성**되고
