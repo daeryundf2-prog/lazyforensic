@@ -566,10 +566,12 @@ class SqliteSurveyTests(unittest.TestCase):
             self.assertIn("error", r)
 
     def test_special_chars_in_filename(self):
-        # 파일명의 ?·#·공백이 file: URI 파싱을 깨지 않아야 한다
+        # 파일명의 특수문자(?·#·공백)가 file: URI 파싱을 깨지 않아야 한다 (Windows에서는 ?가 파일명에 금지됨)
+        import os
         import sqlite3
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "case #1 (원본?).db"
+            fname = "case #1 (원본#특수).db" if os.name == "nt" else "case #1 (원본?).db"
+            db = Path(tmp) / fname
             conn = sqlite3.connect(db)
             conn.execute("CREATE TABLE t (a INTEGER)")
             conn.execute("INSERT INTO t VALUES (1)")

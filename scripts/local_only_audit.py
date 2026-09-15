@@ -65,7 +65,7 @@ def load_allowlist(root: Path, explicit: str | None) -> set[tuple[str, str]]:
             continue
         parts = line.split()
         if len(parts) >= 2:
-            entries.add((parts[0], parts[1]))
+            entries.add((Path(parts[0]).as_posix(), parts[1]))
     return entries
 
 
@@ -77,7 +77,7 @@ def scan_file(path: Path, base: Path, allowlist: set[tuple[str, str]]) -> list[d
     findings = []
     file_text = "\n".join(lines)
     gated = bool(GATE_HINTS.search(file_text))
-    rel = str(path.relative_to(base))
+    rel = Path(path.relative_to(base)).as_posix()
     for i, line in enumerate(lines, 1):
         for pattern, kind in EGRESS_PATTERNS:
             if pattern.search(line):
