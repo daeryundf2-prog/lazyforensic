@@ -1,7 +1,14 @@
 # LazyForensic (v1.0.1)
 
-Google Antigravity + Gemini 3.8 Flash 용 **디지털 포렌식 보조** 플러그인.
-증거 텍스트 파싱 → 타임라인 렌더 → 해시 감사 → 보고서 초안 → **초안 검증**까지의 반복 노동을 줄여 준다.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Node 18+](https://img.shields.io/badge/Node-18%2B-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Integrity: Fail-Closed](https://img.shields.io/badge/Integrity-Fail--Closed-red.svg?style=flat-square)](docs/GAPS.md)
+
+> **Fail-Closed Digital Forensic Analysis Toolkit & Evidentiary Integrity Pipeline**  
+> Streamlining evidence parsing, timeline reconstruction, SHA-256 chain-of-custody verification, and forensic report generation for developers, researchers, and legal tech practitioners.
+
+디지털 증거 파싱 → 타임라인 렌더 → 해시 감사(SHA-256) → 보고서 초안 생성 → **초안 무결성 검증**까지의 전 과정을 자동화하고 휴먼 에러를 방지하는 오픈소스 디지털 포렌식 분석 스위트입니다.
 
 > ⚠️ **이 도구가 아닌 것**: 증거 획득 도구도, 법원 제출 적격성을 보장하는 스위트도 아니다
 > (**not a forensic acquisition or court-admissibility suite**). 판단과 획득은 별도 검증된
