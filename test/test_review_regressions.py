@@ -139,7 +139,10 @@ class RegressionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             receipt.resolve_source(outside, child)
         link = child / "reference.txt"
-        link.symlink_to(outside)
+        try:
+            link.symlink_to(outside)
+        except OSError as exc:
+            self.skipTest(f"symlink creation unavailable: {exc}")
         with self.assertRaises(ValueError):
             receipt.resolve_source(link, child)
 
@@ -177,7 +180,7 @@ class RegressionTests(unittest.TestCase):
             "path": source.name, "sha256": receipt.sha256_file(source), "mtime": "", "size": source.stat().st_size}]}).encode())
         out = self.root / "out.json"
         self.assertEqual(export.main([str(manifest), "-o", str(out)]), 0)
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text(encoding="utf-8"))
         item = data["evidence_list"][0]
         self.assertEqual(item["file_path"], str(source))
         self.assertEqual(item["provenance"]["status"], "verified")
@@ -189,7 +192,7 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(receipt.validate_payload(data), [])
         source.write_bytes(b"updated synthetic source")
         self.assertEqual(export.main([str(manifest), "-o", str(out)]), 1)
-        self.assertEqual(json.loads(out.read_text())["processing_receipt"]["status"], "partial")
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["processing_receipt"]["status"], "partial")
         self.assertEqual(export.main([str(manifest), "-o", str(source)]), 2)
         self.assertEqual(source.read_bytes(), b"updated synthetic source")
 
@@ -215,7 +218,7 @@ class RegressionTests(unittest.TestCase):
         bundle = self.source("bundle.js", b"local bundle placeholder")
         output = self.root / "render.html"
         renderer.render_infographic_html("plain synthetic DSL", str(output), str(bundle), "A & B")
-        self.assertIn("A &amp; B", output.read_text())
+        self.assertIn("A &amp; B", output.read_text(encoding="utf-8"))
 
     def test_decode_timeout_is_structured(self):
         source = self.source("synthetic.mp4")
@@ -280,6 +283,8 @@ class RegressionTests(unittest.TestCase):
             actual = {(p["a"], p["b"]) for p in images.find_pairs(records, threshold)}
             self.assertEqual(actual, expected, threshold)
 
+    @unittest.skipIf(sys.platform == "win32",
+                     "bin/lazyforensic is a POSIX shell script; symlink + exec requires POSIX")
     def test_symlink_launcher(self):
         link = self.root / "launcher"
         link.symlink_to(ROOT / "bin/lazyforensic")

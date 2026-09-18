@@ -33,7 +33,10 @@ def sha256_file(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
         after = os.fstat(stream.fileno())
-    identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    def identity(s):
+        fields = (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns)
+        # NTFS reports a different st_ctime_ns via fstat() vs stat() on an unchanged file
+        return fields if os.name == "nt" else fields + (s.st_ctime_ns,)
     if identity(before) != identity(after) or identity(after) != identity(Path(path).stat()):
         raise OSError("Source changed while hashing")
     return digest.hexdigest()
