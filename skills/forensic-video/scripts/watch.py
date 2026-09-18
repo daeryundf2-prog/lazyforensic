@@ -187,9 +187,10 @@ def main() -> int:
     print(f"# 동영상 분석 보고서: {title}\n")
     if meta:
         print("### [영상 메타데이터]")
-        print(f"- 재생 시간: {format_time(meta.get('duration', 0.0))} ({meta.get('duration', 0.0):.1f}초)")
-        print(f"- 해상도: {meta.get('width', 0)} x {meta.get('height', 0)}")
-        print(f"- FPS: {meta.get('fps', 0):.2f}")
+        duration = meta.get("duration")
+        print(f"- 재생 시간: {format_time(duration) if duration is not None else '미측정'}")
+        print(f"- 해상도: {meta.get('width') or '미측정'} x {meta.get('height') or '미측정'}")
+        print(f"- FPS: {meta.get('fps') if meta.get('fps') is not None else '미측정'}")
         print(f"- 코덱: {meta.get('codec', 'unknown')}\n")
 
     if frames:

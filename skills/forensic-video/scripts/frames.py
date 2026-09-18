@@ -82,9 +82,11 @@ def parse_timestamps(raw: str | None) -> list[float]:
 
 
 def get_metadata(video_path: str) -> dict:
+    """ffprobe가 실제로 읽은 값만 반환한다. 결측은 지어내지 않고 None으로 보고한다."""
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
-        return {"duration": 0.0, "width": 1280, "height": 720, "fps": 30.0}
+        return {"available": False, "duration": None, "width": None, "height": None,
+                "fps": None, "error": "ffprobe not found"}
 
     cmd = [
         ffprobe,
@@ -96,22 +98,31 @@ def get_metadata(video_path: str) -> dict:
     try:
         out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
         data = json.loads(out)
-    except Exception:
-        return {"duration": 0.0, "width": 1280, "height": 720, "fps": 30.0}
+    except Exception as e:  # noqa: BLE001 — 손상 영상은 '읽기 실패'로 보고
+        return {"available": False, "duration": None, "width": None, "height": None,
+                "fps": None, "error": str(e)[:200]}
 
-    duration = float(data.get("format", {}).get("duration", 0.0))
+    duration = data.get("format", {}).get("duration")
+    try:
+        duration = float(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration = None
     streams = data.get("streams", [])
     video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
-    width = int(video_stream.get("width", 1280))
-    height = int(video_stream.get("height", 720))
-    r_fps = video_stream.get("r_frame_rate", "30/1")
-    try:
-        num, den = r_fps.split("/")
-        fps = float(num) / float(den) if float(den) != 0 else 30.0
-    except Exception:
-        fps = 30.0
+    width = video_stream.get("width")
+    height = video_stream.get("height")
+    r_fps = video_stream.get("r_frame_rate")
+    fps = None
+    if isinstance(r_fps, str) and "/" in r_fps:
+        num, den = r_fps.split("/", 1)
+        try:
+            den_f = float(den)
+            fps = float(num) / den_f if den_f != 0 else None
+        except (TypeError, ValueError):
+            fps = None
 
     return {
+        "available": True,
         "duration": duration,
         "width": width,
         "height": height,
@@ -153,7 +164,11 @@ def extract_scene_or_uniform(
     dur = meta["duration"]
     start_sec = start if start is not None else 0.0
     end_sec = end if end is not None else dur
-    clip_dur = max(0.1, end_sec - start_sec)
+    if end_sec is None:
+        raise SystemExit("Video duration unknown; supply an explicit end time")
+    if end_sec <= start_sec or max_frames <= 0:
+        raise SystemExit("Invalid extraction range or frame limit")
+    clip_dur = end_sec - start_sec
 
     out_dir.mkdir(parents=True, exist_ok=True)
 

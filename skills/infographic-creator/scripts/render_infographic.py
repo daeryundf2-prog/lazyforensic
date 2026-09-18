@@ -141,13 +141,13 @@ def render_infographic_html(
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
     )
-    html = HTML_TEMPLATE.format(
+    html_text = HTML_TEMPLATE.format(
         title=html.escape(title, quote=True),
         script_src=html.escape(validate_script_source(script_source), quote=True),
         dsl_escaped=dsl_escaped,
     )
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_text)
     return output_path
 
 
