@@ -7,7 +7,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from court_evidence_sheet import build_rows, load_files
-from processing_receipt import TOOL_VERSION, build_receipt, resolve_source, sha256_file, utc_now_iso
+from processing_receipt import (RECEIPT_SCHEMA_VERSION, TOOL_VERSION, build_receipt,
+                                resolve_source, sha256_file, utc_now_iso, validate_receipt)
+
+ITEM_STATUS = {"verified": "complete", "mismatch": "complete", "unavailable": "failed"}
 
 
 def resolve_manifest_root(src, data):
@@ -23,7 +26,8 @@ def resolve_evidence_path(raw, root):
     return resolve_source(raw, root)
 
 
-def to_evidence_json(rows, root=None):
+def to_evidence_json(rows, root=None, *, case_id=None, id_base=None, started_at=None):
+    started_at = started_at or utc_now_iso()
     items = []
     for row in rows:
         claimed = row.get("sha256", "")
@@ -45,12 +49,39 @@ def to_evidence_json(rows, root=None):
             except (ValueError, OSError) as exc:
                 status = "unavailable"
                 warnings.append(str(exc))
+        evidence_id = f"{id_base}-{row['no']}" if id_base else None
+        receipt_status = ITEM_STATUS.get(status, "not_measured")
+        if status in ("verified", "mismatch"):
+            item_receipt = build_receipt(
+                evidence_id or str(raw), "evidence_export", TOOL_VERSION, resolved,
+                source_base=root, started_at=started_at, case_id=case_id,
+                status=receipt_status, exit_code=0,
+                parameters={"label": row["no"]}, warnings=warnings,
+                limitations=["Receipt records measurement of this evidence file only"])
+        else:
+            item_receipt = {
+                "schema_version": RECEIPT_SCHEMA_VERSION, "case_id": case_id,
+                "evidence_id": evidence_id or str(raw), "status": receipt_status,
+                "source": {"path": path, "sha256": None}, "artifacts": [],
+                "tool": {"name": "evidence_export", "version": TOOL_VERSION},
+                "parameters": {"label": row["no"]},
+                "started_at": started_at, "finished_at": utc_now_iso(),
+                "exit_code": None if receipt_status == "not_measured" else 1,
+                "warnings": list(warnings),
+                "limitations": ["Receipt records measurement of this evidence file only",
+                                "Processing record, not an independent custody certificate"],
+                "review": {"status": "pending", "reviewer": None, "reviewed_at": None}}
+            errors = validate_receipt(item_receipt)
+            if errors:
+                raise ValueError("; ".join(errors))
         items.append({
-            "label": row["no"], "title": row["name"], "file": path,
+            "label": row["no"], "title": row["name"], "file_path": path, "file": path,
+            "evidence_id": evidence_id,
             "author": "작성자불상", "date": (row.get("mtime") or "")[:10],
             "date_basis": "filesystem_mtime_not_authorship", "purpose": row["purpose"],
-            "sha256": claimed, "verified_sha256": measured,
+            "claimed_sha256": claimed, "sha256": measured, "verified_sha256": measured,
             "provenance": {"status": status, "warnings": warnings},
+            "processing_receipt": item_receipt,
         })
     return {"evidence_list": items}
 
@@ -66,9 +97,6 @@ def main(argv=None):
     ap.add_argument("-o", "--output")
     ap.add_argument("--case-id")
     ap.add_argument("--evidence-id")
-    ap.add_argument("--review-status", choices=["pending", "approved"], default="pending")
-    ap.add_argument("--reviewer")
-    ap.add_argument("--reviewed-at")
     args = ap.parse_args(argv)
     try:
         src = Path(args.input).resolve(strict=True)
@@ -84,7 +112,9 @@ def main(argv=None):
             name, purpose = value.split("=", 1)
             purposes[name.strip()] = purpose.strip()
         rows = build_rows(load_files(src), args.party, args.start, purposes)
-        payload = to_evidence_json(rows, root)
+        id_base = args.evidence_id or src.stem
+        payload = to_evidence_json(rows, root, case_id=args.case_id,
+                                   id_base=id_base, started_at=started)
         issues = [item for item in payload["evidence_list"] if item["provenance"]["status"] != "verified"]
         code = int(any(i["provenance"]["status"] in ("mismatch", "unavailable") for i in issues))
         warnings = [f"{i['label']}: {w}" for i in issues for w in i["provenance"]["warnings"]]
@@ -95,11 +125,10 @@ def main(argv=None):
             parameters={"party": args.party, "start": args.start, "root": str(root) if root else None},
             warnings=warnings, limitations=["Date is recorded mtime, not authorship",
                 "Embedded receipt omits enclosing JSON self-hash; artifacts is empty",
-                "Evidence identifiers default to source path when not explicitly supplied"],
-            review_status=args.review_status, reviewer=args.reviewer, reviewed_at=args.reviewed_at)
-        if receipt["processing_receipt"]["source"]["sha256"] != initial_hash:
+                "Evidence identifiers default to manifest stem when not explicitly supplied"])
+        if receipt["source"]["sha256"] != initial_hash:
             raise ValueError("Manifest changed during export")
-        payload.update(receipt)
+        payload["processing_receipt"] = receipt
         text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         if args.output:
             output = Path(args.output).resolve()

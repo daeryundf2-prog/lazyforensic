@@ -7,9 +7,10 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-TOOL_VERSION = "1.0.3"
+TOOL_VERSION = "1.1.0"
 RECEIPT_SCHEMA_VERSION = "1.0"
 STATUSES = ("complete", "partial", "failed", "not_measured")
+SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
 
 
 def utc_now_iso():
@@ -46,100 +47,134 @@ def sha256_file_if_readable(path):
 
 
 def _utc(value):
-    if not isinstance(value, str) or not value.endswith(("Z", "+00:00")):
+    if not isinstance(value, str):
+        raise ValueError("Expected ISO timestamp")
+    date = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if date.utcoffset() is None or date.utcoffset().total_seconds() != 0:
         raise ValueError("Expected UTC ISO timestamp")
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return date
 
 
-def validate_receipt(payload):
-    if not isinstance(payload, dict) or not isinstance(payload.get("processing_receipt"), dict):
+def _entry(value, nullable):
+    return (isinstance(value, dict) and isinstance(value.get("path"), str)
+            and bool(value["path"]) and "sha256" in value
+            and ((nullable and value["sha256"] is None)
+                 or (isinstance(value["sha256"], str)
+                     and SHA256_RE.fullmatch(value["sha256"]) is not None)))
+
+
+def validate_receipt(receipt):
+    """Validate an inner processing_receipt object. See docs/processing-receipt-contract.md."""
+    if not isinstance(receipt, dict):
         return ["processing_receipt must be an object"]
-    r = payload["processing_receipt"]
     required = {"schema_version", "case_id", "evidence_id", "status", "source", "artifacts",
-                "tool", "parameters", "started_at", "finished_at", "exit_code", "warnings", "limitations", "review"}
-    if not required.issubset(r):
-        return ["Missing fields: " + ", ".join(sorted(required - r.keys()))]
-    errors = []
-    if r["schema_version"] != "1.0":
+                "tool", "parameters", "started_at", "finished_at", "exit_code",
+                "warnings", "limitations", "review"}
+    errors = ["Missing " + k for k in sorted(required - receipt.keys())]
+    if receipt.get("schema_version") != RECEIPT_SCHEMA_VERSION:
         errors.append("Invalid schema_version")
-    if r["case_id"] is not None and not isinstance(r["case_id"], str):
+    if receipt.get("case_id") is not None and not isinstance(receipt["case_id"], str):
         errors.append("Invalid case_id")
-    if not isinstance(r["evidence_id"], str) or not r["evidence_id"].strip():
+    if not isinstance(receipt.get("evidence_id"), str) or not receipt["evidence_id"].strip():
         errors.append("Invalid evidence_id")
-    if r["status"] not in STATUSES:
+    status = receipt.get("status")
+    if status not in STATUSES:
         errors.append("Invalid status")
-    def entry(value, nullable):
-        return (isinstance(value, dict) and isinstance(value.get("path"), str)
-                and bool(value["path"]) and "sha256" in value
-                and ((nullable and value["sha256"] is None)
-                     or (isinstance(value["sha256"], str)
-                         and re.fullmatch(r"[0-9a-f]{64}", value["sha256"]) is not None)))
-    if not entry(r["source"], True):
+    if not _entry(receipt.get("source"), True):
         errors.append("Invalid source")
-    if not isinstance(r["artifacts"], list) or not all(entry(a, False) for a in r["artifacts"]):
+    artifacts = receipt.get("artifacts")
+    if not isinstance(artifacts, list) or not all(_entry(a, False) for a in artifacts):
         errors.append("Invalid artifacts")
-    if not isinstance(r["tool"], dict) or not all(isinstance(r["tool"].get(k), str) and r["tool"][k].strip() for k in ("name", "version")):
+    tool = receipt.get("tool")
+    if not isinstance(tool, dict) or not all(
+            isinstance(tool.get(k), str) and tool[k].strip() for k in ("name", "version")):
         errors.append("Invalid tool")
-    if not isinstance(r["parameters"], dict):
+    if not isinstance(receipt.get("parameters"), dict):
         errors.append("Invalid parameters")
-    try:
-        if _utc(r["finished_at"]) < _utc(r["started_at"]):
-            errors.append("finished_at precedes started_at")
-    except (ValueError, TypeError):
-        errors.append("Invalid processing timestamps")
-    if r["exit_code"] is not None and type(r["exit_code"]) is not int:
+    code = receipt.get("exit_code")
+    if code is not None and type(code) is not int:
         errors.append("Invalid exit_code")
     for key in ("warnings", "limitations"):
-        if not isinstance(r[key], list) or not all(isinstance(v, str) for v in r[key]):
+        if not isinstance(receipt.get(key), list) or not all(isinstance(v, str) for v in receipt[key]):
             errors.append("Invalid " + key)
-    review = r["review"]
-    if not isinstance(review, dict) or not {"status", "reviewer", "reviewed_at"}.issubset(review):
+    dates = {}
+    timestamps_nullable = status == "not_measured"
+    for key in ("started_at", "finished_at"):
+        value = receipt.get(key)
+        if value is None:
+            if not timestamps_nullable:
+                errors.append("Missing " + key)
+            continue
+        try:
+            dates[key] = _utc(value)
+        except (ValueError, TypeError):
+            errors.append("Invalid " + key)
+    if "started_at" in dates and "finished_at" in dates and dates["finished_at"] < dates["started_at"]:
+        errors.append("finished_at precedes started_at")
+    review = receipt.get("review")
+    if not isinstance(review, dict):
         errors.append("Invalid review")
+        review = {}
+    if review.get("status") not in ("pending", "approved"):
+        errors.append("Invalid review status")
     elif review["status"] == "approved":
-        if not isinstance(review["reviewer"], str) or not review["reviewer"].strip():
+        if not isinstance(review.get("reviewer"), str) or not review["reviewer"].strip():
             errors.append("Approval requires reviewer")
         try:
-            _utc(review["reviewed_at"])
+            dates["reviewed_at"] = _utc(review.get("reviewed_at"))
         except (ValueError, TypeError):
             errors.append("Approval requires UTC reviewed_at")
-    elif review["status"] != "pending" or review["reviewer"] is not None or review["reviewed_at"] is not None:
+    elif review.get("reviewer") is not None or review.get("reviewed_at") is not None:
         errors.append("Invalid pending review")
+    if "reviewed_at" in dates and "finished_at" in dates and dates["reviewed_at"] < dates["finished_at"]:
+        errors.append("Review precedes completion")
+    source = receipt.get("source")
+    if status == "complete" and (code != 0 or not isinstance(source, dict) or not source.get("sha256")):
+        errors.append("Complete receipt requires measured source and zero exit_code")
     try:
-        json.dumps(r, allow_nan=False)
+        json.dumps(receipt, allow_nan=False)
     except (ValueError, TypeError):
         errors.append("Receipt must be JSON serializable without nonfinite values")
     return errors
 
 
+def validate_payload(payload):
+    """Validate a wrapped {"processing_receipt": ...} payload at the input boundary."""
+    if not isinstance(payload, dict) or "processing_receipt" not in payload:
+        return ["processing_receipt must be an object"]
+    return validate_receipt(payload["processing_receipt"])
+
+
 def build_receipt(evidence_id, tool_name, tool_version, source, *, source_base,
                   started_at, status="not_measured", artifacts=(), case_id=None,
                   parameters=None, finished_at=None, exit_code=None, warnings=(),
-                  limitations=(), review_status="pending", reviewer=None, reviewed_at=None):
+                  limitations=()):
     path = resolve_source(source, source_base)
     messages = list(warnings)
     digest = sha256_file_if_readable(path) if path.is_file() else None
     if digest is None:
         messages.append("Source SHA-256 not measured")
-        if status == "complete" and path.is_file():
+        if status == "complete":
             status = "partial"
     artifact_entries = [{"path": str(Path(a).resolve(strict=True)), "sha256": sha256_file(a)} for a in artifacts]
-    payload = {"processing_receipt": {
-        "schema_version": "1.0", "case_id": case_id, "evidence_id": evidence_id,
-        "status": status, "source": {"path": str(path), "sha256": digest},
+    receipt = {
+        "schema_version": RECEIPT_SCHEMA_VERSION, "case_id": case_id,
+        "evidence_id": evidence_id, "status": status,
+        "source": {"path": str(path), "sha256": digest},
         "artifacts": artifact_entries, "tool": {"name": tool_name, "version": tool_version},
         "parameters": {} if parameters is None else parameters,
         "started_at": started_at, "finished_at": finished_at or utc_now_iso(),
         "exit_code": exit_code, "warnings": messages,
         "limitations": list(limitations) + ["Processing record, not an independent custody certificate"],
-        "review": {"status": review_status, "reviewer": reviewer, "reviewed_at": reviewed_at}}}
-    errors = validate_receipt(payload)
+        "review": {"status": "pending", "reviewer": None, "reviewed_at": None}}
+    errors = validate_receipt(receipt)
     if errors:
         raise ValueError("; ".join(errors))
-    return payload
+    return receipt
 
 
 def attach_receipt(payload, receipt):
     errors = validate_receipt(receipt)
     if errors:
         raise ValueError("; ".join(errors))
-    return {**payload, "processing_receipt": receipt["processing_receipt"]}
+    return {**payload, "processing_receipt": receipt}

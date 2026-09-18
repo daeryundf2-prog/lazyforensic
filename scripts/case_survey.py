@@ -275,7 +275,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     warnings = [f"Incomplete stage: {name}" for name, stage in report["steps"].items()
                 if incomplete(stage)]
-    report.update(build_receipt(
+    report["processing_receipt"] = build_receipt(
         evidence_id or str(root), "case_survey", TOOL_VERSION, root,
         source_base=root, started_at=started, case_id=case_id,
         status="partial" if warnings else "complete", exit_code=None,
@@ -283,7 +283,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         limitations=["Directory source has no single-file SHA-256; use manifest entries",
                      "Stages are independent reads, not an atomic acquisition snapshot",
                      "Embedded receipt does not hash its enclosing JSON"],
-    ))
+    )
     return report
 
 

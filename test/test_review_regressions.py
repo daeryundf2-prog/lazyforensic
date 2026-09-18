@@ -56,37 +56,75 @@ class RegressionTests(unittest.TestCase):
     def test_receipt_contract_and_artifact_hash(self):
         source = self.source()
         artifact = self.source("artifact.txt", b"derived")
-        payload = receipt.build_receipt("E1", "test", receipt.TOOL_VERSION, source,
+        result = receipt.build_receipt("E1", "test", receipt.TOOL_VERSION, source,
             source_base=self.root, started_at=receipt.utc_now_iso(), artifacts=[artifact])
-        self.assertEqual(receipt.validate_receipt(payload), [])
-        r = payload["processing_receipt"]
-        self.assertEqual(r["artifacts"][0]["sha256"], hashlib.sha256(b"derived").hexdigest())
-        self.assertEqual(r["review"], {"status": "pending", "reviewer": None, "reviewed_at": None})
-        self.assertIsNone(r["case_id"])
-        self.assertEqual(r["status"], "not_measured")
+        self.assertEqual(receipt.validate_receipt(result), [])
+        self.assertEqual(result["artifacts"][0]["sha256"], hashlib.sha256(b"derived").hexdigest())
+        self.assertEqual(result["review"], {"status": "pending", "reviewer": None, "reviewed_at": None})
+        self.assertIsNone(result["case_id"])
+        self.assertEqual(result["status"], "not_measured")
 
     def test_receipt_validation_bad_types_never_crashes(self):
         source = self.source()
         base = receipt.build_receipt("E1", "test", "1", source,
             source_base=self.root, started_at=receipt.utc_now_iso())
-        for key in base["processing_receipt"]:
+        for key in base:
             changed = copy.deepcopy(base)
-            del changed["processing_receipt"][key]
+            del changed[key]
             self.assertTrue(receipt.validate_receipt(changed), key)
         for key, value in (("status", 5), ("source", "bad"), ("artifacts", "bad"),
                            ("review", "bad"), ("tool", 3), ("started_at", 9)):
             changed = copy.deepcopy(base)
-            changed["processing_receipt"][key] = value
+            changed[key] = value
             self.assertTrue(receipt.validate_receipt(changed), key)
 
-    def test_receipt_approval_requires_explicit_valid_fields(self):
+    def test_receipt_complete_requires_measured_source_and_zero_exit(self):
         source = self.source()
-        kwargs = dict(source_base=self.root, started_at=receipt.utc_now_iso(), review_status="approved")
-        with self.assertRaises(ValueError):
-            receipt.build_receipt("E1", "test", "1", source, **kwargs)
-        result = receipt.build_receipt("E1", "test", "1", source, **kwargs,
-                                      reviewer="Reviewer", reviewed_at=receipt.utc_now_iso())
+        ok = receipt.build_receipt("E1", "test", "1", source, source_base=self.root,
+            started_at=receipt.utc_now_iso(), status="complete", exit_code=0)
+        self.assertEqual(receipt.validate_receipt(ok), [])
+        for mutate in (lambda r: r["source"].update(sha256=None),
+                       lambda r: r.update(exit_code=None),
+                       lambda r: r.update(exit_code=1)):
+            changed = copy.deepcopy(ok)
+            mutate(changed)
+            self.assertTrue(receipt.validate_receipt(changed))
+
+    def test_receipt_directory_source_cannot_be_complete(self):
+        result = receipt.build_receipt("E1", "test", "1", self.root,
+            source_base=self.root.parent, started_at=receipt.utc_now_iso(),
+            status="complete", exit_code=0)
+        self.assertEqual(result["status"], "partial")
+        self.assertIsNone(result["source"]["sha256"])
         self.assertEqual(receipt.validate_receipt(result), [])
+
+    def test_receipt_null_timestamps_only_when_not_measured(self):
+        base = receipt.build_receipt("E1", "test", "1", self.source(),
+            source_base=self.root, started_at=receipt.utc_now_iso())
+        historical = copy.deepcopy(base)
+        historical.update(started_at=None, finished_at=None, status="not_measured")
+        self.assertEqual(receipt.validate_receipt(historical), [])
+        for status in ("complete", "partial", "failed"):
+            changed = copy.deepcopy(historical)
+            changed["status"] = status
+            self.assertTrue(receipt.validate_receipt(changed), status)
+
+    def test_receipt_build_always_pending_approval_needs_fields(self):
+        source = self.source()
+        result = receipt.build_receipt("E1", "test", "1", source,
+            source_base=self.root, started_at=receipt.utc_now_iso())
+        self.assertEqual(result["review"]["status"], "pending")
+        declared = copy.deepcopy(result)
+        declared["review"] = {"status": "approved", "reviewer": None, "reviewed_at": None}
+        self.assertTrue(receipt.validate_receipt(declared))
+        declared["review"] = {"status": "pending", "reviewer": "Caller", "reviewed_at": None}
+        self.assertTrue(receipt.validate_receipt(declared))
+        declared["review"] = {"status": "approved", "reviewer": "Reviewer",
+                              "reviewed_at": result["finished_at"]}
+        self.assertEqual(receipt.validate_receipt(declared), [])
+        earlier = copy.deepcopy(declared)
+        earlier["review"]["reviewed_at"] = "2000-01-01T00:00:00Z"
+        self.assertTrue(receipt.validate_receipt(earlier))
 
     def test_receipt_unreadable_artifact_not_fabricated(self):
         source = self.source()
@@ -140,10 +178,15 @@ class RegressionTests(unittest.TestCase):
         out = self.root / "out.json"
         self.assertEqual(export.main([str(manifest), "-o", str(out)]), 0)
         data = json.loads(out.read_text())
-        self.assertEqual(data["evidence_list"][0]["file"], str(source))
-        self.assertEqual(data["evidence_list"][0]["provenance"]["status"], "verified")
+        item = data["evidence_list"][0]
+        self.assertEqual(item["file_path"], str(source))
+        self.assertEqual(item["provenance"]["status"], "verified")
+        self.assertEqual(item["claimed_sha256"], item["verified_sha256"])
+        self.assertEqual(item["processing_receipt"]["status"], "complete")
+        self.assertEqual(item["processing_receipt"]["source"]["sha256"], item["sha256"])
+        self.assertEqual(receipt.validate_receipt(item["processing_receipt"]), [])
         self.assertEqual(data["processing_receipt"]["artifacts"], [])
-        self.assertEqual(receipt.validate_receipt(data), [])
+        self.assertEqual(receipt.validate_payload(data), [])
         source.write_bytes(b"updated synthetic source")
         self.assertEqual(export.main([str(manifest), "-o", str(out)]), 1)
         self.assertEqual(json.loads(out.read_text())["processing_receipt"]["status"], "partial")
