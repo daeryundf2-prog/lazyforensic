@@ -59,10 +59,12 @@ def decode_errors(path: Path) -> dict:
             ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
             capture_output=True, text=True, timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
-        return {"decode_error": str(e), "errors": []}
+        return {"decode_error": str(e), "errors": [], "error_count": None,
+                "exit_code": None}
     lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
-    return {"decode_error": None, "errors": lines[:50],
-            "error_count": len(lines)}
+    return {"decode_error": None if r.returncode == 0 else "ffmpeg nonzero exit",
+            "errors": lines[:50], "exit_code": r.returncode,
+            "error_count": len(lines) if r.returncode == 0 or lines else None}
 
 
 def moov_position(path: Path) -> str:
@@ -118,7 +120,10 @@ def audit_video(path: Path, run_decode: bool = True) -> dict:
         dec = decode_errors(path)
         rec["decode_error_count"] = dec["error_count"]
         rec["decode_errors"] = dec["errors"][:10]
-        if dec["error_count"]:
+        if dec["error_count"] is None:
+            rec["status"] = "DECODE_FAILED"
+            notes.append(f"디코드 실행 실패 — 판정 불가: {dec['decode_error']}")
+        elif dec["error_count"]:
             notes.append(f"디코드 오류 {dec['error_count']}건 — 부분 손상 구간 존재")
             rec["status"] = "DAMAGED"
         else:

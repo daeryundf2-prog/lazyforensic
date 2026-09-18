@@ -28,25 +28,54 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 HWP_NS = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+SECTION_CAP = 8 * 1024 * 1024
+TOTAL_CAP = 64 * 1024 * 1024
+MEMBER_CAP = 10000
+TEXT_CAP = 64 * 1024 * 1024
 
 
 def extract_text(hwpx_path: Path) -> list[str]:
-    """section XML들에서 <hp:t> 텍스트를 문서 순서대로 반환한다."""
+    """section XML들에서 <hp:t> 텍스트를 문서 순서대로 반환한다.
+
+    리소스 상한: 섹션당 8MB, 문서 누적 64MB, 멤버 10,000개, 텍스트 64MB.
+    초과 시 RuntimeError로 fail-closed — 지어내지 않는다.
+    """
     if not zipfile.is_zipfile(hwpx_path):
         raise RuntimeError("HWPX가 아니거나 손상된 파일 (ZIP 시그니처 없음)")
     texts: list[str] = []
+    text_len = 0
     with zipfile.ZipFile(hwpx_path) as zf:
+        names = zf.namelist()
+        if len(names) > MEMBER_CAP:
+            raise RuntimeError(f"멤버 수 상한 초과 ({len(names)}>{MEMBER_CAP})")
         sections = sorted(
-            (n for n in zf.namelist()
+            (n for n in names
              if re.match(r"Contents/section\d+\.xml", n)),
             key=lambda n: int(re.search(r"\d+", n).group(0)),
         )
         if not sections:
             raise RuntimeError("Contents/section*.xml이 없습니다")
+        total = 0
         for name in sections:
-            root = ET.fromstring(zf.read(name))
+            remaining = min(SECTION_CAP, TOTAL_CAP - total)
+            info = zf.getinfo(name)
+            if info.file_size > remaining:
+                raise RuntimeError("Section or aggregate read limit exceeded")
+            with zf.open(info) as stream:
+                raw = stream.read(remaining + 1)
+            if len(raw) > remaining:
+                raise RuntimeError("Section or aggregate read limit exceeded")
+            total += len(raw)
+            if total > TOTAL_CAP:
+                raise RuntimeError(f"문서 누적 크기 상한 초과 ({TOTAL_CAP}B) — 처리 중단")
+            if len(raw) > SECTION_CAP:
+                raise RuntimeError(f"섹션 크기 상한 초과: {name} ({len(raw)}B)")
+            root = ET.fromstring(raw)
             for t in root.iter(f"{HWP_NS}t"):
                 if t.text:
+                    text_len += len(t.text.encode("utf-8"))
+                    if text_len > TEXT_CAP:
+                        raise RuntimeError(f"추출 텍스트 상한 초과 ({TEXT_CAP}B)")
                     texts.append(t.text)
     return texts
 

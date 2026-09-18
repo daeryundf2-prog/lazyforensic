@@ -159,7 +159,16 @@ def merge(manifests, kakaos, exifs, stts, anchors) -> dict:
         a, u = events_from_stt(p, anchors)
         events += a
         unanchored += u
-    events.sort(key=lambda e: e.get("timestamp", ""))
+    def sort_key(event):
+        try:
+            ts = datetime.fromisoformat(str(event.get("timestamp", "")).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                return (1, datetime.min.replace(tzinfo=timezone.utc))
+            return (0, ts.astimezone(timezone.utc))
+        except (ValueError, TypeError):
+            return (1, datetime.min.replace(tzinfo=timezone.utc))
+
+    events.sort(key=sort_key)
     return {"events": events, "unanchored_stt": unanchored}
 
 

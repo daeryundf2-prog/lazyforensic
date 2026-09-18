@@ -41,11 +41,12 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def search_file(path: Path, keywords: list[str], context: int) -> list[dict]:
+def search_file_result(path: Path, keywords: list[str], context: int) -> tuple[list[dict], str | None]:
+    """(히트 목록, 오류 문자열|None)을 반환한다. 읽기 실패는 None 히트가 아니라 오류로 보고한다."""
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
+    except OSError as e:
+        return [], str(e)
     hits = []
     for i, line in enumerate(lines):
         for kw in keywords:
@@ -64,6 +65,13 @@ def search_file(path: Path, keywords: list[str], context: int) -> list[dict]:
                     ]
                 hits.append(hit)
                 break  # 같은 줄에서 키워드 여러 개면 한 번만
+    return hits, None
+
+
+def search_file(path: Path, keywords: list[str], context: int) -> list[dict]:
+    hits, error = search_file_result(path, keywords, context)
+    if error is not None:
+        raise OSError(error)
     return hits
 
 
@@ -86,11 +94,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     searched, skipped, results = [], [], []
+    read_errors = []
     for f in files:
         if f.suffix.lower() not in TEXT_EXTS:
             skipped.append(str(f))
             continue
-        hits = search_file(f, args.keywords, args.context)
+        hits, error = search_file_result(f, args.keywords, args.context)
+        if error is not None:
+            skipped.append(str(f))
+            read_errors.append({"file": str(f), "error": error[:200]})
+            continue
         searched.append(str(f))
         if hits:
             results.append({
@@ -105,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
         "scope": str(target),
         "files_searched": len(searched),
         "files_skipped_binary": len(skipped),
+        "files_read_failed": len(read_errors),
+        "read_errors": read_errors[:50],
         "files_with_hits": len(results),
         "total_hits": sum(r["hit_count"] for r in results),
         "results": results,
@@ -124,8 +139,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{r['file']}  (sha256:{r['sha256'][:16]}…)  {r['hit_count']}히트")
                 for h in r["hits"]:
                     print(f"    L{h['line']}  [{h['keyword']}]  {h['text'][:120]}")
-        print(f"\n검색 {report['files_searched']}개 파일(바이너리 {report['files_skipped_binary']}개 제외), "
+        print(f"\n검색 {report['files_searched']}개 파일(바이너리/읽기실패 {report['files_skipped_binary']}개 제외), "
               f"히트 {report['total_hits']}건 / {report['files_with_hits']}개 파일")
+        if report["files_read_failed"]:
+            print(f"주의: 읽기 실패 {report['files_read_failed']}개 파일 — '미검출'이 아니라 '검색 불가'다", file=sys.stderr)
         if report["total_hits"] == 0:
             print("결과: 전수 검색 범위 내 미검출")
 

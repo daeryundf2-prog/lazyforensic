@@ -1,18 +1,8 @@
-#!/usr/bin/env python3
-"""verify_audit_chain.py - Cryptographic verification of .lazyforensic/audit_trail.jsonl hash chain.
-
-Verifies the integrity of the PostToolUse audit trail:
-- Each record's `prev_hash` must match the SHA-256 hex digest of the preceding line.
-- First record must have prev_hash = None / null.
-- All records must have valid timestamps and required fields.
-- Reports the exact line and record where the chain is broken if tampering occurs.
-"""
-
 from __future__ import annotations
 
 import argparse
 import hashlib
-import hmac as hmac_mod
+import hmac
 import json
 import os
 import sys
@@ -20,145 +10,96 @@ from datetime import datetime
 from pathlib import Path
 
 
-def verify_audit_chain(
-    trail_path: str | Path,
-    allow_empty: bool = True,
-) -> dict:
+def verify_audit_chain(trail_path, allow_empty=True, require_hmac=False, hmac_key=None):
     path = Path(trail_path)
-    if not path.is_file():
-        if allow_empty:
-            return {
-                "status": "PASS",
-                "file": str(path),
-                "total_records": 0,
-                "valid_chain": True,
-                "message": "Audit trail file does not exist yet (empty session).",
-                "errors": [],
-            }
-        return {
-            "status": "FAIL",
-            "file": str(path),
-            "total_records": 0,
-            "valid_chain": False,
-            "message": f"Audit trail file not found: {path}",
-            "errors": [f"File not found: {path}"],
-        }
-
-    raw_text = path.read_text(encoding="utf-8", errors="replace")
-    lines = [line for line in raw_text.splitlines() if line.strip()]
-
-    if not lines:
-        return {
-            "status": "PASS",
-            "file": str(path),
-            "total_records": 0,
-            "valid_chain": True,
-            "message": "Audit trail is empty.",
-            "errors": [],
-        }
-
-    errors: list[str] = []
-    previous_line_hash: str | None = None
-    prev_timestamp: datetime | None = None
-
-    for idx, raw_line in enumerate(lines):
-        line_num = idx + 1
+    key = os.environ.get("LAZYFORENSIC_HMAC_KEY") if hmac_key is None else hmac_key
+    chain_errors, auth_errors = [], []
+    verified = 0
+    lines = []
+    readable = True
+    try:
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except FileNotFoundError:
+        readable = False
+        if not allow_empty or require_hmac:
+            chain_errors.append("File not found")
+    except (OSError, UnicodeError) as exc:
+        readable = False
+        chain_errors.append(f"Cannot read audit trail: {exc}")
+    if not lines and (not allow_empty or require_hmac):
+        chain_errors.append("Empty audit trail")
+    if require_hmac and not key:
+        auth_errors.append("HMAC key not configured")
+    previous_hash = None
+    previous_timestamp = None
+    unsigned = 0
+    for index, line in enumerate(lines, 1):
         try:
-            entry = json.loads(raw_line)
-        except Exception as exc:
-            errors.append(f"Line {line_num}: Malformed JSON record ({exc})")
+            entry = json.loads(line)
+        except ValueError:
+            chain_errors.append(f"Line {index}: Malformed JSON record")
             break
-
         if not isinstance(entry, dict):
-            errors.append(f"Line {line_num}: Record is not a JSON object")
+            chain_errors.append(f"Line {index}: Record is not a JSON object")
             break
-
-        # Check required fields
         for field in ("timestamp", "file"):
-            if field not in entry:
-                errors.append(f"Line {line_num}: Missing required field '{field}'")
-
-        # Timestamp format & monotonicity check
-        ts_str = entry.get("timestamp")
-        if ts_str:
-            try:
-                # Support trailing 'Z' or ISO formats
-                cleaned_ts = ts_str.replace("Z", "+00:00")
-                ts = datetime.fromisoformat(cleaned_ts)
-                if prev_timestamp and ts < prev_timestamp:
-                    errors.append(
-                        f"Line {line_num}: Non-monotonic timestamp detected ({ts_str} < {prev_timestamp.isoformat()})"
-                    )
-                prev_timestamp = ts
-            except Exception:
-                errors.append(f"Line {line_num}: Invalid ISO-8601 timestamp '{ts_str}'")
-
-        # Hash chain verification
-        current_prev_hash = entry.get("prev_hash")
-        if idx == 0:
-            if current_prev_hash is not None:
-                errors.append(
-                    f"Line {line_num} (Genesis): prev_hash must be null, found '{current_prev_hash}'"
-                )
-        else:
-            if current_prev_hash != previous_line_hash:
-                errors.append(
-                    f"Line {line_num}: Hash chain broken! "
-                    f"Expected prev_hash='{previous_line_hash}', but record specifies '{current_prev_hash}'"
-                )
-
-        # B2-2: HMAC 서명 있으면 검증(키 있을 때만, 없으면 기존 체인 유지)
-        _hmac_key = os.environ.get("LAZYFORENSIC_HMAC_KEY")
-        if _hmac_key and entry.get("hmac"):
-            _msg = "|".join([str(entry.get("timestamp") or ""), str(entry.get("file") or ""), str(entry.get("sha256") or ""), str(entry.get("prev_hash") or "")])
-            _exp = hmac_mod.new(_hmac_key.encode("utf-8"), _msg.encode("utf-8"), hashlib.sha256).hexdigest()
-            if not hmac_mod.compare_digest(_exp, str(entry.get("hmac"))):
-                errors.append(f"Line {line_num}: HMAC verification failed (audit_trail tamper suspected)")
-        # Compute hash of current line for the next iteration
-        previous_line_hash = hashlib.sha256(raw_line.encode("utf-8")).hexdigest()
-
-    is_valid = len(errors) == 0
+            if not isinstance(entry.get(field), str) or not entry[field]:
+                chain_errors.append(f"Line {index}: Missing or invalid required field '{field}'")
+        try:
+            timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+            if timestamp.tzinfo is None:
+                raise ValueError()
+            if previous_timestamp is not None and timestamp < previous_timestamp:
+                chain_errors.append(f"Line {index}: Non-monotonic timestamp")
+            previous_timestamp = timestamp
+        except (KeyError, AttributeError, ValueError, TypeError):
+            chain_errors.append(f"Line {index}: Invalid ISO-8601 timestamp")
+        if entry.get("prev_hash") != previous_hash:
+            chain_errors.append(f"Line {index}: Hash chain broken")
+        previous_hash = hashlib.sha256(line.encode("utf-8")).hexdigest()
+        signature = entry.get("hmac")
+        if not signature:
+            unsigned += 1
+            if require_hmac:
+                auth_errors.append(f"Line {index}: Missing HMAC signature")
+        elif key:
+            message = "|".join(str(entry.get(k) or "") for k in ("timestamp", "file", "sha256", "prev_hash"))
+            expected = hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
+            if isinstance(signature, str) and hmac.compare_digest(expected, signature):
+                verified += 1
+            else:
+                auth_errors.append(f"Line {index}: HMAC verification failed")
+    errors = chain_errors + auth_errors
+    chain_status = "failed" if chain_errors else ("verified" if lines else "not_measured")
+    authenticated = bool(lines) and verified == len(lines) and not errors
     return {
-        "status": "PASS" if is_valid else "FAIL",
-        "file": str(path),
-        "total_records": len(lines),
-        "valid_chain": is_valid,
-        "message": f"Successfully verified {len(lines)} linked audit records." if is_valid else f"Audit chain verification failed with {len(errors)} error(s).",
+        "status": "FAIL" if errors else "PASS", "file": str(path),
+        "total_records": len(lines), "valid_chain": chain_status == "verified",
+        "chain_status": chain_status, "authenticated": authenticated,
+        "authentication_status": "failed" if auth_errors else ("verified" if authenticated else "not_measured"),
+        "unsigned_records": unsigned, "verified_signatures": verified,
+        "message": "Audit verification failed" if errors else ("Linked records verified" if lines else "No records measured"),
         "errors": errors,
+        "limitations": ["Local chain verification is not independent custody or completeness certification",
+                        "Legacy HMAC authenticates timestamp, file, sha256 and prev_hash only"],
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Verify cryptographic hash chain in LazyForensic audit_trail.jsonl"
-    )
-    parser.add_argument(
-        "trail",
-        nargs="?",
-        default=".lazyforensic/audit_trail.jsonl",
-        help="Path to audit_trail.jsonl (default: .lazyforensic/audit_trail.jsonl)",
-    )
-    parser.add_argument("--json", action="store_true", help="Output JSON format")
-    parser.add_argument(
-        "--no-empty",
-        action="store_true",
-        help="Fail if the audit trail file does not exist or is empty",
-    )
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Verify audit chain and optional HMAC authentication")
+    parser.add_argument("trail", nargs="?", default=".lazyforensic/audit_trail.jsonl")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--no-empty", action="store_true")
+    parser.add_argument("--require-hmac", action="store_true")
     args = parser.parse_args(argv)
-
-    result = verify_audit_chain(args.trail, allow_empty=not args.no_empty)
-
+    result = verify_audit_chain(args.trail, not args.no_empty, args.require_hmac)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        if result["status"] == "PASS":
-            print(f"[PASS] {result['message']} (records: {result['total_records']})")
-        else:
-            print(f"[FAIL] {result['message']}", file=sys.stderr)
-            for err in result["errors"]:
-                print(f"  - ERROR: {err}", file=sys.stderr)
-
-    return 0 if result["status"] == "PASS" else 1
+        print(f"[{result['status']}] {result['message']}")
+        for error in result["errors"]:
+            print(error, file=sys.stderr)
+    return int(result["status"] == "FAIL")
 
 
 if __name__ == "__main__":
