@@ -95,11 +95,15 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         return m
     report["steps"]["manifest"] = _run_step("manifest", step_manifest)
 
+    # 단계별 rglob 반복을 피하기 위해 파일 목록을 한 번만 열거한다.
+    all_files = sorted(p for p in root.rglob("*") if p.is_file())
+
+    def by_ext(exts):
+        return [p for p in all_files if p.suffix.lower() in exts]
+
     def step_pii():
         mod = _load("pii_mask")
-        text_exts = mod.TEXT_EXTS
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in text_exts]
+        files = by_ext(mod.TEXT_EXTS)
         findings = [mod.process_file(f, mask=False, out_path=None, in_place=False)
                     for f in sorted(files)]
         total = sum(r.get("pii_count", 0) for r in findings)
@@ -111,9 +115,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         def step_keywords():
             mod = _load("keyword_report")
             searched, results, skipped = [], [], []
-            for f in sorted(root.rglob("*")):
-                if not f.is_file() or f.suffix.lower() not in mod.TEXT_EXTS:
-                    continue
+            for f in by_ext(mod.TEXT_EXTS):
                 hits, read_error = mod.search_file_result(f, keywords, context=0)
                 if read_error is not None:
                     skipped.append({"file": str(f), "error": read_error})
@@ -130,10 +132,9 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     def step_audio():
         mod = _load("audio_survey")
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in mod.AUDIO_EXTS]
+        files = by_ext(mod.AUDIO_EXTS)
         return {"audio_files": len(files),
-                "surveys": [mod.survey(f, mod.DEFAULT_THRESHOLD) for f in sorted(files)]}
+                "surveys": [mod.survey(f, mod.DEFAULT_THRESHOLD) for f in files]}
     report["steps"]["audio"] = _run_step("audio", step_audio)
 
     def step_exif():
@@ -141,10 +142,9 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         Image = mod._require_pillow()
         if Image is None:
             raise RuntimeError("Pillow 없음 — exif_audit 생략")
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in mod.IMG_EXTS]
+        files = by_ext(mod.IMG_EXTS)
         return {"image_files": len(files),
-                "records": [mod.audit_image(f, Image) for f in sorted(files)]}
+                "records": [mod.audit_image(f, Image) for f in files]}
     report["steps"]["exif"] = _run_step("exif", step_exif)
 
     def step_images():
@@ -159,7 +159,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     def step_signatures():
         mod = _load("signature_check")
-        records = [mod.audit_file(f) for f in sorted(root.rglob("*")) if f.is_file()]
+        records = [mod.audit_file(f) for f in all_files]
         return {"total": len(records),
                 "mismatches": [r for r in records if r["status"] == "MISMATCH"],
                 "match": sum(1 for r in records if r["status"] == "MATCH")}
@@ -167,8 +167,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     def step_dedup():
         mod = _load("dedup_files")
-        files = [p for p in sorted(root.rglob("*"))
-                 if p.is_file() and "__pycache__" not in p.parts]
+        files = [p for p in all_files if "__pycache__" not in p.parts]
         return {"exact_groups": mod.exact_dups(files),
                 "similar_groups": mod.similar_image_groups(root)}
     report["steps"]["dedup"] = _run_step("dedup", step_dedup)
@@ -203,8 +202,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         mod = _load("video_fingerprint")
         if not mod._require_ffmpeg():
             raise RuntimeError("ffmpeg 없음 — video_fingerprint 생략")
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in mod.VIDEO_EXTS]
+        files = by_ext(mod.VIDEO_EXTS)
         fps = []
         for f in sorted(files):
             try:
@@ -220,21 +218,19 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         mod = _load("video_integrity")
         if not mod._require_ffmpeg():
             raise RuntimeError("ffmpeg 없음 — video_integrity 생략")
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in mod.VIDEO_EXTS]
+        files = by_ext(mod.VIDEO_EXTS)
         return {"video_files": len(files),
                 "records": [mod.audit_video(f, run_decode=True)
-                            for f in sorted(files)]}
+                            for f in files]}
     report["steps"]["video_integrity"] = _run_step("video_integrity", step_vintegrity)
 
     def step_audio_fp():
         mod = _load("audio_fingerprint")
         if not mod._require_fpcalc():
             raise RuntimeError("fpcalc(chromaprint) 없음 — 오디오 지문 생략")
-        files = [p for p in root.rglob("*")
-                 if p.is_file() and p.suffix.lower() in mod.AUDIO_EXTS]
+        files = by_ext(mod.AUDIO_EXTS)
         records = []
-        for f in sorted(files):
+        for f in files:
             try:
                 records.append(mod.fingerprint(f))
             except RuntimeError as e:
@@ -250,10 +246,9 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
             engine = mod.detect_engine()
             if engine is None:
                 raise RuntimeError("로컬 STT 엔진 없음 — 전사 생략")
-            files = [p for p in root.rglob("*")
-                     if p.is_file() and p.suffix.lower() in mod.AUDIO_EXTS]
+            files = by_ext(mod.AUDIO_EXTS)
             out = []
-            for f in sorted(files):
+            for f in files:
                 try:
                     r = mod.transcribe_file(f, engine, "ko", verbatim=False, model_size="turbo")
                     hits = mod.keyword_hits(r["segments"], keywords) if keywords else []
