@@ -123,7 +123,7 @@ def _dct_hash(d):
 
 
 def hamming(a: int, b: int) -> int:
-    return bin(a ^ b).count("1")
+    return (a ^ b).bit_count()
 
 
 def colorhist(img) -> list[float]:
@@ -169,16 +169,41 @@ def scan_dir(target: Path, Image) -> list[dict]:
 COLORHIST_MAX = 0.25  # 색 분포가 이 이상 다르면 pHash가 가까워도 다른 이미지로 본다
 
 
+def _candidate_pairs(records: list[dict], threshold: int):
+    if type(threshold) is not int or not 0 <= threshold <= 64:
+        raise ValueError("threshold must be an integer in 0..64")
+    if any(type(r["phash"]) is not int or not 0 <= r["phash"] < (1 << 64) for r in records):
+        raise ValueError("Expected unsigned 64-bit perceptual hashes")
+    if threshold >= 16:
+        yield from combinations(range(len(records)), 2)
+        return
+    blocks = threshold + 1
+    bounds = [(64 * b // blocks, 64 * (b + 1) // blocks) for b in range(blocks)]
+    buckets = [{} for _ in bounds]
+    for i in range(len(records) - 1, -1, -1):
+        value = records[i]["phash"]
+        candidates = set()
+        for bucket, (lo, hi) in zip(buckets, bounds):
+            part = (value >> lo) & ((1 << (hi - lo)) - 1)
+            candidates.update(bucket.get(part, ()))
+            bucket.setdefault(part, []).append(i)
+        for j in sorted(candidates):
+            yield i, j
+
+
 def find_pairs(records: list[dict], threshold: int) -> list[dict]:
     pairs = []
-    for a, b in combinations(records, 2):
-        dist = hamming(a["phash"], b["phash"])
-        hdist = hist_distance(a["colorhist"], b["colorhist"])
-        if dist <= threshold and hdist <= COLORHIST_MAX:
+    for a, b in _candidate_pairs(records, threshold):
+        ra, rb = records[a], records[b]
+        dist = hamming(ra["phash"], rb["phash"])
+        if dist > threshold:
+            continue
+        hdist = hist_distance(ra["colorhist"], rb["colorhist"])
+        if hdist <= COLORHIST_MAX:
             pairs.append({
-                "a": a["file"], "b": b["file"], "phash_dist": dist,
-                "ahash_dist": hamming(a["ahash"], b["ahash"]),
-                "dhash_dist": hamming(a["dhash"], b["dhash"]),
+                "a": ra["file"], "b": rb["file"], "phash_dist": dist,
+                "ahash_dist": hamming(ra["ahash"], rb["ahash"]),
+                "dhash_dist": hamming(ra["dhash"], rb["dhash"]),
                 "color_dist": round(hdist, 3),
             })
     return sorted(pairs, key=lambda x: x["phash_dist"])

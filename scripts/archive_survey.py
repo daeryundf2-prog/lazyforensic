@@ -43,27 +43,26 @@ DOC_LIKE = {".pdf", ".doc", ".docx", ".hwp", ".hwpx", ".jpg", ".png", ".txt", ".
 ZIP_BOMB_RATIO = 100
 ZIP_BOMB_MIN = 1024 * 1024  # 원본이 1MB 초과인데 압축률 100배 넘으면 의심
 HASH_CAP = 64 * 1024 * 1024  # 멤버 해시 읽기 상한 — 초과 시 해시 생략
+MEMBER_CAP = 10000           # 단일 아카이브 멤버 수 상한 — 초과 시 나머지 생략
+READ_TOTAL_CAP = 512 * 1024 * 1024  # 아카이브당 누적 읽기 상한 — 초과 시 남은 멤버 해시 생략
 
 
 def _hash_member(fobj, cap: int = HASH_CAP) -> tuple[bytes, str | None, bool]:
-    """멤버를 1MB 청크로 증분 해시. cap 초과 시 즉시 읽기를 중단한다.
-
-    반환: (head 32B, sha256 또는 None, 상한 초과 여부)
-    f.read() 전체 복호는 압축폭탄이 감사기 자체를 OOM으로 죽이게 하므로
-    메모리·CPU를 상한 내로 묶는다.
-    """
-    h = hashlib.sha256()
-    head = fobj.read(32)
-    h.update(head)
-    total = len(head)
-    while True:
-        chunk = fobj.read(1024 * 1024)
+    if cap < 0:
+        raise ValueError("Negative read limit")
+    digest = hashlib.sha256()
+    head = b""
+    total = 0
+    while total <= cap:
+        chunk = fobj.read(min(1024 * 1024, cap - total + 1))
         if not chunk:
-            return head, h.hexdigest(), False
+            return head, digest.hexdigest(), False
+        head = (head + chunk[:32])[:32]
         total += len(chunk)
         if total > cap:
             return head, None, True
-        h.update(chunk)
+        digest.update(chunk)
+    return head, None, True
 
 
 def _sig_mod():
@@ -118,31 +117,48 @@ def _audit_member(sig, name: str, ext: str, head: bytes, size: int, comp_size: i
 
 
 def audit_zip(path: Path, sig) -> dict:
-    rec: dict = {"file": str(path), "type": "zip", "members": []}
+    rec = {"file": str(path), "type": "zip", "members": [], "status": "complete", "warnings": []}
+    budget = READ_TOTAL_CAP
     try:
+        if path.stat().st_size > READ_TOTAL_CAP:
+            raise ValueError("Container size limit exceeded")
         with zipfile.ZipFile(path) as z:
-            for info in z.infolist():
+            infos = z.infolist()
+            if len(infos) > MEMBER_CAP:
+                rec["status"] = "partial"
+                rec["warnings"].append("Member count limit exceeded")
+            for info in infos[:MEMBER_CAP]:
                 if info.is_dir():
                     continue
-                encrypted = bool(info.flag_bits & 0x1)
-                head = b""
-                sha = None
-                capped = False
-                if not encrypted:
+                encrypted = bool(info.flag_bits & 1)
+                head, sha, capped = b"", None, False
+                error = None
+                charge = min(info.file_size, HASH_CAP) + 1
+                if encrypted:
+                    error = "Encrypted member not measured"
+                elif charge > budget or info.file_size > HASH_CAP:
+                    capped = True
+                else:
+                    budget -= charge
                     try:
-                        with z.open(info) as f:
-                            head, sha, capped = _hash_member(f)
-                    except (OSError, RuntimeError, zipfile.BadZipFile):
-                        pass
-                m = _audit_member(sig, info.filename, Path(info.filename).suffix.lower(),
-                                  head, info.file_size, info.compress_size, encrypted)
+                        with z.open(info) as stream:
+                            head, sha, capped = _hash_member(stream, min(info.file_size, HASH_CAP))
+                    except (OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError) as exc:
+                        error = str(exc)
+                member = _audit_member(sig, info.filename, Path(info.filename).suffix.lower(),
+                                       head, info.file_size, info.compress_size, encrypted)
                 if capped:
-                    m["flags"].append("읽기상한(해시생략)")
-                elif sha:
-                    m["sha256"] = sha
-                rec["members"].append(m)
-    except (OSError, zipfile.BadZipFile) as e:
-        rec["error"] = str(e)
+                    member["flags"].append("읽기상한(해시생략)")
+                if error:
+                    member["error"] = error
+                if sha:
+                    member["sha256"] = sha
+                else:
+                    rec["status"] = "partial"
+                rec["members"].append(member)
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        rec.update(status="failed", error=str(exc))
+    rec["read_budget_charged"] = READ_TOTAL_CAP - budget
     return rec
 
 
@@ -151,20 +167,32 @@ def audit_tar(path: Path, sig) -> dict:
     # tar 헤더에는 멤버별 압축 크기가 없다 — 컨테이너 파일 크기를 대리값으로
     # 쓴다. .tar는 비압축이라 ratio ~1(오탐 없음), .tar.gz에서 폭탄 신호가 됨.
     container_size = path.stat().st_size or 0
+    total_read = 0
     try:
         with tarfile.open(path) as t:
-            for info in t.getmembers():
+            members = t.getmembers()
+            if len(members) > MEMBER_CAP:
+                rec["flags"] = [f"멤버수상한초과({len(members)}>{MEMBER_CAP} — 나머지 생략)"]
+                members = members[:MEMBER_CAP]
+            for info in members:
                 if not info.isfile():
                     continue
                 head = b""
                 sha = None
                 capped = False
-                try:
-                    f = t.extractfile(info)
-                    if f:
-                        head, sha, capped = _hash_member(f)
-                except (OSError, tarfile.TarError):
-                    pass
+                if total_read < READ_TOTAL_CAP:
+                    try:
+                        f = t.extractfile(info)
+                        if f:
+                            head, sha, capped = _hash_member(f)
+                            total_read += min(info.size, HASH_CAP)
+                    except (OSError, tarfile.TarError):
+                        pass
+                else:
+                    capped = True
+                    note = f"누적읽기상한초과({READ_TOTAL_CAP}B — {info.name} 해시 생략)"
+                    if note not in rec.get("flags", []):
+                        rec.setdefault("flags", []).append(note)
                 m = _audit_member(sig, info.name, Path(info.name).suffix.lower(),
                                   head, info.size, container_size, False)
                 if capped:

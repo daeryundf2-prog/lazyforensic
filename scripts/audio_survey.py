@@ -45,6 +45,8 @@ def read_wav(path: Path) -> tuple[list[float], int] | None:
             framerate = wf.getframerate()
             nchannels = wf.getnchannels()
             sampwidth = wf.getsampwidth()
+            if wf.getnframes() * nchannels * sampwidth > 8 * 1024 * 1024:
+                return None
             raw = wf.readframes(wf.getnframes())
     except (wave.Error, OSError):
         return None
@@ -52,10 +54,8 @@ def read_wav(path: Path) -> tuple[list[float], int] | None:
         return None  # 16-bit PCM만 지원, 나머지는 ffmpeg 경로로
     count = len(raw) // 2
     samples = struct.unpack(f"<{count}h", raw)
-    if nchannels == 2:
-        mono = [(samples[i] + samples[i + 1]) / 2 for i in range(0, count - 1, 2)]
-    else:
-        mono = list(samples)
+    mono = [sum(samples[i:i + nchannels]) / nchannels
+            for i in range(0, count - nchannels + 1, nchannels)]
     return [s / 32768.0 for s in mono], framerate
 
 
@@ -86,6 +86,68 @@ def rms_per_second(samples: list[float], framerate: int) -> list[float]:
     return out
 
 
+def read_wav_streaming(path: Path, max_seconds: float | None = None) -> tuple[callable, int, int, float | None] | None:
+    """WAV를 청크로 읽어 초당 RMS를 계산하는 제너레이터를 반환한다.
+
+    전체 PCM을 메모리에 올리지 않는다 — 긴 녹음에서 OOM을 막는다.
+    반환: (mono_청크_제너레이터, framerate, channels, duration_s|None)
+    max_seconds를 넘으면 중단한다(상한 보고용 duration은 -1 초과 신호).
+    실패 시 None.
+    """
+    try:
+        wf = wave.open(str(path), "rb")
+    except (wave.Error, OSError):
+        return None
+    if wf.getsampwidth() != 2:
+        wf.close()
+        return None
+
+    framerate = wf.getframerate()
+    nchannels = wf.getnchannels()
+    if framerate <= 0 or nchannels <= 0:
+        wf.close()
+        return None
+    total_frames = wf.getnframes()
+    duration = total_frames / framerate
+
+    def chunks(seconds_cap: float | None = None):
+        limit = max_seconds if seconds_cap is None else seconds_cap
+        limit = 86400 if limit is None else limit
+        if not 0 < limit <= 86400:
+            wf.close()
+            raise ValueError("Audio limit must be in (0, 86400] seconds")
+        sec_sq_sum = 0.0
+        sec_count = 0
+        frames_read = 0
+        target_frames = min(total_frames, int(limit * framerate))
+        try:
+            while frames_read < target_frames:
+                count = min(4096, framerate - sec_count, target_frames - frames_read)
+                raw = wf.readframes(count)
+                if len(raw) != count * 2 * nchannels:
+                    raise OSError("Truncated PCM frames")
+                values = struct.unpack(f"<{count * nchannels}h", raw)
+                if nchannels == 1:
+                    sec_sq_sum += sum(v * v for v in values)
+                else:
+                    sums = map(sum, zip(*(values[c::nchannels] for c in range(nchannels))))
+                    sec_sq_sum += sum(v * v for v in sums) / (nchannels * nchannels)
+                frames_read += count
+                sec_count += count
+                if sec_count == framerate:
+                    yield (sec_sq_sum / sec_count) ** 0.5 / 32768.0
+                    sec_sq_sum = 0.0
+                    sec_count = 0
+            if sec_count:
+                yield (sec_sq_sum / sec_count) ** 0.5 / 32768.0
+            if frames_read < total_frames:
+                raise OSError("Audio duration exceeds processing limit")
+        finally:
+            wf.close()
+
+    return chunks, framerate, nchannels, duration
+
+
 def speech_segments(rms: list[float], threshold: float) -> list[dict]:
     """RMS > threshold인 연속 구간을 묶어서 반환한다."""
     segs = []
@@ -102,26 +164,46 @@ def speech_segments(rms: list[float], threshold: float) -> list[dict]:
 
 
 def survey(path: Path, threshold: float) -> dict:
-    pcm = read_wav(path)
-    if pcm is None:
-        pcm = read_via_ffmpeg(path)
-    if pcm is None:
-        return {"file": str(path), "status": "failed",
-                "error": "읽을 수 없는 포맷 (16-bit WAV 아님 + ffmpeg 없음)"}
-    samples, framerate = pcm
-    duration = len(samples) / framerate
-    rms = rms_per_second(samples, framerate)
-    segs = speech_segments(rms, threshold)
-    speech_secs = sum(s["end"] - s["start"] for s in segs)
-    return {
-        "file": str(path),
-        "status": "ok",
-        "duration_s": round(duration, 2),
-        "framerate": framerate,
-        "speech_ratio": round(speech_secs / max(len(rms), 1), 3),
-        "speech_segments": segs,
-        "rms_per_second": [round(v, 4) for v in rms],
-    }
+    streamed = read_wav_streaming(path)
+    if streamed is not None:
+        chunks, framerate, _nchannels, duration = streamed
+        try:
+            rms = list(chunks())
+        except OSError as e:
+            return {"file": str(path), "status": "failed",
+                    "error": f"스트리밍 판독 실패: {e}", "framerate": framerate}
+        segs = speech_segments(rms, threshold)
+        speech_secs = sum(s["end"] - s["start"] for s in segs)
+        return {
+            "file": str(path),
+            "status": "ok",
+            "duration_s": round(duration, 2),
+            "framerate": framerate,
+            "speech_ratio": round(speech_secs / max(len(rms), 1), 3),
+            "speech_segments": segs,
+            "rms_per_second": [round(v, 4) for v in rms],
+        }
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return {"file": str(path), "status": "failed", "error": "No supported PCM reader or ffmpeg"}
+    with tempfile.TemporaryDirectory() as directory:
+        converted = Path(directory) / "decoded.wav"
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-v", "error", "-i", str(path), "-t", "86401",
+                 "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-fs", "536870912", str(converted)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+            if result.returncode != 0 or not converted.is_file():
+                raise OSError("ffmpeg conversion failed")
+            if converted.stat().st_size >= 536870912:
+                raise OSError("Decoded audio byte limit reached")
+            if read_wav_streaming(converted) is None:
+                raise OSError("Unsupported conversion output")
+            record = survey(converted, threshold)
+            record["file"] = str(path)
+            return record
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"file": str(path), "status": "failed", "error": str(exc)}
 
 
 def main(argv: list[str] | None = None) -> int:

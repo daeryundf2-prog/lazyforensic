@@ -52,6 +52,8 @@ from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 SCRIPTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPTS))
+from processing_receipt import TOOL_VERSION, build_receipt, utc_now_iso
 
 
 def _load(name: str):
@@ -77,7 +79,9 @@ def _run_step(name: str, fn) -> dict:
         return {"status": "failed", "error": f"{type(e).__name__}: {e}"}
 
 
-def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
+def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidence_id=None) -> dict:
+    started = utc_now_iso()
+    root = root.resolve(strict=True)
     report: dict = {
         "survey_version": 2,
         "generated_at": datetime.now(KST).isoformat(),
@@ -88,7 +92,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
     def step_manifest():
         mod = _load("evidence_manifest")
         m = mod.build_manifest(root)
-        return {"file_count": m["file_count"], "files": m["files"]}
+        return m
     report["steps"]["manifest"] = _run_step("manifest", step_manifest)
 
     def step_pii():
@@ -106,18 +110,22 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
     if keywords:
         def step_keywords():
             mod = _load("keyword_report")
-            searched, results = [], []
+            searched, results, skipped = [], [], []
             for f in sorted(root.rglob("*")):
                 if not f.is_file() or f.suffix.lower() not in mod.TEXT_EXTS:
                     continue
+                hits, read_error = mod.search_file_result(f, keywords, context=0)
+                if read_error is not None:
+                    skipped.append({"file": str(f), "error": read_error})
+                    continue
                 searched.append(str(f))
-                hits = mod.search_file(f, keywords, context=0)
                 if hits:
                     results.append({"file": str(f), "sha256": mod.sha256_file(f),
                                     "hit_count": len(hits), "hits": hits})
             return {"keywords": keywords, "files_searched": len(searched),
                     "total_hits": sum(r["hit_count"] for r in results),
-                    "results": results}
+                    "status": "partial" if skipped else "complete",
+                    "skipped": skipped, "results": results}
         report["steps"]["keywords"] = _run_step("keywords", step_keywords)
 
     def step_audio():
@@ -257,6 +265,25 @@ def survey(root: Path, keywords: list[str], run_stt: bool) -> dict:
             return {"engine": engine, "files": out}
         report["steps"]["stt"] = _run_step("stt", step_stt)
 
+    def incomplete(value):
+        if isinstance(value, dict):
+            return bool(value.get("error")) or value.get("status") in (
+                "failed", "partial", "DECODE_FAILED", "UNREADABLE") or any(incomplete(v) for v in value.values())
+        if isinstance(value, list):
+            return any(incomplete(v) for v in value)
+        return False
+
+    warnings = [f"Incomplete stage: {name}" for name, stage in report["steps"].items()
+                if incomplete(stage)]
+    report.update(build_receipt(
+        evidence_id or str(root), "case_survey", TOOL_VERSION, root,
+        source_base=root, started_at=started, case_id=case_id,
+        status="partial" if warnings else "complete", exit_code=None,
+        warnings=warnings, parameters={"keywords": keywords, "run_stt": run_stt},
+        limitations=["Directory source has no single-file SHA-256; use manifest entries",
+                     "Stages are independent reads, not an atomic acquisition snapshot",
+                     "Embedded receipt does not hash its enclosing JSON"],
+    ))
     return report
 
 

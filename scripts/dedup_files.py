@@ -35,12 +35,22 @@ def sha256_file(path: Path) -> str:
 
 
 def exact_dups(files: list[Path]) -> list[dict]:
-    by_hash: dict[str, list[str]] = {}
+    by_size = {}
     for f in files:
         try:
-            by_hash.setdefault(sha256_file(f), []).append(str(f))
-        except OSError as e:
-            print(f"[SKIP] {f}: {e}", file=sys.stderr)
+            if f.is_file():
+                by_size.setdefault(f.stat().st_size, []).append(f)
+        except OSError as exc:
+            print(f"[SKIP] {f}: {exc}", file=sys.stderr)
+    by_hash: dict[str, list[str]] = {}
+    for candidates in by_size.values():
+        if len(candidates) < 2:
+            continue
+        for f in candidates:
+            try:
+                by_hash.setdefault(sha256_file(f), []).append(str(f))
+            except OSError as exc:
+                print(f"[SKIP] {f}: {exc}", file=sys.stderr)
     return [{"sha256": h, "files": paths} for h, paths in by_hash.items() if len(paths) > 1]
 
 
