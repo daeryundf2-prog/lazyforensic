@@ -5,7 +5,23 @@
 #   ln -s "$HOME/devin/lazyforensic/bin/lazyforensic" /usr/local/bin/lazyforensic
 set -eu
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SELF="$0"
+case "$SELF" in
+  */*) ;;
+  *) SELF="$(command -v "$SELF")" ;;
+esac
+LINKS=0
+while [ -L "$SELF" ]; do
+  LINKS=$((LINKS + 1))
+  [ "$LINKS" -le 40 ] || { printf '%s\n' 'Symlink resolution limit exceeded' >&2; exit 2; }
+  BASE="$(CDPATH= cd -P "$(dirname "$SELF")" && pwd)"
+  TARGET="$(readlink "$SELF")"
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$BASE/$TARGET" ;;
+  esac
+done
+ROOT="$(CDPATH= cd -P "$(dirname "$SELF")/.." && pwd)"
 # 우선순위: $LF_PYTHON > setup_forensic_env.py가 만든 ~/.lfenv venv > 시스템 python3
 if [ -n "${LF_PYTHON:-}" ]; then
   PY="$LF_PYTHON"
