@@ -166,7 +166,28 @@ class LocalSttTests(unittest.TestCase):
     def test_engine_detection_returns_known_or_none(self):
         eng = local_stt.detect_engine()
         self.assertTrue(eng is None or eng in
-                        ("faster-whisper", "openai-whisper") or eng.startswith("binary:"))
+                        ("faster-whisper", "openai-whisper", "sensevoice", "moonshine")
+                        or eng.startswith("binary:") or eng.startswith("binary-sensevoice:"))
+
+    def test_sensevoice_tag_parse(self):
+        raw = "<|ko|><|ANGRY|><|Speech|><|withitn|>돈 안 갚으면 가만 안 둬 <|SIGH|>"
+        p = local_stt.parse_sensevoice_tags(raw)
+        self.assertEqual(p["lang"], "ko")
+        self.assertEqual(p["emotion"], "ANGRY")
+        self.assertIn("SIGH", p["events"])
+        self.assertNotIn("<|", p["text"])
+        self.assertIn("돈 안 갚으면", p["text"])
+
+    def test_sensevoice_tag_parse_plain(self):
+        p = local_stt.parse_sensevoice_tags("그냥 문장만 있음")
+        self.assertIsNone(p["lang"])
+        self.assertIsNone(p["emotion"])
+        self.assertEqual(p["events"], [])
+        self.assertEqual(p["text"], "그냥 문장만 있음")
+
+    def test_engine_override_unavailable_exit_3(self):
+        # 존재하지 않는 엔진 강제 지정 → fail-closed
+        self.assertEqual(local_stt.main(["x.wav", "--engine", "nonexistent-engine"]), 3)
 
     def test_missing_input_exit_2(self):
         # 엔진 유무와 무관하게 잘못된 입력은 exit 2

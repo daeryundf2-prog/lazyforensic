@@ -9,9 +9,12 @@ local_stt.py — 로컬 전용 STT 배치 전사기
   1. faster-whisper (pip 패키지) — word timestamps 지원
   2. openai-whisper (pip 패키지)
   3. whisper.cpp / transcribe.cpp 계열 바이너리 (whisper-cli, main, transcribe-cli)
-  4. moonshine (pip 패키지 useful-moonshine) — ⚠️ 영어 전용, 한국어 증거엔 부적합
+  4. SenseVoice (FunASR `funasr` 패키지 또는 `sensevoice` 바이너리)
+     — ko/zh/yue/en/ja 지원 + 감정·비언어 이벤트 태그 (<|ANGRY|> 등)
+  5. moonshine (pip 패키지 useful-moonshine) — ⚠️ 영어 전용, 한국어 증거엔 부적합
 
 엔진이 하나도 없으면 전사를 지어내지 않고 exit 3 + 안내로 종료한다(fail-closed).
+특정 엔진을 강제하려면 --engine (faster-whisper|openai-whisper|sensevoice|moonshine).
 
 사용:
     python scripts/local_stt.py audio/                          # 디렉터리 배치
@@ -37,6 +40,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -54,9 +58,58 @@ def detect_engine() -> str | None:
     for binary in ("whisper-cli", "whisper.cpp", "main", "transcribe-cli"):
         if shutil.which(binary):
             return f"binary:{binary}"
+    if importlib.util.find_spec("funasr"):
+        return "sensevoice"
+    for binary in ("sensevoice", "sensevoice-cli", "sensevoice-onnx"):
+        if shutil.which(binary):
+            return f"binary-sensevoice:{binary}"
     if importlib.util.find_spec("moonshine"):
         return "moonshine"  # 영어 전용 — 최후순위
     return None
+
+
+SENSEVOICE_TAG_RE = re.compile(r"<\|([A-Za-z_]+)\|>")
+_SENSEVOICE_LANGS = {"zh", "en", "yue", "ja", "ko"}
+# SenseVoice가 방출하는 비언어 이벤트 토큰 (언어/감정 태그 제외)
+_SENSEVOICE_EVENTS = {
+    "APPLAUSE", "BGM", "COUGH", "CRY", "CRYING", "LAUGHTER", "NOISE",
+    "SIGH", "SNEEZE", "SPEECH", "BREATH", "HICCUP",
+}
+_SENSEVOICE_EMOTIONS = {
+    "HAPPY", "SAD", "ANGRY", "NEUTRAL", "FEARFUL", "DISGUSTED",
+    "SURPRISED", "EMO_UNKNOWN",
+}
+
+
+def _engine_available(engine: str) -> bool:
+    """--engine 강제 지정 시 해당 엔진의 실행 수단이 실재하는지 확인."""
+    if engine == "faster-whisper":
+        return importlib.util.find_spec("faster_whisper") is not None
+    if engine == "openai-whisper":
+        return importlib.util.find_spec("whisper") is not None
+    if engine == "sensevoice":
+        return (importlib.util.find_spec("funasr") is not None
+                or any(shutil.which(b) for b in ("sensevoice", "sensevoice-cli", "sensevoice-onnx")))
+    if engine == "moonshine":
+        return importlib.util.find_spec("moonshine") is not None
+    return False
+
+
+def parse_sensevoice_tags(raw_text: str) -> dict:
+    """SenseVoice rich transcription 문자열에서 <|...|> 메타 토큰을 분리한다.
+
+    반환: {"text": 정제된 본문, "lang": 언어 태그|None,
+          "emotion": 감정 태그|None, "events": [비언어 이벤트]}
+    모델 없이 결정적으로 동작하는 순수 파서 — 태그가 없으면 빈 메타를 돌려준다.
+    """
+    tags = SENSEVOICE_TAG_RE.findall(raw_text)
+    text = SENSEVOICE_TAG_RE.sub("", raw_text).strip()
+    return {
+        "text": text,
+        "lang": next((t.lower() for t in tags if t.lower() in _SENSEVOICE_LANGS), None),
+        "emotion": next((t for t in tags if t in _SENSEVOICE_EMOTIONS), None),
+        "events": [t for t in tags if t in _SENSEVOICE_EVENTS],
+    }
 
 
 def transcribe_faster_whisper(path: Path, lang: str | None, verbatim: bool, model_size: str) -> dict:
@@ -120,6 +173,71 @@ def transcribe_binary(binary: str, path: Path, lang: str | None) -> dict:
     return {"engine": binary, "segments": segments}
 
 
+def transcribe_sensevoice(path: Path, lang: str | None, model_size: str) -> dict:
+    """FunASR SenseVoice — 한국어 포함 다국어 + 감정/비언어 이벤트 태그.
+
+    BYOB: funasr 패키지가 없으면 호출되지 않는다(detect_engine이 차단).
+    모델 기본값은 SenseVoiceSmall; model_size가 'turbo' 등 whisper 이름이면
+    iic/SenseVoiceSmall로 매핑한다.
+    """
+    from funasr import AutoModel  # type: ignore
+    from funasr.utils.postprocess_utils import rich_transcription_postprocess  # type: ignore
+
+    model_id = model_size if "/" in model_size else "iic/SenseVoiceSmall"
+    model = AutoModel(model=model_id, disable_update=True)
+    res = model.generate(
+        input=str(path),
+        cache={},
+        language=lang or "auto",
+        use_itn=True,
+        batch_size_s=60,
+        merge_vad=True,
+    )
+    segments = []
+    for item in res:
+        raw = item.get("text", "")
+        parsed = parse_sensevoice_tags(raw)
+        text = rich_transcription_postprocess(raw)
+        seg = {"start": None, "end": None, "text": text}
+        if parsed["emotion"]:
+            seg["emotion"] = parsed["emotion"]
+        if parsed["events"]:
+            seg["events"] = parsed["events"]
+        segments.append(seg)
+    return {
+        "engine": f"sensevoice/{model_id}",
+        "segments": segments,
+        "note": "SenseVoice 감정/이벤트 태그는 모델 추정치 — 증거 기재 시 원본 음성 대조 필요",
+    }
+
+
+def transcribe_sensevoice_binary(binary: str, path: Path, lang: str | None) -> dict:
+    """sensevoice 바이너리 계열 (ONNX 포트 등) — JSON 출력 가정, BYOB."""
+    cmd = [binary, str(path), "--json"]
+    if lang:
+        cmd += ["--language", lang]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"{binary} failed: {proc.stderr.strip()[:300]}")
+    raw = json.loads(proc.stdout)
+    segments = []
+    items = raw if isinstance(raw, list) else raw.get("segments", [raw])
+    for item in items:
+        text = item.get("text", "")
+        parsed = parse_sensevoice_tags(text)
+        seg = {
+            "start": item.get("start"),
+            "end": item.get("end"),
+            "text": parsed["text"],
+        }
+        if parsed["emotion"]:
+            seg["emotion"] = parsed["emotion"]
+        if parsed["events"]:
+            seg["events"] = parsed["events"]
+        segments.append(seg)
+    return {"engine": binary, "segments": segments}
+
+
 def transcribe_moonshine(path: Path, model_size: str) -> dict:
     """moonshine.transcribe는 타임스탬프 없이 문장 리스트를 반환한다.
     영어 전용 엔진 — 한국어 증거에는 쓰지 않는다."""
@@ -144,6 +262,10 @@ def transcribe_file(path: Path, engine: str, lang: str | None, verbatim: bool, m
         return transcribe_openai_whisper(path, lang, verbatim, model_size)
     if engine.startswith("binary:"):
         return transcribe_binary(engine.split(":", 1)[1], path, lang)
+    if engine == "sensevoice":
+        return transcribe_sensevoice(path, lang, model_size)
+    if engine.startswith("binary-sensevoice:"):
+        return transcribe_sensevoice_binary(engine.split(":", 1)[1], path, lang)
     if engine == "moonshine":
         return transcribe_moonshine(path, model_size)
     raise RuntimeError(f"unknown engine: {engine}")
@@ -164,17 +286,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lang", default=None, help="언어 코드 (예: ko). 미지정 시 엔진 자동 감지")
     ap.add_argument("--model", default="turbo", help="모델 크기 (기본 turbo)")
     ap.add_argument("--verbatim", action="store_true", help="필러음·단어 단위 타임스탬프 보존 모드")
+    ap.add_argument("--engine", default=None,
+                    help="엔진 강제 지정 (faster-whisper|openai-whisper|sensevoice|moonshine). "
+                         "감정 태그가 필요하면 sensevoice 지정")
     ap.add_argument("--keywords", default=None, help="쉼표 구분 키워드 히트 리포트")
     ap.add_argument("--out", default=None, help="배치 요약 JSON 출력 경로")
     args = ap.parse_args(argv)
 
-    engine = detect_engine()
+    if args.engine:
+        engine = args.engine
+        if not _engine_available(engine):
+            print(f"지정 엔진을 사용할 수 없습니다: {engine}", file=sys.stderr)
+            return 3
+    else:
+        engine = detect_engine()
     if engine is None:
         print(
             "로컬 STT 엔진이 없습니다. 전사를 생성하지 않고 종료합니다.\n"
             "설치 예:\n"
             "  pip install faster-whisper      # 권장 (word timestamps)\n"
             "  pip install openai-whisper\n"
+            "  pip install funasr              # SenseVoice — ko 지원 + 감정/이벤트 태그\n"
             "  brew install whisper-cpp        # 또는 transcribe.cpp 빌드\n"
             "외부 API(Groq/OpenAI) 업로드가 필요하면 의뢰인 동의·반출 승인 후\n"
             "skills/forensic-video 의 --upload-audio 경로를 사용하세요.",
