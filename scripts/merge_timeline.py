@@ -10,6 +10,7 @@ forensic-timeline(--input events.json)에 넣을 정규화 이벤트 목록을 �
   --kakao k.json        parse_kakao.py 출력 → 메시지 수발신 시각
   --exif e.json         exif_audit.py --json 출력 → DateTimeOriginal
   --stt t.json          local_stt.py 전사 JSON → 발화 구간
+  --plaso p.{jsonl,csv} log2timeline 슈퍼 타임라인 출력 → 통합 이벤트
 
 STT 구간의 시각은 '녹음 파일 내 상대 초'다. 벽시계로 올리려면
 기준 시각을 명시해야 한다:
@@ -147,7 +148,60 @@ def events_from_stt(path: str, anchors: dict[str, str]) -> tuple[list[dict], lis
     return anchored, unanchored
 
 
-def merge(manifests, kakaos, exifs, stts, anchors) -> dict:
+def _plaso_record_event(rec: dict, path: str) -> dict | None:
+    """Plaso(json_line/CSV) 레코드 한 건을 통합 이벤트로 변환. 시각 없으면 None."""
+    ts = None
+    # plaso json_line: timestamp는 epoch microseconds, datetime은 ISO 문자열
+    raw_ts = rec.get("timestamp")
+    if raw_ts is not None:
+        try:
+            ts = datetime.fromtimestamp(int(raw_ts) / 1_000_000, tz=timezone.utc).isoformat()
+        except (ValueError, TypeError, OSError):
+            ts = None
+    if ts is None:
+        for key in ("datetime", "date_time"):
+            if rec.get(key):
+                ts = _norm_iso(str(rec[key]))
+                if ts:
+                    break
+    if ts is None:
+        return None
+    desc = rec.get("message") or rec.get("display_name") or rec.get("filename") or "(항목)"
+    return {
+        "timestamp": ts,
+        "source": f"plaso:{rec.get('parser') or rec.get('source') or 'unknown'}",
+        "description": f"[{rec.get('timestamp_desc', 'event')}] {str(desc)[:80]}",
+        "file": path,
+    }
+
+
+def events_from_plaso(path: str) -> list[dict]:
+    """log2timeline 출력(JSONL 또는 CSV) → 통합 이벤트 목록."""
+    import csv
+    import io
+
+    raw = Path(path).read_text(encoding="utf-8", errors="replace")
+    records: list[dict] = []
+    if raw.lstrip().startswith("{"):
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    else:
+        records = list(csv.DictReader(io.StringIO(raw)))
+    out = []
+    for r in records:
+        ev = _plaso_record_event(r, path)
+        if ev:
+            out.append(ev)
+    return out
+
+
+def merge(manifests, kakaos, exifs, stts, anchors, plasos=None) -> dict:
     events, unanchored = [], []
     for p in manifests:
         events += events_from_manifest(p)
@@ -155,6 +209,8 @@ def merge(manifests, kakaos, exifs, stts, anchors) -> dict:
         events += events_from_kakao(p)
     for p in exifs:
         events += events_from_exif(p)
+    for p in plasos or []:
+        events += events_from_plaso(p)
     for p in stts:
         a, u = events_from_stt(p, anchors)
         events += a
@@ -178,14 +234,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kakao", action="append", default=[])
     ap.add_argument("--exif", action="append", default=[])
     ap.add_argument("--stt", action="append", default=[])
+    ap.add_argument("--plaso", action="append", default=[],
+                    help="log2timeline 출력(JSONL/CSV) — 슈퍼 타임라인 병합")
     ap.add_argument("--anchor", action="append", default=[],
                     help='오디오파일명="ISO시각" — STT 상대시각의 벽시계 기준')
     ap.add_argument("-o", "--output", default=None, help="events.json 경로")
     ap.add_argument("--report", default=None, help="병합 요약 JSON 경로")
     args = ap.parse_args(argv)
 
-    if not (args.manifest or args.kakao or args.exif or args.stt):
-        print("입력 소스가 없습니다. --manifest/--kakao/--exif/--stt 중 하나 이상 지정.",
+    if not (args.manifest or args.kakao or args.exif or args.stt or args.plaso):
+        print("입력 소스가 없습니다. --manifest/--kakao/--exif/--stt/--plaso 중 하나 이상 지정.",
               file=sys.stderr)
         return 2
 
@@ -197,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         k, v = a.split("=", 1)
         anchors[k.strip()] = v.strip().strip('"')
 
-    merged = merge(args.manifest, args.kakao, args.exif, args.stt, anchors)
+    merged = merge(args.manifest, args.kakao, args.exif, args.stt, anchors, plasos=args.plaso)
 
     out = json.dumps(merged["events"], ensure_ascii=False, indent=2)
     if args.output:

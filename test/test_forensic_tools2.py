@@ -342,6 +342,36 @@ class MergeTimelineTests(unittest.TestCase):
             self.assertEqual(merged2["events"][0]["timestamp"],
                              "2026-03-05T14:00:49+09:00")
 
+    def test_plaso_jsonl_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pf = Path(tmp) / "plaso.jsonl"
+            pf.write_text(
+                '{"timestamp": 1741212000000000, "timestamp_desc": "Modification Time",'
+                ' "parser": "filestat", "message": "/etc/passwd"}\n'
+                '{"datetime": "2026-03-05T15:00:00+00:00", "timestamp_desc": "Creation Time",'
+                ' "parser": "evtx", "message": "EventID 4624"}\n'
+                '{"no_time": true, "parser": "broken"}\n',
+                encoding="utf-8")
+            merged = merge_tl.merge([], [], [], [], {}, plasos=[str(pf)])
+            self.assertEqual(len(merged["events"]), 2)
+            sources = {e["source"] for e in merged["events"]}
+            self.assertIn("plaso:filestat", sources)
+            self.assertIn("plaso:evtx", sources)
+            ts = [e["timestamp"] for e in merged["events"]]
+            self.assertEqual(ts, sorted(ts))
+
+    def test_plaso_csv_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pf = Path(tmp) / "plaso.csv"
+            pf.write_text(
+                "datetime,timestamp_desc,parser,message\n"
+                "2026-03-05T14:00:00+00:00,Last Visit,chrome_history,https://x\n"
+                ",Missing Time,winreg,bad row\n",
+                encoding="utf-8")
+            merged = merge_tl.merge([], [], [], [], {}, plasos=[str(pf)])
+            self.assertEqual(len(merged["events"]), 1)
+            self.assertEqual(merged["events"][0]["source"], "plaso:chrome_history")
+
 
 class CourtEvidenceSheetTests(unittest.TestCase):
     def test_manifest_to_sheet(self):
