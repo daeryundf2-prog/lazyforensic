@@ -78,3 +78,11 @@ venv 인지 리졸버: 위 표의 `python` 자리에 `scripts/py`를 쓰면 `~/.
 계약 서식·법령 조회는 `../legal-forensic-consult/SKILL.md`. 세션의 `korean_law`가 `ready`일 때만 MCP를 쓴다. 조문을 만들지 않는다.
 
 병렬 작업은 `../references/antigravity-tools.md`의 `invoke_subagent`만 쓴다. `Model: "flash"` 초안, `Model: "pro"` 스크립트 출력 대조.
+
+## Evidence Integrity & Defensibility Mandates (사법 증거 무결성 원칙)
+
+1. **Chain of Custody 제1원칙 (프록시 경유 절대 금지)**:
+   - 모든 웹·네트워크 증거 채증은 로컬 브라우저가 원본 서버와 직접 TLS 통신을 맺고 원시 바이트와 스크린샷, 로컬 해시(SHA-256)를 즉시 산출해야 한다. 제3자 호스티드 프록시(Jina Reader 등)를 거친 데이터는 증거의 동일성이 법정에서 탄핵되므로 채증 파이프라인에서 원천 배제한다.
+2. **Tamper-Evident 원칙 (변조 불가능 과장 금지)**:
+   - 로컬 해시 체인 및 이벤트 로그는 '변조 탐지 가능(tamper-evident)'일 뿐 '변조 불가능(tamper-proof)'이 아니다. 외부 앵커(RFC 3161 공인시각인증 TSA 서버 타임스탬프 등)가 없는 단독 로컬 로그는 사법기관 제출 시 재계산 위조 공격에 대한 소명 한계를 반드시 명시한다.
+
