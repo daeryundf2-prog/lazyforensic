@@ -26,6 +26,13 @@ Rust 기반 Hayabusa/Chainsaw를 **있으면** 호출하는 래퍼다. `hayabusa
    chainsaw.exe search "mimikatz" "C:\Evidence\Logs" --json
    ```
 
+3. **Chainsaw 내장 시그마 룰셋 (NetExec 침투 / MFT 변조):**
+   - `rules/netexec_mft.yml` — NetExec(nxc/netexec) 실행, MFT 대량 변조·삭제,
+     원격 서비스 설치(7045) 탐지 룰 3종.
+   ```powershell
+   chainsaw.exe hunt "C:\Evidence\Logs" -s "rules\netexec_mft.yml" --json
+   ```
+
 ## 필수 준비 (게이트 메커니즘)
 - 명령을 만들기 **전에** 게이트를 실행한다: `python scripts/check_tool.py hayabusa.exe chainsaw.exe`
   - exit 0 이면 진행, exit 2 이면 분석 결과를 만들지 않고 설치 안내만 한다 (fail-closed).

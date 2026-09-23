@@ -23,6 +23,14 @@ description: 파일 생성/수정/접근 시각과 SHA-256이 필요할 때. os.
 
 그런 분석이 필요하면 EnCase, X-Ways, MFTECmd 등 전용 도구를 쓰고, 이 스크립트 결과를 그 대체물로 인용하지 않는다.
 
+## 엔드포인트 원격 수집 (Velociraptor — BYO)
+
+엔드포인트에 Velociraptor가 배포된 환경에서는 VQL로 프로세스/네트워크/
+브라우저 이력을 일괄 수집할 수 있다. 쿼리 템플릿은
+`references/vql_templates.md`를 참조한다. 바이너리 게이트는
+`python scripts/check_tool.py velociraptor.exe` — 미설치 시 쿼리를 만들지
+않는다. 수집 전 대상 호스트의 권한 확인이 선행이다.
+
 ## 실행
 
 ```bash

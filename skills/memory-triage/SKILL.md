@@ -33,6 +33,19 @@ python scripts/check_tool.py MemProcFS.exe vol.py   # exit 2 면 분석 결과 �
    vol.py -f memory.raw windows.netscan
    ```
 
+3. **YARA-X (초고속 시그니처 스캔 — 별도 설치):**
+   - Rust 재작성 차세대 YARA. 구형 C YARA 대비 수 배 빠른 패턴 매칭.
+   ```bash
+   python scripts/check_tool.py yr   # yr.exe 미설치 시 스캔 명령 생성 금지
+   ```
+   ```powershell
+   # 메모리 덤프 / 마운트된 파일시스템 IOC 스캔 (yr이 있을 때만)
+   yr scan rules\ioc.yar "C:\Evidence\memory.raw"
+   yr scan rules\ioc.yar "M:\" --recursive
+   ```
+   - `yr scan` 출력은 탐지 결과이지 확정 판정이 아니다 — 룰 품질·오탐
+     검토는 별도 단계.
+
 ## 하지 않는 일
 - MemProcFS/Volatility 미설치 상태에서 메모리 덤프 분석 결과 생성
 - 은닉 프로세스/인젝션 자동 확정, 법원 적격성 보장
