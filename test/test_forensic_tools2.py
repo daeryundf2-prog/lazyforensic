@@ -38,6 +38,7 @@ sqlite_survey = load_module("sqlite_survey", "scripts/sqlite_survey.py")
 video_integrity = load_module("video_integrity", "scripts/video_integrity.py")
 audio_fp = load_module("audio_fingerprint", "scripts/audio_fingerprint.py")
 merge_tl = load_module("merge_timeline", "scripts/merge_timeline.py")
+audit_ledger = load_module("audit_ledger", "scripts/audit_ledger.py")
 evidence_sheet = load_module("court_evidence_sheet", "scripts/court_evidence_sheet.py")
 evidence_export = load_module("evidence_export", "scripts/evidence_export.py")
 dlp_table = load_module("dlp_log_table", "scripts/dlp_log_table.py")
@@ -637,6 +638,62 @@ class VideoIntegrityTests(unittest.TestCase):
             cut.write_bytes(data[: len(data) // 3])
             r2 = video_integrity.audit_video(cut)
             self.assertIn(r2["status"], ("DAMAGED", "UNREADABLE"))
+
+
+class AuditLedgerTests(unittest.TestCase):
+    def test_record_and_verify(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Path(tmp) / "case.jsonl"
+            self.assertEqual(audit_ledger.main(
+                ["record", str(led), "--kind", "tool_call",
+                 "--actor", "local_stt.py", "--detail", "전사 실행"]), 0)
+            payload = Path(tmp) / "out.json"
+            payload.write_text('{"a":1}', encoding="utf-8")
+            self.assertEqual(audit_ledger.main(
+                ["record", str(led), "--kind", "file_write",
+                 "--actor", "report.py",
+                 "--payload-file", str(payload)]), 0)
+            self.assertEqual(audit_ledger.main(["verify", str(led)]), 0)
+            entries = audit_ledger.load(led)
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(entries[0]["prev_hash"], audit_ledger.GENESIS)
+            self.assertEqual(entries[1]["prev_hash"], entries[0]["entry_hash"])
+            self.assertIn("payload_sha256", entries[1])
+
+    def test_tamper_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Path(tmp) / "case.jsonl"
+            for i in range(3):
+                audit_ledger.main(["record", str(led), "--kind", "ev",
+                                   "--actor", "t", "--detail", f"e{i}"])
+            lines = led.read_text(encoding="utf-8").splitlines()
+            mid = json.loads(lines[1])
+            mid["detail"] = "조작된 내용"
+            lines[1] = json.dumps(mid, ensure_ascii=False)
+            led.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            ok, idx, _msg = audit_ledger.verify(led)
+            self.assertFalse(ok)
+            self.assertEqual(idx, 1)  # 변조된 항목에서 탐지
+            self.assertEqual(audit_ledger.main(["verify", str(led)]), 1)
+
+    def test_truncation_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Path(tmp) / "case.jsonl"
+            for i in range(2):
+                audit_ledger.main(["record", str(led), "--kind", "ev",
+                                   "--actor", "t"])
+            lines = led.read_text(encoding="utf-8").splitlines()
+            led.write_text(lines[0] + "\n", encoding="utf-8")
+            # 끝이 잘려도 체인 자체는 유효 — 항목 수 감소는 verify 통과.
+            # (로컬 단독으로는 절단을 증명 못함 — 외부 앵커가 필요한 이유)
+            ok, _idx, msg = audit_ledger.verify(led)
+            self.assertTrue(ok)
+            self.assertIn("1개", msg)
+
+    def test_head_empty_exit_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Path(tmp) / "empty.jsonl"
+            self.assertEqual(audit_ledger.main(["head", str(led)]), 1)
 
 
 if __name__ == "__main__":
