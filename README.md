@@ -1,4 +1,4 @@
-# LazyForensic (v1.0.1)
+# LazyForensic (v1.0.2)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -47,7 +47,7 @@
 
 ```bash
 git clone https://github.com/daeryundf2-prog/lazyforensic && cd lazyforensic
-python -m pytest test/ -v   # 권장: 258개 테스트 (수 초). pytest 없으면 python -m unittest discover -s test (234개)
+python -m pytest test/ -v   # 권장: 295개 테스트 (로컬 약 30~40초). pytest 없으면 python -m unittest discover -s test
 ```
 
 ### C. 다른 컴퓨터에서 한 방 세팅 (선택 의존성 포함)
