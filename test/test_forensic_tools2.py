@@ -706,7 +706,7 @@ class ContractsVendoredTests(unittest.TestCase):
     def _check(self):
         import hashlib
         root = Path(__file__).resolve().parents[1]
-        pin = json.loads((root / "contracts" / "PIN.json").read_text())
+        pin = json.loads((root / "contracts" / "PIN.json").read_text(encoding="utf-8"))
         for name, want in pin["sha256"].items():
             f = root / "contracts" / name
             self.assertTrue(f.exists(), f"missing vendored file: {name}")
@@ -750,7 +750,7 @@ class CaseEnvelopeTests(unittest.TestCase):
             self.ce.main()
         finally:
             _sys.argv = old
-        return json.loads(out.read_text())
+        return json.loads(out.read_text(encoding="utf-8"))
 
     def test_frametrace_rapid_deepfake_envelope_conforms(self):
         pkg = self._write("pkg.json", {"files": [
@@ -784,14 +784,16 @@ class CaseEnvelopeTests(unittest.TestCase):
         import subprocess, sys as _sys
         proc = subprocess.run(
             [_sys.executable, "scripts/case_envelope.py", "verify", str(doc_path)],
-            capture_output=True, text=True, cwd=self.ce.REPO_ROOT)
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=self.ce.REPO_ROOT)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("conforms", proc.stdout)
 
     def test_ledger_adapter_links_entry_hash(self):
         led = self.dir / "led.jsonl"
         led.write_text(json.dumps(
-            {"kind": "tool_call", "actor": "x", "entry_hash": "abc"}) + "\n")
+            {"kind": "tool_call", "actor": "x", "entry_hash": "abc"}) + "\n",
+            encoding="utf-8")
         doc = self._build(("ledger", led))
         self.assertEqual(doc["items"][0]["ledger_ref"], "abc")
         self.assertEqual(doc["items"][0]["trust"], "observed")

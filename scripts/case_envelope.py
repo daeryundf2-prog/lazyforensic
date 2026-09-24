@@ -234,13 +234,17 @@ def verify(args) -> int:
     cmd = [sys.executable, str(VENDORED_VERIFIER), str(args.file)]
     if VENDORED_SCHEMA.is_file():
         cmd += ["--schema", str(VENDORED_SCHEMA)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
     return proc.returncode
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
