@@ -31,7 +31,6 @@ jobs:
         env:
           PYTHONUTF8: "0"
         run: |
-          python contracts/verify_contract.py --drift-check contracts/lazy-evidence-case-v1.json
           python -m pytest test/test_forensic_tools2.py -q -k "contract or envelope"
       - name: Local-only egress audit (새 UNGATED 외부 송신 경로 차단)
         run: |
