@@ -26,6 +26,9 @@ jobs:
       - name: Run tests (pytest — 함수형 테스트까지 수집)
         run: |
           python -m pytest test/ -v
+      - name: E2E — README 5-minute Kakao workflow (parse→timeline→audit→verify)
+        run: |
+          python -m pytest test/test_e2e_kakao_workflow.py -v
       - name: Encoding smoke (PYTHONUTF8=0 — cp949 계열 로케일 재현, Windows만)
         if: matrix.os == 'windows-latest'
         env:
