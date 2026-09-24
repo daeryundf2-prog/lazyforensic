@@ -698,3 +698,20 @@ class AuditLedgerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContractsVendoredTests(unittest.TestCase):
+    """contracts/ 벤더 파일이 PIN.json 해시와 일치하는지 — 수동 편집 드리프트 탐지."""
+
+    def _check(self):
+        import hashlib
+        root = Path(__file__).resolve().parents[1]
+        pin = json.loads((root / "contracts" / "PIN.json").read_text())
+        for name, want in pin["sha256"].items():
+            f = root / "contracts" / name
+            self.assertTrue(f.exists(), f"missing vendored file: {name}")
+            got = hashlib.sha256(f.read_bytes()).hexdigest()
+            self.assertEqual(got, want, f"drift detected in contracts/{name}")
+
+    def test_vendored_contracts_match_pin(self):
+        self._check()
