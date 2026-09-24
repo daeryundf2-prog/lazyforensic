@@ -715,3 +715,88 @@ class ContractsVendoredTests(unittest.TestCase):
 
     def test_vendored_contracts_match_pin(self):
         self._check()
+
+
+class CaseEnvelopeTests(unittest.TestCase):
+    """case_envelope.py — 레포 산출물 → lazy-evidence-case-v1 봉투."""
+
+    def setUp(self):
+        import scripts.case_envelope as ce
+        self.ce = ce
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, name, obj):
+        p = self.dir / name
+        p.write_text(json.dumps(obj), encoding="utf-8")
+        return p
+
+    def _build(self, *inputs, case_id="CASE-1"):
+        out = self.dir / "case.json"
+        rc = self.ce.main() if False else None  # noqa - use argparse path below
+        argv = ["build", "--case-id", case_id]
+        for producer, path in inputs:
+            argv += ["--input", f"{producer}:{path}"]
+        argv += ["--out", str(out)]
+        import argparse as _ap  # noqa
+        # call main() via sys.argv patching
+        import sys as _sys
+        old = _sys.argv
+        _sys.argv = ["case_envelope.py"] + argv
+        try:
+            self.ce.main()
+        finally:
+            _sys.argv = old
+        return json.loads(out.read_text())
+
+    def test_frametrace_rapid_deepfake_envelope_conforms(self):
+        pkg = self._write("pkg.json", {"files": [
+            {"relative_path": "db/case.db", "size_bytes": 10,
+             "sha256": "a" * 64}]})
+        rapid = self._write("rapid.json", {"items": [
+            {"item_id": "it-1", "normalized_path": "a/b.txt",
+             "observed_status": "recovered", "sha256": "b" * 64,
+             "size_bytes": 5}]})
+        scan = self._write("scan.json", {"rows": [
+            {"path": "clip.mp4", "score": 88, "band": "high"}]})
+        doc = self._build(("frametrace", pkg), ("rapid", rapid), ("deepfake", scan))
+        self.assertEqual(doc["schema_version"], "lazy-evidence-case-v1")
+        self.assertEqual(len(doc["items"]), 3)
+        kinds = {i["kind"] for i in doc["items"]}
+        self.assertEqual(kinds, {"file", "screening_result"})
+        trusts = {i["trust"] for i in doc["items"]}
+        self.assertEqual(trusts, {"observed", "model-assisted"})
+        # 0-100 점수는 confidence(0..1)로 승격하지 않는다
+        df = [i for i in doc["items"] if i["kind"] == "screening_result"][0]
+        self.assertNotIn("confidence", df)
+        self.assertIn("score=88", df["summary"])
+        self.assertEqual(len(doc["lineage"]), 3)
+
+    def test_envelope_passes_vendored_verifier(self):
+        pkg = self._write("pkg.json", {"files": [
+            {"relative_path": "db/case.db", "size_bytes": 10,
+             "sha256": "a" * 64}]})
+        doc_path = self.dir / "case.json"
+        self._build(("frametrace", pkg))
+        import subprocess, sys as _sys
+        proc = subprocess.run(
+            [_sys.executable, "scripts/case_envelope.py", "verify", str(doc_path)],
+            capture_output=True, text=True, cwd=self.ce.REPO_ROOT)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("conforms", proc.stdout)
+
+    def test_ledger_adapter_links_entry_hash(self):
+        led = self.dir / "led.jsonl"
+        led.write_text(json.dumps(
+            {"kind": "tool_call", "actor": "x", "entry_hash": "abc"}) + "\n")
+        doc = self._build(("ledger", led))
+        self.assertEqual(doc["items"][0]["ledger_ref"], "abc")
+        self.assertEqual(doc["items"][0]["trust"], "observed")
+
+    def test_unknown_producer_fails_closed(self):
+        pkg = self._write("pkg.json", {"files": []})
+        with self.assertRaises(SystemExit):
+            self._build(("bogus", pkg))
