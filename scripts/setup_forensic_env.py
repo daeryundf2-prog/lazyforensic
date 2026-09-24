@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"설치: {', '.join(packages)}")
     proc = subprocess.run([str(pip), "install", *packages],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         print(f"설치 실패:\n{proc.stderr[-2000:]}", file=sys.stderr)
         return 1

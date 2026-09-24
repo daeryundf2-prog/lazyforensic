@@ -155,7 +155,7 @@ def transcribe_binary(binary: str, path: Path, lang: str | None) -> dict:
     cmd = [binary, "-f", str(path), "-oj", "-of", str(out_base)]
     if lang:
         cmd += ["-l", lang]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(f"{binary} failed: {proc.stderr.strip()[:300]}")
     json_path = out_base.with_suffix(".json")
@@ -216,7 +216,7 @@ def transcribe_sensevoice_binary(binary: str, path: Path, lang: str | None) -> d
     cmd = [binary, str(path), "--json"]
     if lang:
         cmd += ["--language", lang]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(f"{binary} failed: {proc.stderr.strip()[:300]}")
     raw = json.loads(proc.stdout)

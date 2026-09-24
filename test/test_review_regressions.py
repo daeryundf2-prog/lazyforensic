@@ -153,7 +153,7 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(result["chain_status"], "not_measured")
         self.assertFalse(result["authenticated"])
         self.assertEqual(audit.verify_audit_chain(trail, require_hmac=True, hmac_key="test")["status"], "FAIL")
-        trail.write_text(json.dumps({"timestamp": "2026-01-01T00:00:00Z", "file": "synthetic.txt", "prev_hash": None}))
+        trail.write_text(json.dumps({"timestamp": "2026-01-01T00:00:00Z", "file": "synthetic.txt", "prev_hash": None}), encoding="utf-8")
         result = audit.verify_audit_chain(trail, require_hmac=True, hmac_key="test")
         self.assertEqual(result["status"], "FAIL")
         self.assertTrue(result["valid_chain"])
@@ -169,7 +169,7 @@ class RegressionTests(unittest.TestCase):
         self.assertTrue(result["authenticated"])
         self.assertTrue(result["valid_chain"])
         proc = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/verify_audit_chain.py"),
-            str(trail), "--require-hmac", "--json"], capture_output=True, text=True,
+            str(trail), "--require-hmac", "--json"], capture_output=True, text=True, encoding="utf-8", errors="replace",
             env={**os.environ, "LAZYFORENSIC_HMAC_KEY": "synthetic-test-key"})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(json.loads(proc.stdout)["authenticated"])

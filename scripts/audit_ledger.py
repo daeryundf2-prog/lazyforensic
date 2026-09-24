@@ -129,7 +129,7 @@ def make_tsa_request(path: Path) -> Path:
     tsq = path.with_suffix(".tsq")
     proc = subprocess.run(
         [openssl, "ts", "-query", "-digest", h, "-sha256", "-cert", "-out", str(tsq)],
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise SystemExit(f"openssl ts -query 실패: {proc.stderr.strip()[:300]}")
     return tsq
@@ -150,7 +150,7 @@ def check_tsa_reply(path: Path, tsr: Path, ca: Path | None, untrusted: Path | No
         cmd += ["-CAfile", str(ca)]
     if untrusted:
         cmd += ["-untrusted", str(untrusted)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     ok = proc.returncode == 0
     print(proc.stdout.strip() or proc.stderr.strip())
     return ok

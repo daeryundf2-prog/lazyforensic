@@ -46,7 +46,7 @@ def run_sherlock(cmd: list[str], username: str, timeout: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         proc = subprocess.run(
             cmd + [username, "--print-found", "--folderoutput", tmp, "--timeout", "10"],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
         urls = [
             line.strip().split()[-1]

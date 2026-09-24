@@ -48,7 +48,7 @@ def fingerprint(path: Path) -> dict:
     try:
         r = subprocess.run(
             ["fpcalc", "-raw", "-json", str(path)],
-            capture_output=True, text=True, timeout=300)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise RuntimeError(f"fpcalc 실패: {e}") from e
     if r.returncode != 0:

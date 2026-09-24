@@ -56,7 +56,7 @@ def probe(path: Path) -> dict:
         ["ffprobe", "-v", "error", "-show_entries",
          "format=duration,size:stream=codec_name,width,height",
          "-of", "json", str(path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if proc.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {proc.stderr.strip()[:200]}")

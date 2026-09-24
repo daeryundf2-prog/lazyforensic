@@ -41,7 +41,7 @@ def probe(path: Path) -> dict | None:
         r = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", "-show_streams",
              "-of", "json", str(path)],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"probe_error": str(e)}
     if r.returncode != 0:
@@ -57,7 +57,7 @@ def decode_errors(path: Path) -> dict:
     try:
         r = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
-            capture_output=True, text=True, timeout=600)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"decode_error": str(e), "errors": [], "error_count": None,
                 "exit_code": None}
