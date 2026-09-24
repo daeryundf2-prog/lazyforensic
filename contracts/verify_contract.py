@@ -108,10 +108,20 @@ def drift_check(vendored: Path, canonical: Path = DEFAULT_SCHEMA) -> bool:
     if not vendored.exists():
         print(f"벤더 파일 없음: {vendored}", file=sys.stderr)
         return False
-    v = hashlib.sha256(vendored.read_bytes()).hexdigest()
-    c = hashlib.sha256(canonical.read_bytes()).hexdigest()
+    v_bytes = vendored.read_bytes()
+    c_bytes = canonical.read_bytes()
+    v = hashlib.sha256(v_bytes).hexdigest()
+    c = hashlib.sha256(c_bytes).hexdigest()
     if v != c:
-        print(f"DRIFT: {vendored} != {canonical}\n  vendored={v}\n  canonical={c}",
+        hint = ""
+        if hashlib.sha256(v_bytes.replace(b"\r\n", b"\n")).hexdigest() == c:
+            hint = ("\n  진단: CRLF 줄바꿈 변환이 감지됐습니다 — 체크아웃 시 "
+                    "git이 바이트를 바꿨습니다.\n  .gitattributes에 "
+                    "`contracts/** -text`를 추가하고 파일을 다시 체크아웃하세요.")
+        elif b"\r\n" in v_bytes or b"\r\n" in c_bytes:
+            hint = ("\n  진단: 한쪽 파일에 CRLF가 있습니다 — 해시 외에 "
+                    "줄바꿈 변환 여부를 확인하세요.")
+        print(f"DRIFT: {vendored} != {canonical}\n  vendored={v}\n  canonical={c}{hint}",
               file=sys.stderr)
         return False
     print(f"OK — {vendored.name}이 SSOT와 동일 ({v[:16]}…)")
@@ -119,6 +129,9 @@ def drift_check(vendored: Path, canonical: Path = DEFAULT_SCHEMA) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="lazy-evidence-case-v1 검증기")
     ap.add_argument("doc", nargs="?", help="검증할 JSON 산출물")
     ap.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
