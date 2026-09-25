@@ -44,6 +44,8 @@ def _normalize(blob: dict, tmp_dir: Path) -> dict:
     out = {"exit": blob["exit"], "stdout": blob["stdout"], "stderr": blob["stderr"]}
     for key in ("stdout", "stderr"):
         text = out[key].replace(escaped, "<TMP>").replace(raw, "<TMP>")
+        # Windows 경로 구분자 정규화 (<TMP>\ 및 <TMP>\\ -> <TMP>/)
+        text = text.replace("<TMP>\\\\", "<TMP>/").replace("<TMP>\\", "<TMP>/")
         # '미래 시각 날조' 메시지에 현재 시각이 박힌다
         text = re.sub(r"현재\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)", "현재(<NOW>)", text)
         out[key] = text
