@@ -2,6 +2,14 @@
 
 이 레포의 실제 변경을 기록한다. 형식은 Keep a Changelog 를 따르고, 항목은 커밋 해시로 추적한다.
 
+### Changed — Claude Opus/Sonnet 5.5 및 Gemini 3.8 Flash 세션 모델 연동 대응 (1.0.3)
+
+- `plugin.json`: Gemini 3.8 Flash 외 Claude Opus 5.5 / Sonnet 5.5 세션 모델 지원 명시 및 버전 패치 갱신 (1.0.3).
+- `GEMINI.md`: 세션 UI 고정 지침을 '사용자가 선택한 세션 모델을 따른다'로 갱신. 서브에이전트 검증 레인은 Gemini 세션 시 `pro`, Claude 5.5 세션 시 `inherit` 사용 규칙 명시.
+- `skills/references/antigravity-tools.md`: Antigravity 세션 모델 중립화 및 검증 레인 모델 힌트 조건 분기 반영.
+- `skills/lazyforensic`, `forensic-video`, `forensic-timeline`, `kakao-chat-extractor`: 서브에이전트 모델 힌트에 Claude 5.5 세션 `inherit` 및 Gemini 세션 `pro` 가이드 반영.
+- `skills/forensic-video/scripts/frames.py`: 비전 분석 docstring 모델 표기에 Claude Opus/Sonnet 5.5 추가.
+
 ### Added — lazyothers 브릿지·DLP 정리·Windows CLI
 
 - `scripts/evidence_export.py`: manifest/survey JSON → lazyothers `evidence.json` (`generate_evidence_doc.py`/`bind_court_pdf.py` 호환).

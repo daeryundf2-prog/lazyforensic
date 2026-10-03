@@ -1,6 +1,6 @@
 # Antigravity tool mapping (LazyForensic)
 
-Defaults: Google Antigravity + Gemini 3.8 Flash (High).
+Defaults: Google Antigravity (Gemini 3.8 Flash, Claude Opus/Sonnet 5.5). Follow the session model.
 
 ## Do
 
@@ -8,7 +8,7 @@ Defaults: Google Antigravity + Gemini 3.8 Flash (High).
 | --- | --- |
 | Explore / parse / draft / QA / review | `invoke_subagent` with TASK / DELIVERABLE / SCOPE / VERIFY |
 | Role envelope | `mayFinalizeRun=false`, `mayModifyGlobalRunState=false`, `mustReturn=SubagentResultEnvelope`, `requiresParentAck=true` |
-| Child model hint (`canTierRoute`, not host-enforced) | `Subagents[].Model`: `flash` (parse/draft/UI), `pro` (verify claims vs script output), `flash_lite` (tiny chores), `inherit` |
+| Child model hint (`canTierRoute`, not host-enforced) | `Subagents[].Model`: `flash` (parse/draft/UI), `pro` (verify claims vs script output in Gemini session), `inherit` (verify lanes in Claude 5.5 session), `flash_lite` (tiny chores) |
 | Read files / extracted frames | host `Read`; do not invent `view_file` |
 | Edit | host `Write` / `Edit` |
 
@@ -35,7 +35,7 @@ ROLE ENVELOPE: mayFinalizeRun=false; mayModifyGlobalRunState=false; mustReturn=S
 )
 ```
 
-`Workspace` is optional. Keep the session UI on Gemini 3.8 Flash (High). For verify lanes pass `Model: "pro"`. Passing `Model` is an agent hint (`hostEnforced=false`).
+`Workspace` is optional. Follow the session model (Gemini 3.8 Flash, Claude Opus/Sonnet 5.5). For verify lanes pass `Model: "pro"` (Gemini session) or `Model: "inherit"` (Claude session; inherit would downgrade to Flash in Gemini). Passing `Model` is an agent hint (`hostEnforced=false`).
 
 ## Do not
 

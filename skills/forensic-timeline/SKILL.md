@@ -33,6 +33,6 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input events.json
 - XSS 방지를 위해 필드 값을 escape 한다.
 - 법원 제출 적격성, 무결성, 원본 아티팩트 대체 주장을 하지 않는다.
 
-## Antigravity / Gemini
+## Antigravity
 
-호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"`. 도구 모양은 `../references/antigravity-tools.md`.
+호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션). 도구 모양은 `../references/antigravity-tools.md`.

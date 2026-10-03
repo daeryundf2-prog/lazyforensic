@@ -23,8 +23,8 @@ python skills/forensic-video/scripts/watch.py "<동영상경로>" --upload-audio
 
 `--upload-audio`는 추출 오디오를 제3자 API로 전송한다. URL 입력은 편의 다운로드일 뿐 포렌식 이미징이나 Chain of Custody가 아니다. 프레임은 최대 100개다.
 
-## Antigravity / Gemini
+## Antigravity
 
 추출된 프레임은 호스트 `Read`로 본다. `view_file`을 만들지 말 것.
-해석은 `invoke_subagent` `Model: "flash"`, 태그 vs `os.stat` 대조는 `Model: "pro"`.
+해석은 `invoke_subagent` `Model: "flash"`, 태그 vs `os.stat` 대조는 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션).
 번호판·신원 단정, 편집 여부 확정을 쓰지 않는다.

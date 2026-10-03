@@ -3,7 +3,7 @@
 """
 frames.py
 Probe video metadata and extract frames at auto-scaled scene-aware or keyframe rates.
-Emits frames optimized for multimodal vision analysis (Gemini 3.8 Flash / Pro).
+Emits frames optimized for multimodal vision analysis (Gemini 3.8 Flash / Pro or Claude Opus/Sonnet 5.5).
 """
 from __future__ import annotations
 

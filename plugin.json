@@ -1,7 +1,7 @@
 {
   "name": "lazyforensic",
-  "version": "1.0.2",
-  "description": "Google Antigravity + Gemini 3.8 Flash forensic assistant — 4 lanes (help/forensic/visual/legal). Not a forensic acquisition or court-admissibility suite. Organizes evidence, parses Kakao text exports, renders timelines, drafts reports, and records SHA-256 audit hooks for change detection.",
+  "version": "1.0.3",
+  "description": "Google Antigravity (Gemini 3.8 Flash or Claude Opus/Sonnet 5.5) forensic assistant — 4 lanes (help/forensic/visual/legal). Not a forensic acquisition or court-admissibility suite. Organizes evidence, parses Kakao text exports, renders timelines, drafts reports, and records SHA-256 audit hooks for change detection.",
   "author": {
     "name": "daeryundf2-prog",
     "url": "https://github.com/daeryundf2-prog"
@@ -26,7 +26,7 @@
   "interface": {
     "displayName": "LazyForensic",
     "shortDescription": "Forensic evidence organizer for Antigravity (not a court suite)",
-    "longDescription": "Equips Antigravity with 4 lanes (help/forensic/visual/legal) for Gemini 3.8 Flash: Kakao text-export parsing, os.stat hash/timestamp checks, timeline visualization, report drafts, and SHA-256 audit hooks. Not a forensic acquisition or court-admissibility suite. EVTX/MFT/Memory triage are bring-your-own-binary wrappers (Hayabusa/Chainsaw/Dissect/MemProcFS) — no bundled acquisition, no court claim.",
+    "longDescription": "Equips Antigravity with 4 lanes (help/forensic/visual/legal) for Gemini 3.8 Flash or Claude Opus/Sonnet 5.5: Kakao text-export parsing, os.stat hash/timestamp checks, timeline visualization, report drafts, and SHA-256 audit hooks. Not a forensic acquisition or court-admissibility suite. EVTX/MFT/Memory triage are bring-your-own-binary wrappers (Hayabusa/Chainsaw/Dissect/MemProcFS) — no bundled acquisition, no court claim.",
     "developerName": "daeryundf2-prog",
     "category": "DFIR & Incident Response",
     "capabilities": [
