@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
 MAX_DESCRIPTION = 280
-VISIBLE_SKILL_CAP = 19
+VISIBLE_SKILL_CAP = 18
 
 # 라이선스 검증을 끝내지 못해 본 레포에서 제거된 제3자 트리 (NOTICE 참고)
 REMOVED_TREES = [
@@ -231,7 +231,7 @@ class GeminiCatalogTests(unittest.TestCase):
 
     def test_plugin_version_and_lane_copy(self):
         data = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "1.0.3")
+        self.assertEqual(data["version"], "1.0.4")
         self.assertIn("lanes", data["interface"]["longDescription"].lower())
         self.assertIn("not a forensic acquisition or court-admissibility suite", json.dumps(data, ensure_ascii=False).lower())
         self.assertTrue((ROOT / "docs" / "GAPS.md").is_file())

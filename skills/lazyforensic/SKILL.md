@@ -11,7 +11,7 @@ Antigravity 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**만 고른
 
 사용자가 `설명서`, `도움말`, `명령어 알려줘`, `무엇을 할 수 있어?`라고 요청하면 `../../docs/USER_GUIDE.md`를 읽고 기능별 채팅 예시와 필요한 입력을 안내한다. 기능을 실행하지 않는다.
 
-## Forensic (13 스킬 — BYO 래퍼는 `check_tool.py` 게이트 통과 시에만, 보고서/검증 계열 = 무조건 검증)
+## Forensic (14 스킬 — BYO 래퍼는 `check_tool.py` 게이트 통과 시에만, 보고서/검증 계열 = 무조건 검증)
 
 **트리거에 `보고서`/`검토해줘`/`검증해줘`/`검증`/`할루시네이션`/`할루체크`/`팩트체크`/`거짓말검사`/`사실확인`/`무결성검사`/`verify` 중 하나라도 포함되면 모든 경로는 `report-guard` + `verify_report.py` 무조건 검증을 거친다. 이것은 사후 게이트다 — 호스트 `PostToolUse` 훅이 LLM 스킵 여부와 무관하게 동일 검증을 재실행하고, 호스트가 FAIL_CLOSED를 지원하면 후속 제출이 막힌다. 스킵 경로는 `docs/GAPS.md`. 슬래시 `/verify`, `/할루체크`, `/검증` 동일.**
 
@@ -30,7 +30,6 @@ Antigravity 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**만 고른
 | **딥페이크 기술 레이더 & 포렌식** | `../deepfake-forensic-radar/SKILL.md` | — |
 | EVTX 헌팅 (BYO Hayabusa/Chainsaw) | `../dfir-evtx-hunter/SKILL.md` | — |
 | MFT/Prefetch (BYO Dissect/EZ-Tools) | `../forensic-mft-parser/SKILL.md` | — |
-| 카카오 DB 래퍼 (txt만) | `../kakao-db-decryptor/SKILL.md` | — |
 | 메모리 래퍼 (BYO MemProcFS) | `../memory-triage/SKILL.md` | — |
 
 ### 스크립트 직행 (스킬 없이 `scripts/`를 바로 실행 — 전부 로컬 전용)
@@ -52,7 +51,7 @@ Antigravity 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**만 고른
 | 같은 파일 중복 | `python scripts/dedup_files.py <폴더>` |
 | 압축파일 안에 뭐 있는지·zip 안 검사 | `python scripts/archive_survey.py <대상>` |
 | PDF 암호·PDF 이상한지 | `python scripts/pdf_audit.py <대상>` |
-| 카톡 DB·db 파일 안에 뭐 있는지 | `python scripts/sqlite_survey.py <대상>` |
+| 카톡 DB·db 파일 안에 뭐 있는지 | `python scripts/sqlite_survey.py <대상>` (상세 쿼리는 lazyothers sqlite-evidence-query) |
 | 여러 시각 합쳐서 타임라인 | `python scripts/merge_timeline.py --manifest/--kakao/--exif/--stt` |
 | HWPX 문서 텍스트 추출·hwp 안에 뭐 있는지 | `python scripts/extract_hwpx.py <파일|폴더>` (바이너리 .hwp는 외부 도구 영역) |
 | 신구대비·두 문서 차이 비교 | `python scripts/doc_diff.py old.txt new.txt --markdown` |
@@ -77,7 +76,7 @@ venv 인지 리졸버: 위 표의 `python` 자리에 `scripts/py`를 쓰면 `~/.
 
 계약 서식·법령 조회는 `../legal-forensic-consult/SKILL.md`. 세션의 `korean_law`가 `ready`일 때만 MCP를 쓴다. 조문을 만들지 않는다.
 
-병렬 작업은 `../references/antigravity-tools.md`의 `invoke_subagent`만 쓴다. `Model: "flash"` 초안, 검증/대조 레인은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약).
+병렬 작업은 `../../docs/antigravity-tools.md`의 `invoke_subagent`만 쓴다. `Model: "flash"` 초안, 검증/대조 레인은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약).
 
 ## Evidence Integrity & Defensibility Mandates (사법 증거 무결성 원칙)
 

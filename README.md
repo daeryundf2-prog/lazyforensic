@@ -128,7 +128,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 
 | 요청 | 상태 | 조건 |
 | :--- | :--- | :--- |
-| 카카오톡 텍스트 내보내기 파싱 (모바일/PC) | ✅ | 텍스트 내보내기만. SQLite/백업 DB ❌ |
+| 카카오톡 텍스트 내보내기 파싱 (모바일/PC) | ✅ | 텍스트 내보내기만. SQLite/백업 DB ❌ (SQLite 분석은 lazyothers sqlite-evidence-query 스킬 활용) |
 | 타임라인 HTML 렌더 (XSS 이스케이프, 샘플 거부) | ✅ | events.json 필요 |
 | 파일 MAC 시각 + SHA-256/MD5 감사 | ✅ | `os.stat` 표면값. `$MFT`/Timestomping 판정 ❌ |
 | 보고서 초안 검증 (금지 문구/해시/법령상한/High-Fidelity/형태소 그라운딩) | ✅ | `verify_report.py` (--evidence, --morph-grounding, --high-fidelity) |

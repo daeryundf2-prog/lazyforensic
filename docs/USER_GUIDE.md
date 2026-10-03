@@ -91,7 +91,7 @@ python -m unittest discover -s test -v
 
 ## 현재 한계
 
-- 카카오톡 SQLite/백업 DB는 읽지 않는다. `kakao-db-decryptor`는 래퍼이며 복호화 미제공.
+- 카카오톡 SQLite/백업 DB 분석은 `lazyothers` 플러그인의 `sqlite-evidence-query` 스킬을 활용한다 (복호화 키는 별도 확보 필요).
 - `$MFT`, Timestomping, Maya, MOV 내부시각 감정 기능은 없다. `forensic-mft-parser`는 BYO Dissect/EZ-Tools 래퍼.
 - EVTX/Memory (Hayabusa/Chainsaw/MemProcFS/Volatility)는 BYO 바이너리 래퍼이며 미포함.
 - 타임라인은 최대 10,000 events, `details` 2KB cap (초과 시 잘림)

@@ -2,6 +2,12 @@
 
 이 레포의 실제 변경을 기록한다. 형식은 Keep a Changelog 를 따르고, 항목은 커밋 해시로 추적한다.
 
+### Removed — 미사용 카카오 DB 래퍼 정리 및 antigravity-tools 문서 위치 이전 (1.0.4)
+
+- `skills/kakao-db-decryptor`: 복호화 기능을 제공하지 않고 안내만 담고 있던 래퍼 스킬 삭제. 카카오톡 SQLite 분석은 `lazyothers` 플러그인의 `sqlite-evidence-query` 스킬로 안내하도록 `GEMINI.md`, `README.md`, `skills/lazyforensic/SKILL.md`, `docs/GAPS.md`, `docs/USER_GUIDE.md` 갱신.
+- `docs/antigravity-tools.md`: 스킬 루트에 위치하던 `skills/references/antigravity-tools.md` 문서를 `docs/` 디렉터리로 이전(`git mv`)하고 관련 참조 경로 수정.
+- `test/test_gemini_catalog.py`: 노출 스킬 수 상한(`VISIBLE_SKILL_CAP`) 18개로 조정.
+
 ### Changed — Claude Opus/Sonnet 5.5 및 Gemini 3.8 Flash 세션 모델 연동 대응 (1.0.3)
 
 - `plugin.json`: Gemini 3.8 Flash 외 Claude Opus 5.5 / Sonnet 5.5 세션 모델 지원 명시 및 버전 패치 갱신 (1.0.3).

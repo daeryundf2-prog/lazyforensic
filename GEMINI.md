@@ -66,7 +66,7 @@ ROLE ENVELOPE: mayFinalizeRun=false; mayModifyGlobalRunState=false; mustReturn=S
 
 사용자가 `설명서`, `도움말`, `명령어 알려줘`, `무엇을 할 수 있어?`라고 하면 `docs/USER_GUIDE.md`를 읽고 기능별 요청 예시를 보여준다. 도움말 요청만으로 분석이나 파일 생성을 시작하지 않는다.
 
-### Forensic (16 — BYO binary 래퍼는 `check_tool.py` 게이트 통과 시에만, 보고서/검증 계열 = 무조건 검증)
+### Forensic (15 — BYO binary 래퍼는 `check_tool.py` 게이트 통과 시에만, 보고서/검증 계열 = 무조건 검증)
 
 진입점은 `skills/lazyforensic/SKILL.md`다. BYO 래퍼는 바이너리/라이브러리 미포함이며, 없으면 결과 생성 안 함.
 
@@ -84,7 +84,6 @@ ROLE ENVELOPE: mayFinalizeRun=false; mayModifyGlobalRunState=false; mustReturn=S
 | DLP 표 정리 | `skills/dlp-leakage-detector/SKILL.md` |
 | EVTX 헌팅 (BYO Hayabusa/Chainsaw) | `skills/dfir-evtx-hunter/SKILL.md` |
 | MFT/Prefetch (BYO Dissect/EZ-Tools) | `skills/forensic-mft-parser/SKILL.md` |
-| 카카오 DB 래퍼 (txt만) | `skills/kakao-db-decryptor/SKILL.md` |
 | 메모리 래퍼 (BYO MemProcFS) | `skills/memory-triage/SKILL.md` |
 | AI 사용 흔적 포렌식 (md/txt/E01 역추적) | `skills/ai-trace-detector/SKILL.md` |
 | 딥페이크/AI 합성 미디어 (생성기 식별, C2PA, FFT, 탐지 레퍼런스) | `skills/deepfake-forensic-radar/SKILL.md` |
@@ -102,6 +101,6 @@ ROLE ENVELOPE: mayFinalizeRun=false; mayModifyGlobalRunState=false; mustReturn=S
 계약 서식·법령 조회는 `skills/legal-forensic-consult/SKILL.md`.  
 세션 런타임의 `korean_law`가 `ready`일 때만 `korean_law` MCP를 쓴다. `missing-build`면 `node scripts/setup_korean_law.mjs`를 안내하고 조문을 만들지 않는다. `missing-LAW_OC`면 키 설정을 안내하고 조문을 만들지 않는다. 상세 API는 필요할 때만 `korean-law-mcp/docs/API.md` **한 파일**.
 
-전체 도구 형식은 `skills/references/antigravity-tools.md`에 있다.
+전체 도구 형식은 `docs/antigravity-tools.md`에 있다.
 
 > **제거된 카탈로그**: 무라이선스 제3자 콘텐츠(`mengto-skills/`, `design-systems/`, `vendor/`, `skills/slopslap/`, UI 피커 스킬)는 배포 라이선스 리스크 때문에 본 레포에서 제거되었다. 필요하면 별도로 라이선스를 확보한 옵션 팩으로 제공한다.

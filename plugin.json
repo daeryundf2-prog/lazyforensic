@@ -1,6 +1,6 @@
 {
   "name": "lazyforensic",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Google Antigravity (Gemini 3.8 Flash or Claude Opus/Sonnet 5.5) forensic assistant — 4 lanes (help/forensic/visual/legal). Not a forensic acquisition or court-admissibility suite. Organizes evidence, parses Kakao text exports, renders timelines, drafts reports, and records SHA-256 audit hooks for change detection.",
   "author": {
     "name": "daeryundf2-prog",
