@@ -42,4 +42,4 @@ python skills/kakao-chat-extractor/scripts/parse_kakao.py "카카오톡_대화�
 
 ## Antigravity
 
-파서는 `invoke_subagent` `Model: "flash"`. 검증은 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션). 모바일 시각은 초가 없어 `:00`이다. `view_file`을 만들지 말 것.
+파서는 `invoke_subagent` `Model: "flash"`. 검증은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약). 모바일 시각은 초가 없어 `:00`이다. `view_file`을 만들지 말 것.

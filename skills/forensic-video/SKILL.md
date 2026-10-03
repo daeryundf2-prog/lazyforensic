@@ -26,5 +26,5 @@ python skills/forensic-video/scripts/watch.py "<동영상경로>" --upload-audio
 ## Antigravity
 
 추출된 프레임은 호스트 `Read`로 본다. `view_file`을 만들지 말 것.
-해석은 `invoke_subagent` `Model: "flash"`, 태그 vs `os.stat` 대조는 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션).
+해석은 `invoke_subagent` `Model: "flash"`, 태그 vs `os.stat` 대조는 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약).
 번호판·신원 단정, 편집 여부 확정을 쓰지 않는다.

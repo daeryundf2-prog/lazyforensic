@@ -77,7 +77,7 @@ venv 인지 리졸버: 위 표의 `python` 자리에 `scripts/py`를 쓰면 `~/.
 
 계약 서식·법령 조회는 `../legal-forensic-consult/SKILL.md`. 세션의 `korean_law`가 `ready`일 때만 MCP를 쓴다. 조문을 만들지 않는다.
 
-병렬 작업은 `../references/antigravity-tools.md`의 `invoke_subagent`만 쓴다. `Model: "flash"` 초안, 검증/대조 레인은 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션).
+병렬 작업은 `../references/antigravity-tools.md`의 `invoke_subagent`만 쓴다. `Model: "flash"` 초안, 검증/대조 레인은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약).
 
 ## Evidence Integrity & Defensibility Mandates (사법 증거 무결성 원칙)
 

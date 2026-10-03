@@ -35,4 +35,4 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input events.json
 
 ## Antigravity
 
-호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"` (Gemini 세션) 또는 `Model: "inherit"` (Claude 5.5 세션). 도구 모양은 `../references/antigravity-tools.md`.
+호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약). 도구 모양은 `../references/antigravity-tools.md`.
