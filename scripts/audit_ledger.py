@@ -94,7 +94,17 @@ def verify(path: Path) -> tuple[bool, int | None, str]:
 def record(path: Path, kind: str, actor: str, detail: str,
            payload_file: Path | None) -> dict:
     entries = load(path)
-    prev = entries[-1]["entry_hash"] if entries else GENESIS
+    if entries:
+        prev = entries[-1].get("entry_hash")
+        if not isinstance(prev, str) or not prev:
+            # 손상/변조된 원장 위에 새 항목을 얹으면 체인 전체가 무의미해진다 —
+            # 날것의 KeyError 대신 무엇이 깨졌는지 알린다 (fail-closed).
+            raise SystemExit(
+                f"원장 마지막 항목(seq {len(entries) - 1})에 entry_hash가 없습니다 — "
+                f"원장이 손상되었거나 변조되었을 수 있습니다. "
+                f"`verify {path}`로 체인을 확인하고 신뢰 가능한 사본에서 복구하세요")
+    else:
+        prev = GENESIS
     entry = {
         "seq": len(entries),
         "ts_utc": _utcnow(),
@@ -113,7 +123,14 @@ def record(path: Path, kind: str, actor: str, detail: str,
 
 def head(path: Path) -> str | None:
     entries = load(path)
-    return entries[-1]["entry_hash"] if entries else None
+    if not entries:
+        return None
+    h = entries[-1].get("entry_hash")
+    if not isinstance(h, str) or not h:
+        raise SystemExit(
+            f"원장 마지막 항목(seq {len(entries) - 1})에 entry_hash가 없습니다 — "
+            f"원장이 손상되었거나 변조되었을 수 있습니다. `verify {path}`로 확인하세요")
+    return h
 
 
 def make_tsa_request(path: Path) -> Path:

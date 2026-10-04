@@ -297,8 +297,14 @@ async function main() {
 			entry.note = 'hash skipped: file exceeds 2GiB audit limit (absence of a hash here is a deliberate skip, not a failure)';
 		} else {
 			entry.sha256 = await calculateSha256(resolvedTarget);
+			if (entry.sha256 === null) {
+				// 해시 실패를 무기록으로 숨기지 않는다 — sha256:null + error 필드가
+				// 체인에 남아야 '쓰기 없음'과 구별되는 갭이 된다 (tamper-evident).
+				entry.note = 'hash FAILED: file could not be read for SHA-256 (recorded failure, not a deliberate skip)';
+				entry.error = 'sha256_read_failed';
+			}
 		}
-		if (entry.sha256 || stat.size > MAX_AUDIT_BYTES) {
+		if (entry.sha256 || entry.error || stat.size > MAX_AUDIT_BYTES) {
 			try {
 				// 해시체인(위변조 탐지용, HMAC 아님): 이전행 원문의 sha256을
 				// 다음행 prev_hash로 연결한다. 단일 파일(audit_trail.jsonl) 유지.

@@ -50,6 +50,10 @@ GATE_HINTS = re.compile(
     r"allow_upload|upload_audio|--upload|GROQ_API_KEY|OPENAI_API_KEY|LAW_OC|API_KEY|approve|consent|동의"
 )
 
+# 승인 힌트는 각 송신 지점 ±N 줄 안에 있어야 GATED로 인정한다 — 파일 어딘가에
+# "동의 필요"가 적혀 있기만 해도 모든 egress가 통과하는 허점을 막기 위함.
+GATE_PROXIMITY_LINES = 5
+
 ENV_KEYS = ["GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LAW_OC"]
 
 
@@ -75,12 +79,14 @@ def scan_file(path: Path, base: Path, allowlist: set[tuple[str, str]]) -> list[d
     except OSError:
         return []
     findings = []
-    file_text = "\n".join(lines)
-    gated = bool(GATE_HINTS.search(file_text))
+    gate_lines = [i for i, line in enumerate(lines, 1) if GATE_HINTS.search(line)]
     rel = Path(path.relative_to(base)).as_posix()
     for i, line in enumerate(lines, 1):
         for pattern, kind in EGRESS_PATTERNS:
             if pattern.search(line):
+                # per-egress 근접 검사: 근처 힌트가 없으면 UNGATED로 남겨
+                # 사람 검토를 요구한다 (모호하면 경고 쪽으로 — fail-closed).
+                gated = any(abs(i - g) <= GATE_PROXIMITY_LINES for g in gate_lines)
                 if gated:
                     status = "GATED"
                 elif (rel, kind) in allowlist:

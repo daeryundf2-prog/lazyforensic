@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
-TOOL_VERSION = "1.0.2"
+TOOL_VERSION = "1.0.4"
 
 
 def sha256_file(path: Path) -> str:
@@ -68,6 +68,12 @@ def build_manifest(root: Path) -> dict:
 
 def verify_manifest(root: Path, manifest: dict) -> list[str]:
     problems = []
+    recorded_root = manifest.get("root")
+    if recorded_root and str(Path(recorded_root)) != str(root.resolve()):
+        # 불일치로 세지 않고 경고만 — 다른 경로로 옮긴 사본을 대조하는 정상 사용도 있다.
+        print(f"경고: 매니페스트 기록 루트({recorded_root})가 검증 대상({root.resolve()})과 "
+              "다릅니다 — 다른 위치로 옮겨졌거나 다른 디렉터리의 매니페스트일 수 있습니다",
+              file=sys.stderr)
     recorded = {e["path"]: e for e in manifest.get("files", [])}
     current = {str(f.relative_to(root)): f for f in root.rglob("*")
                if f.is_file() and "__pycache__" not in f.parts}
