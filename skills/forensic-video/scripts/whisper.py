@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 whisper.py
-Speech-to-Text transcription via Groq or OpenAI.
+Speech-to-Text transcription: local transcribe.cpp, or Groq / OpenAI.
 
-Audio upload is disabled unless the caller passes allow_upload=True.
+The local backend never sends audio off the machine. Audio upload to Groq /
+OpenAI is disabled unless the caller passes allow_upload=True.
 """
 from __future__ import annotations
 
@@ -82,6 +83,87 @@ def transcribe_video(
                 audio_path.unlink()
         except Exception:
             pass
+
+
+def find_local_stt() -> tuple[str | None, str | None]:
+    """Return (transcribe-cli path, GGUF model path) from env or PATH."""
+    binary = os.getenv("LAZYFORENSIC_TRANSCRIBE_BIN") or shutil.which("transcribe-cli")
+    model = os.getenv("LAZYFORENSIC_TRANSCRIBE_MODEL")
+    if model and not Path(model).is_file():
+        model = None
+    return binary, model
+
+
+def transcribe_local(video_path: str, out_dir: Path, language: str | None = "ko") -> list[dict]:
+    """Transcribe on this machine with transcribe.cpp (pin v0.3.x).
+
+    Uses `--batch <list> --batch-jsonl --timestamps segment`, which prints a
+    batch_header line and then one JSON line per file whose `segments` rows
+    carry t0_ms / t1_ms / text (format read from examples/cli/main.cpp v0.3.1).
+    """
+    binary, model = find_local_stt()
+    if not binary or not model:
+        print(
+            "[forensic-video] local STT unavailable: set LAZYFORENSIC_TRANSCRIBE_MODEL to a *.gguf "
+            "(Qwen3-ASR for Korean) and install transcribe-cli or set LAZYFORENSIC_TRANSCRIBE_BIN",
+            file=sys.stderr,
+        )
+        return []
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        print("[forensic-video] ffmpeg not found for audio extraction", file=sys.stderr)
+        return []
+    wav = out_dir / "audio-16k.wav"
+    batch_list = out_dir / "stt-batch.txt"
+    try:
+        subprocess.run(
+            [ffmpeg, "-y", "-i", video_path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        if not wav.exists() or wav.stat().st_size == 0:
+            return []
+        batch_list.write_text(f"{wav}\n", encoding="utf-8")
+        cmd = [binary, "-m", model, "--batch", str(batch_list), "--batch-jsonl", "--timestamps", "segment"]
+        if language:
+            cmd += ["-l", language]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        return _parse_batch_jsonl(proc.stdout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"[forensic-video] local transcription error: {e}", file=sys.stderr)
+        return []
+    finally:
+        for path in (wav, batch_list):
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
+
+
+def _parse_batch_jsonl(stdout: str) -> list[dict]:
+    for line in stdout.splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("type") == "batch_header" or "file" not in row:
+            continue
+        if row.get("error"):
+            print(f"[forensic-video] local transcription error: {row['error']}", file=sys.stderr)
+            return []
+        segments = [
+            {
+                "start": seg.get("t0_ms", 0) / 1000.0,
+                "end": seg.get("t1_ms", 0) / 1000.0,
+                "text": str(seg.get("text", "")).strip(),
+            }
+            for seg in row.get("segments", [])
+            if str(seg.get("text", "")).strip()
+        ]
+        if not segments and str(row.get("text", "")).strip():
+            segments = [{"start": 0.0, "text": row["text"].strip()}]
+        return segments
+    return []
 
 
 def _transcribe_groq(audio_path: Path, api_key: str) -> list[dict]:

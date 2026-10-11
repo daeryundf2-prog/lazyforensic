@@ -15,6 +15,14 @@ python skills/forensic-video/scripts/watch.py "<동영상경로>" --resolution 7
 python skills/forensic-video/scripts/forensic_video_audit.py "<동영상경로>"
 ```
 
+전사가 필요하면 먼저 로컬 전사를 쓴다. 오디오가 기기 밖으로 나가지 않는다.
+
+```bash
+LAZYFORENSIC_TRANSCRIBE_MODEL=/path/qwen3-asr-1.7b.gguf python skills/forensic-video/scripts/watch.py "<동영상경로>" --local-stt
+```
+
+`transcribe-cli`(transcribe.cpp v0.3.x, 0.4에서 CLI 변경)가 PATH에 있거나 `LAZYFORENSIC_TRANSCRIBE_BIN`으로 지정돼 있어야 한다. 한국어는 Qwen3-ASR GGUF(Apache-2.0)를 쓴다. `--stt-lang`의 기본값은 `ko`이다. 추출한 WAV는 전사 후 지운다. 전사는 수사 보조 자료이고 원 음성과 대조하기 전에는 인용하지 않는다.
+
 기본 실행은 오디오를 외부로 보내지 않는다. Groq/OpenAI 전사가 꼭 필요하고 의뢰인 동의·반출 승인이 있는 경우에만 다음처럼 명시한다.
 
 ```bash

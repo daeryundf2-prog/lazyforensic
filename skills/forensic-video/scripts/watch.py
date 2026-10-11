@@ -36,7 +36,7 @@ from frames import (  # noqa: E402
     parse_timestamps,
 )
 from transcribe import filter_range, format_transcript, parse_vtt  # noqa: E402
-from whisper import transcribe_video  # noqa: E402
+from whisper import transcribe_local, transcribe_video  # noqa: E402
 
 
 def main() -> int:
@@ -63,6 +63,16 @@ def main() -> int:
     ap.add_argument("--start", type=str, default=None, help="Range start (SS, MM:SS, or HH:MM:SS)")
     ap.add_argument("--end", type=str, default=None, help="Range end (SS, MM:SS, or HH:MM:SS)")
     ap.add_argument("--out-dir", type=str, default=None, help="Output directory for frames")
+    ap.add_argument(
+        "--local-stt",
+        action="store_true",
+        help="Transcribe on this machine with transcribe.cpp (no upload). Needs LAZYFORENSIC_TRANSCRIBE_MODEL.",
+    )
+    ap.add_argument(
+        "--stt-lang",
+        default="ko",
+        help="Language hint for --local-stt (default: ko; use 'auto' to let the model detect).",
+    )
     ap.add_argument(
         "--upload-audio",
         action="store_true",
@@ -123,6 +133,13 @@ def main() -> int:
         local_info = resolve_local(args.source)
         video_path = local_info["video_path"]
         dl["info"] = local_info["info"]
+
+    # Local transcription keeps evidence audio on the machine; try it first.
+    if not transcript_segments and video_path and args.local_stt:
+        print("[forensic-video] Transcribing locally with transcribe.cpp...", file=sys.stderr)
+        transcript_segments = transcribe_local(
+            video_path, work, language=None if args.stt_lang == "auto" else args.stt_lang
+        )
 
     # External transcription is opt-in because it uploads extracted evidence audio.
     if not transcript_segments and video_path and args.upload_audio:
