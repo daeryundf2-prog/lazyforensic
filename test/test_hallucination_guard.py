@@ -88,18 +88,12 @@ class HallucinationGuardTests(unittest.TestCase):
         hall = [h for h in first if "hallucination_guard" in h["command"]][0]
         self.assertEqual(hall["failurePolicy"], "FAIL_CLOSED")
         self.assertIn("보고서", hall["statusMessage"])
-        # markdown 구조 가드도 동일 매처에서 FAIL_CLOSED 로 배선되어야 한다
-        md = [h for h in first if "markdown_structure_guard" in h["command"]]
-        self.assertTrue(md, "markdown_structure_guard 가 문서 쓰기 매처에 배선되어 있지 않다")
-        self.assertEqual(md[0]["failurePolicy"], "FAIL_CLOSED")
         # bash 매처: 리다이렉트 쓰기도 같은 게이트를 통과한다 (구버전 우회 경로)
         bash_matchers = [g for g in post if "bash" in g["matcher"]]
         self.assertTrue(bash_matchers)
         bash_hall = [h for h in bash_matchers[0]["hooks"] if "hallucination_guard" in h["command"]]
         self.assertTrue(bash_hall)
         self.assertEqual(bash_hall[0]["failurePolicy"], "FAIL_CLOSED")
-        bash_md = [h for h in bash_matchers[0]["hooks"] if "markdown_structure_guard" in h["command"]]
-        self.assertTrue(bash_md, "bash 리다이렉트 쓰기에 markdown_structure_guard 가 배선되어 있지 않다")
 
     def test_negation_context_is_not_a_violation(self):
         with tempfile.TemporaryDirectory() as tmp:

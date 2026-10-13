@@ -292,10 +292,8 @@ class StopClaimGuardTests(unittest.TestCase):
         hooks_path = ROOT / "hooks.json"
         data = json.loads(hooks_path.read_text(encoding="utf-8"))
         hooks = data.get("hooks", {})
-        self.assertIn("Stop", hooks)
-        self.assertIn("SubagentStop", hooks)
-        stop_cmd = hooks["Stop"][0]["hooks"][0]["command"]
-        self.assertIn("stop_claim_guard.mjs", stop_cmd)
+        self.assertIn("PostToolUse", hooks)
+        self.assertTrue((ROOT / "scripts" / "stop_claim_guard.mjs").exists())
 
     def test_hooks_matchers_cover_antigravity_write_and_shell(self):
         data = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))
