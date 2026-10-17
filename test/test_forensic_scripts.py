@@ -416,6 +416,56 @@ class ForensicVideoTests(unittest.TestCase):
         self.assertEqual(result, [])
         self.assertEqual(calls, [])
 
+    def test_local_stt_parses_transcribe_cpp_batch_jsonl(self):
+        # given transcribe.cpp v0.3.1 --batch-jsonl output (header + one file row)
+        stdout = (
+            '{"type":"batch_header","load_ms":12.0}\n'
+            '{"file":"/tmp/a.wav","text":"안녕 하세요","segments":[{"t0_ms":0,"t1_ms":1500,"text":"안녕"},'
+            '{"t0_ms":1500,"t1_ms":3200,"speaker_id":2,"text":" 하세요 "}],"mel_ms":1.0}\n'
+        )
+        segments = video_whisper._parse_batch_jsonl(stdout)
+        self.assertEqual(segments, [
+            {"start": 0.0, "end": 1.5, "text": "안녕"},
+            {"start": 1.5, "end": 3.2, "text": "하세요"},
+        ])
+        # an error row yields no transcript instead of a silent empty success
+        self.assertEqual(video_whisper._parse_batch_jsonl('{"file":"a.wav","text":"","error":"unsupported language"}'), [])
+
+    def test_local_stt_runs_without_upload_and_cleans_audio(self):
+        import os, stat, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            argv_log = tmp / "argv.txt"
+            fake_ffmpeg = tmp / "ffmpeg"
+            fake_ffmpeg.write_text('#!/bin/sh\nfor a in "$@"; do last="$a"; done; printf RIFF > "$last"\n')
+            fake_cli = tmp / "transcribe-cli"
+            fake_cli.write_text(
+                f'#!/bin/sh\necho "$@" > "{argv_log}"\n'
+                "echo \'{\"type\":\"batch_header\"}\'\n"
+                "echo \'{\"file\":\"x.wav\",\"text\":\"테스트\",\"segments\":[{\"t0_ms\":0,\"t1_ms\":900,\"text\":\"테스트\"}]}\'\n"
+            )
+            for f in (fake_ffmpeg, fake_cli):
+                f.chmod(f.stat().st_mode | stat.S_IEXEC)
+            model = tmp / "qwen3-asr.gguf"
+            model.write_text("x")
+            env = {"LAZYFORENSIC_TRANSCRIBE_BIN": str(fake_cli), "LAZYFORENSIC_TRANSCRIBE_MODEL": str(model)}
+            original_which, original_env = video_whisper.shutil.which, dict(os.environ)
+            try:
+                os.environ.update(env)
+                video_whisper.shutil.which = lambda name: str(fake_ffmpeg) if name == "ffmpeg" else None
+                segments = video_whisper.transcribe_local("evidence.mp4", tmp, language="ko")
+            finally:
+                video_whisper.shutil.which = original_which
+                os.environ.clear(); os.environ.update(original_env)
+            self.assertEqual(segments, [{"start": 0.0, "end": 0.9, "text": "테스트"}])
+            argv = argv_log.read_text().split()
+            self.assertEqual(argv[:2], ["-m", str(model)])
+            self.assertIn("--batch-jsonl", argv)
+            self.assertEqual(argv[argv.index("-l") + 1], "ko")
+            # extracted evidence audio and the batch list do not linger
+            self.assertFalse((tmp / "audio-16k.wav").exists())
+            self.assertFalse((tmp / "stt-batch.txt").exists())
+
     def test_video_frame_profiles_are_bounded(self):
         self.assertEqual(video_config.frame_cap("efficient"), 50)
         self.assertEqual(video_config.frame_cap("balanced"), 100)
