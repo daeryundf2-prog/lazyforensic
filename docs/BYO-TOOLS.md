@@ -34,8 +34,8 @@
 | **Letta CLI / Orca** | 장기메모리 LLM / 멀티작업 에이전트 IDE |
 | **ego lite** | 에이전트 전용 Chromium — 로그인 필요 사이트 자동화 |
 | **Tailscale tsnet 단일 도구** | 계정 없이 홈서버 외부 접속 — 다른 컴퓨터의 포렌식 환경 원격 작업 시 |
-| **Magnitude** | 로컬 LLM 자동 설치 — 사양 확인→모델 추천→설정을 AI가 대행 | 다른 컴퓨터에서 로컬 분석 환경을 새로 꾸릴 때 초기 셋업 보조 |
-| **GenOffice / Office CLI** | Office 파일 읽기·생성·PDF 편집 CLI | `court_evidence_sheet.py`의 Markdown 초안을 제출용 DOCX/HWPX로 변환할 때 |
+| **Magnitude** | 로컬 LLM 자동 설치 — 사양 확인→모델 추천→설정을 AI가 대행 — 다른 컴퓨터에서 로컬 분석 환경을 새로 꾸릴 때 초기 셋업 보조 |
+| **GenOffice / Office CLI** | Office 파일 읽기·생성·PDF 편집 CLI — `court_evidence_sheet.py`의 Markdown 초안을 제출용 DOCX/HWPX로 변환할 때 |
 
 ## 문서·보고서 품질
 
@@ -43,7 +43,7 @@
 |---|---|
 | **bluenyx 한국어 문장 검토 스킬** | 보고서·대본 문체 검토 (9개 문서 유형) |
 | **avoid-ai-writing / patina** | AI 문체 습관 제거 — 의뢰인 제출 문서 최종 다듬기 |
-| **jurisupport-plugins** | 변호사 감수 한국 법률 문서 초안 Claude 스킬 | legal-forensic-consult 레인의 법률 문서 초안 품질 참고 — 출력물은 항상 변호사 검토 전 단계 |
+| **jurisupport-plugins** | 변호사 감수 한국 법률 문서 초안 Claude 스킬 — legal-forensic-consult 레인의 법률 문서 초안 품질 참고 — 출력물은 항상 변호사 검토 전 단계 |
 
 ## 증거 수집·환경 참고사항
 
