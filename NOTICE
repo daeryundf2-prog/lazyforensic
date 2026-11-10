@@ -38,6 +38,19 @@ Adapted ideas (source credited, text rewritten)
   scripts/collection_gate.py; skill contract template (hyper-loop SKILL.md
   instruction_contract and activation examples) -> contracts/skill-contract.md
   and the "계약" section of skills/*/SKILL.md.
+  Second round (rules rewritten, no prose copied): high-risk claim debate record
+  and attributed-only status (hyper-research claim-verification.md sections 3, 7)
+  -> scripts/debate_gate.py, skills/forensic-report, skills/report-guard;
+  repair-pass cap (hyper-research SKILL.md loop_policy) -> scripts/repair_state.py;
+  hidden-character and injection-marker check (hyper-documentation memory/safety.md
+  section 4) -> scripts/hidden_char_scan.py; external-text data block
+  (hyper-documentation context-source-safety.md) -> scripts/external_text_block.py,
+  kakao/telegram extractor skills; probability-is-not-permission wording
+  (hyper-decision safety-and-boundaries.md sections 5-7) -> ai-trace-detector,
+  deepfake-forensic-radar; web evidence source label (hyper-browsing
+  evidence-and-report.md section 3) -> docs/processing-receipt-contract.md,
+  scripts/processing_receipt.py; data-answer report shape (hyper-data
+  query-evidence.md) -> skills/forensic-timeline.
   License: MIT
 
   MIT License

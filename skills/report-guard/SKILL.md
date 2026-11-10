@@ -20,6 +20,8 @@ description: 보고서/문서 할루시네이션 무조건 검증 — 금지문�
    - 역사적 사건/조약 차수 날조: `갑오개혁 4차`, `제2차 을사조약`, `3차 동학농민운동` 등 차단
    - 불가능한 사법 절차 날조: `대검찰청의 약식명령 청구`, `경찰의 영장 직접 청구`, `헌법재판소의 징역형 선고` 등 차단
    - 빈칸 추측: `미확인/미측정`을 추측으로 채웠는지
+   - 숨은 문자: 해시 한가운데 끼인 제로폭 문자는 FAIL, bidi 제어·제로폭·태그 문자와 모델을 향한 지시문 형태(`ignore previous` 등)는 WARN (`scripts/hidden_char_scan.py`)
+   - 반박 기록: `[검증됨 Cn]` 표시가 있으면 `## 반박 기록` 표에 서로 다른 관점의 공격 2회 이상, 유효한 판정, 철회 모순 없음을 확인. `[귀속 Cn]` 은 출처 귀속 서술이 없으면 WARN (`scripts/debate_gate.py`)
 3. `FAIL`이면 파일 유지하되 에러를 띄우고 **제출 금지**. `PASS/WARN`이면 통과 (WARN은 부모가 pro로 재대조)
 
 ## 실행 (스킬이 직접 하는 일 — 호스트도 동일하게 자동 실행)
@@ -50,6 +52,22 @@ python scripts/verify_report.py "보고서초안.md" --evidence audit.json --jso
 
 어느 형태로 불러도 동일 검증 (`verify_report.py`)이 돈다.
 
+## 보정 패스 상한 (2회)
+
+FAIL 이 나온 뒤 고치고 다시 검증하는 보정은 기록된 2회까지다. 매 검증 결과를 실행별 상태 파일에 쌓는다.
+
+```bash
+python scripts/verify_report.py "보고서초안.md" --evidence audit.json --json > verify-0.json
+python scripts/repair_state.py record --state .lazyforensic/run1/report-state.json --result verify-0.json
+# 고친 뒤 verify-1.json, verify-2.json 도 같은 방식으로 record. 인도 전에 finish
+python scripts/repair_state.py finish --state .lazyforensic/run1/report-state.json --report "보고서초안.md"
+```
+
+- `record` 가 `stop: oscillation`(이전 상태로 되돌아감), `stop: plateau`(실패 목록이 그대로), `stop: limit`(2회 소진) 중 하나를 내면 보정을 멈춘다. 판정 순서는 이 순서다. exit 3.
+- 끝까지 실패한 고위험 주장은 문구를 완화해 남기지 말고 보고서에서 빼거나 미해결 절로 옮긴 뒤 다시 검증한다.
+- `finish` 는 보고서가 비었거나, 검증 기록이 없거나, FAIL 이 남아 있으면 인도를 거부하고(exit 1), 그렇지 않으면 결과를 `outcome.json` 에 남긴다.
+- 실행마다 상태 파일을 따로 둔다. 두 실행이 한 파일을 공유하면 횟수가 섞인다.
+
 ## 계약
 
 | 항목 | 내용 |
@@ -66,3 +84,4 @@ python scripts/verify_report.py "보고서초안.md" --evidence audit.json --jso
 - 경계: "초안이 아직 비었어" → 있는 부분만 검증하고 빈 구간을 알린다
 
 <!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->
+<!-- 보정 패스·숨은 문자·반박 기록 출처: hypercore hyper-research SKILL.md loop_policy, hyper-documentation memory/safety.md §4 (MIT, NOTICE 참조) -->

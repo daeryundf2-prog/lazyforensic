@@ -98,6 +98,16 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
     )
 
 
+try:
+    from scripts.debate_gate import check_debate
+    from scripts.hidden_char_scan import scan_text as scan_hidden_chars
+    from scripts.hidden_char_scan import summarize as summarize_hidden_chars
+except ImportError:
+    from debate_gate import check_debate
+    from hidden_char_scan import scan_text as scan_hidden_chars
+    from hidden_char_scan import summarize as summarize_hidden_chars
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Report hallucination guard — hard grounding verifier")
     parser.add_argument("report", nargs="?", default=None, help="Report draft path (.md/.html)")
@@ -138,6 +148,16 @@ def main(argv=None):
     warnings = []
     if lossy:
         warnings.append(f"보고서 인코딩 판별 실패({encoding_used}) — 치환 문자가 있어 검증 누락 가능")
+
+    # 0-1) 숨은 문자·주입 표지 (해시 사이 제로폭 등은 FAIL, 나머지는 WARN)
+    hidden_errors, hidden_warnings = summarize_hidden_chars(scan_hidden_chars(text))
+    errors.extend(hidden_errors)
+    warnings.extend(hidden_warnings)
+
+    # 0-2) 고위험 주장 반박 기록: [검증됨 Cn] 표시가 있을 때만 검사
+    debate_errors, debate_warnings = check_debate(text)
+    errors.extend(debate_errors)
+    warnings.extend(debate_warnings)
 
     # 1) 금지 문구 (직후 부정 문맥은 제외)
     forbidden = scan_forbidden(text)
