@@ -46,3 +46,20 @@ python skills/forensic-audit/scripts/audit_timestamps.py "대상파일.ext" --js
 - 스크립트 stdout 또는 `audit.json`을 그대로 인용한다. C>M을 조작으로 올리지 않는다.
 - 본 스킬에서 측정된 SHA-256/시각은 `verify_report.py`의 `--evidence audit.json`으로 전달되어야 하며, High-Fidelity 비파라메트릭 모드(`--high-fidelity`) 및 Kiwi 형태소 그라운딩(`--morph-grounding`)을 통해 보고서 내 측정값과 용어의 실존 여부가 엄격히 차단/검증됩니다.
 - 검증 레인은 `invoke_subagent` `Model: "pro"`.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 파일 생성/수정/접근 시각과 SHA-256을 os.stat 기준으로 기록한다. |
+| Scope | os.stat과 해시만. $MFT, Timestomping, 메타데이터 조작 감정은 하지 않는다. |
+| Evidence | 경로별 SHA-256, 시각, 실행한 명령과 종료 코드(observed). |
+| Stop | 해시·시각 표와 한계를 보고하면 끝. |
+
+### 활성화 예시
+
+- 긍정: "이 폴더 파일 해시랑 수정 시각 뽑아줘"
+- 부정: "타임스탬프가 조작됐는지 감정해줘"
+- 경계: "$MFT도 같이 봐줘" → forensic-mft-parser로 넘기고 BYO 게이트를 안내
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

@@ -41,3 +41,20 @@ Rust 기반 Hayabusa/Chainsaw를 **있으면** 호출하는 래퍼다. `hayabusa
 ## 하지 않는 일
 - Hayabusa/Chainsaw 미설치 상태에서 Sigma 탐지 결과를 생성
 - MITRE ATT&CK 자동 확정, 법원 적격성 보장
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 사용자가 가진 Hayabusa/Chainsaw 바이너리로 EVTX를 헌팅하는 명령을 만든다. |
+| Scope | 바이너리 미포함, check_tool.py 게이트 통과 후에만 명령을 만든다. 자동 탐지가 아니다. |
+| Evidence | 게이트 통과 기록, 실행한 명령, 도구 출력 원문. |
+| Stop | 도구 출력을 요약해 전달하면 끝. 게이트 실패 시 결과를 만들지 않고 exit 3. |
+
+### 활성화 예시
+
+- 긍정: "hayabusa로 이 evtx 돌려줘"
+- 부정: "침해 여부 결론 내려줘"
+- 경계: "도구가 없는데 돌려줘" → 설치 안내만 하고 결과는 만들지 않는다
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

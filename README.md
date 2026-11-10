@@ -164,7 +164,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 증거 통합 선조사 (위 도구 전부 한 번에) | ✅ | `python scripts/case_survey.py <폴더> [--keywords ...] [--stt] -o survey.json --markdown survey.md` — 단계별 실패도 '실패'로 기록 |
 | 다른 컴퓨터 환경 복제 | ✅ | `python scripts/setup_forensic_env.py --check` / 실행 시 venv+선택 의존성 설치 (Windows는 `scripts/setup_forensic_env.ps1`) |
 | 법령/판례 조회 | 🟡 키 필요 | 위 "법령 조회" 참고 |
-| OSINT 사용자명 검색 | 🟡 BYO | `python scripts/osint_username.py <닉네임>` — sherlock 미설치 시 exit 3. 닉네임이 외부 사이트에 쿼리로 노출되므로 반출 승인 필요 |
+| OSINT 사용자명 검색 | 🟡 BYO | `python scripts/osint_username.py <닉네임> --scope "<대상·상한·속도 한 줄>"` — `--scope` 없으면 exit 2, 닉네임 50개 상한, sherlock 미설치 시 exit 3. 닉네임이 외부 사이트에 쿼리로 노출되므로 반출 승인 필요 |
 | 바이너리 HWP(.hwp) 파싱·신구대비 | 🟡 외부 | `obundh/korean-munseo-diff` 별도 설치 — HWPX는 위 `extract_hwpx.py`로 가능. 다운로드 후보목록 전체는 [`docs/BYO-TOOLS.md`](docs/BYO-TOOLS.md) |
 | 무결성 훅 (쓰기 차단/감사 로그) | 🟡 Antigravity | best-effort. OS 읽기전용(`chmod 444`) 병행 권장 |
 

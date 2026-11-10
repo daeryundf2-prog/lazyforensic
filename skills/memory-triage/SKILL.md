@@ -49,3 +49,20 @@ python scripts/check_tool.py MemProcFS.exe vol.py   # exit 2 면 분석 결과 �
 ## 하지 않는 일
 - MemProcFS/Volatility 미설치 상태에서 메모리 덤프 분석 결과 생성
 - 은닉 프로세스/인젝션 자동 확정, 법원 적격성 보장
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 사용자가 가진 MemProcFS/Volatility로 메모리 덤프를 분석하는 명령을 만든다. |
+| Scope | 바이너리 미포함, 마운트 자동화 아님. 게이트 통과 후에만 명령을 만든다. |
+| Evidence | 게이트 기록, 명령, 도구 출력 원문. |
+| Stop | 출력을 전달하면 끝. 도구 부재 시 exit 3. |
+
+### 활성화 예시
+
+- 긍정: "volatility로 이 덤프 프로세스 목록 뽑아줘"
+- 부정: "덤프 없이 악성코드 있었는지 알려줘"
+- 경계: "도구는 있는데 덤프가 커" → 읽기 범위를 좁히는 명령을 제안
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

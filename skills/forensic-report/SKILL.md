@@ -56,3 +56,19 @@ python scripts/korean_morph_forensic.py --evidence audit.json --report "보고�
 - Chain of Custody/시각이 없으면 `미측정`/`미확인`으로 둔다. 빈칸을 추측으로 채우지 않는다.
 - High-Fidelity 모드(`--high-fidelity`)에서는 증거 파일 및 `<evidence>` 인용 태그가 필수이며 70% 미달 시 차단됩니다.
 
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 포렌식 감정서/보고서 초안에 측정값만 채운다. |
+| Scope | 측정값과 출처 경로만 쓴다. 의뢰인 주장 입증, 법원 적격 단정은 하지 않는다. |
+| Evidence | 각 수치는 도구 출력·해시에 연결, verify_report 통과 기록. |
+| Stop | 품질 게이트 통과 후 초안을 넘기면 끝. |
+
+### 활성화 예시
+
+- 긍정: "측정 결과로 감정서 초안 만들어줘"
+- 부정: "이 결과로 피의자 유죄를 써줘"
+- 경계: "수치가 일부 비어 있어" → 빈칸을 남기고 not_checked로 표시
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->
