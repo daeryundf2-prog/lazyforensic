@@ -174,10 +174,11 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     def step_archives():
         mod = _load("archive_survey")
-        records = mod.scan(root)
+        skipped: list[str] = []
+        records = mod.scan(root, skipped=skipped)
         flagged = [m for r in records for m in r.get("members", []) if m["flags"]]
         return {"archives": len(records), "flagged_members": len(flagged),
-                "records": records}
+                "skipped": skipped, "records": records}
     report["steps"]["archives"] = _run_step("archives", step_archives)
 
     def step_pdf():

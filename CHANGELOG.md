@@ -2,6 +2,13 @@
 
 이 레포의 실제 변경을 기록한다. 형식은 Keep a Changelog 를 따르고, 항목은 커밋 해시로 추적한다.
 
+### Added — hypercore 아이디어 이식: 대량 수집 게이트, 스킬 계약 틀
+
+- `contracts/collection-gate.md`, `scripts/collection_gate.py`: 항목 상한 50, 범위 한 줄 확인, 초당 1요청·429 백오프, robots 판정 함수. `scripts/osint_username.py`(`--scope` 필수, 닉네임 50개 상한, 호출 간 1초, 두 번째 429면 `fetched_partial`)와 `scripts/archive_survey.py`(폴더 스캔 50개 상한, `skipped` 기록)에 실제 강제. robots.txt와 sherlock 내부 속도는 강제하지 못한다.
+- `contracts/skill-contract.md`와 `skills/*/SKILL.md` 17종의 `## 계약` 절(Intent/Scope/Evidence/Stop + 긍정·부정·경계 예시).
+- `NOTICE`: hypercore(MIT, alpoxdev) 항목과 출처 SHA.
+- `test/test_collection_gate.py` 12건 추가, `test/test_forensic_tools2.py`의 osint 테스트에 `--scope` 반영.
+
 ### Removed — 미사용 카카오 DB 래퍼 정리 및 antigravity-tools 문서 위치 이전 (1.0.4)
 
 - `skills/kakao-db-decryptor`: 복호화 기능을 제공하지 않고 안내만 담고 있던 래퍼 스킬 삭제. 카카오톡 SQLite 분석은 `lazyothers` 플러그인의 `sqlite-evidence-query` 스킬로 안내하도록 `GEMINI.md`, `README.md`, `skills/lazyforensic/SKILL.md`, `docs/GAPS.md`, `docs/USER_GUIDE.md` 갱신.

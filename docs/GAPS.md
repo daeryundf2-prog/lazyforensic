@@ -66,11 +66,11 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/doc_diff.py`는 줄 단위 비교라 문장 내 부분 변경은 줄 전체가 '변경'으로 표시된다.
 - `scripts/audio_survey.py`의 RMS 발화 구간은 '후보'다 — 배경소음이 크면 무음도 발화로 잡힌다.
 - `scripts/exif_audit.py`의 EXIF는 자유롭게 편집 가능하다. '기록된 값'이지 '진실'이 아니며, EXIF 부재는 메신저 경유 흔적일 뿐 조작 증거가 아니다.
-- `scripts/osint_username.py`는 sherlock BYO다. 조회 닉네임이 외부 사이트에 노출되므로 의뢰인 동의 없이 쓰지 않는다.
+- `scripts/osint_username.py`는 sherlock BYO다. 조회 닉네임이 외부 사이트에 노출되므로 의뢰인 동의 없이 쓰지 않는다. `--scope` 한 줄 확인이 필수이고 닉네임 50개 상한·호출 간 1초·429 백오프는 강제하지만, robots.txt와 sherlock 내부 요청 속도는 강제하지 못한다(`contracts/collection-gate.md`). 대상별 수집의 법적 검토는 별도다.
 - `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다.
 - `scripts/signature_check.py`는 선두 수십 바이트만 본다. 시그니처를 위조한 파일·UNKNOWN(시그니처 없는 텍스트류)은 정상일 수 있다.
 - `scripts/dedup_files.py`는 정확 중복만 확실하다. 유사 그룹은 이미지뿐이고 '어느 쪽이 원본인가'는 판정하지 않는다.
-- `scripts/archive_survey.py`는 zip/tar만 본다 — RAR/7z는 외부 도구. 플래그는 '수동 확인 필요 신호'이지 악성 판정이 아니다.
+- `scripts/archive_survey.py`는 zip/tar만 본다 — RAR/7z는 외부 도구. 플래그는 '수동 확인 필요 신호'이지 악성 판정이 아니다. 폴더 스캔은 아카이브 50개까지만 처리하고 초과분은 `skipped`에 남긴다.
 - `scripts/pdf_audit.py`는 바이트 패턴 표면 감사다 — PDF 1.5+ 객체 스트림에 숨은 /Encrypt·/JavaScript는 못 잡는다. 정밀 파싱은 qpdf/pikepdf 영역.
 - `scripts/sqlite_survey.py`는 immutable 읽기전용으로 열지만 스키마·행 수만 본다 — 어느 컬럼이 메시지인지 같은 해석은 수동이다.
 - `scripts/merge_timeline.py`의 STT 이벤트는 '--anchor'로 사용자가 준 녹음 기준시각에 의존한다 — 앵커가 틀리면 전 구간이 어긋나며, 앵커 없는 STT는 타임라인에서 제외된다(벽시계를 지어내지 않음). mtime·EXIF·카톡 시각도 '기록된 값'이지 위조 불가능한 진실이 아니다.

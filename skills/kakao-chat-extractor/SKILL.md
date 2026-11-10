@@ -43,3 +43,20 @@ python skills/kakao-chat-extractor/scripts/parse_kakao.py "카카오톡_대화�
 ## Antigravity
 
 파서는 `invoke_subagent` `Model: "flash"`. 검증은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약). 모바일 시각은 초가 없어 `:00`이다. `view_file`을 만들지 말 것.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 카카오톡 모바일/PC 텍스트 내보내기(.txt)를 파싱한다. |
+| Scope | .txt 내보내기만. SQLite·백업 DB·대화방 폴더 탐색은 하지 않는다. |
+| Evidence | 입력 파일 경로·해시와 파싱 결과 건수. |
+| Stop | 파싱 결과를 전달하면 끝. 판별 실패 시 exit 2. |
+
+### 활성화 예시
+
+- 긍정: "카톡 내보내기 txt 파싱해줘"
+- 부정: "카톡 백업 DB에서 대화 복구해줘"
+- 경계: "PC판인지 모바일판인지 모르겠어" → 판별 결과를 보여주고 실패하면 입력을 확인
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

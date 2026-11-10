@@ -36,3 +36,20 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input "telegram_e
 ## Antigravity / LLM 가이드
 - 파서는 `invoke_subagent` `Model: "flash"`를 권장합니다.
 - 조작된 가상 메시지를 생성하지 않으며, 타임스탬프는 ISO-8601 형식(`YYYY-MM-DDTHH:MM:SS`)으로 보존됩니다.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | Telegram Desktop JSON 내보내기(result.json)를 파싱하고 타임라인 events.json으로 연동한다. |
+| Scope | 내보내기 JSON만. tdata 직접 복호나 계정 접근은 하지 않는다. |
+| Evidence | 입력 파일 경로·해시와 파싱 건수. |
+| Stop | 파싱 결과를 전달하면 끝. |
+
+### 활성화 예시
+
+- 긍정: "result.json 파싱해줘"
+- 부정: "tdata를 복호해서 대화 꺼내줘"
+- 경계: "전체 대화방 내보내기야" → 방별로 나눠 파싱한다
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

@@ -36,3 +36,20 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input events.json
 ## Antigravity
 
 호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약). 도구 모양은 `../../docs/antigravity-tools.md`.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 정규화된 이벤트 JSON을 HTML 타임라인으로 그린다. |
+| Scope | --input 필수. 아티팩트 수집이나 샘플 사건 생성은 하지 않는다. |
+| Evidence | 입력 JSON 경로와 생성된 HTML. 필드는 escape된다. |
+| Stop | HTML을 만들고 한계를 안내하면 끝. --input 없으면 exit 2. |
+
+### 활성화 예시
+
+- 긍정: "events.json으로 타임라인 그려줘"
+- 부정: "카카오 유출 샘플 사건 만들어서 그려줘"
+- 경계: "시각 형식이 섞여 있어" → 입력 순서를 유지하고 HTML에 그 사실을 표시
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

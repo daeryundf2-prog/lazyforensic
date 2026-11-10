@@ -186,7 +186,7 @@ class OsintTests(unittest.TestCase):
     def test_fail_closed_without_sherlock(self):
         if osint.find_sherlock() is not None:
             self.skipTest("sherlock installed")
-        self.assertEqual(osint.main(["testuser"]), 3)
+        self.assertEqual(osint.main(["testuser", "--scope", "testuser 1건 동의 확인"]), 3)
 
 
 class KeywordReportTests(unittest.TestCase):

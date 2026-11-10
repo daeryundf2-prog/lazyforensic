@@ -22,6 +22,9 @@ zip/tar 계열을 추출하지 않고 내부만 조사한다:
   크기를 대리값으로 쓴다 — .tar(비압축)에서는 ratio가 ~1이라
   오탐이 없고, .tar.gz에서만 의미 있는 신호가 된다.
 - RAR/7z는 미지원 (외부 도구 영역 — 7z/unar 필요).
+- 폴더 스캔은 아카이브 50개까지만 처리하고 나머지는 skipped로 기록한다
+  (대량 수집 게이트 — contracts/collection-gate.md, 출처 hypercore MIT, NOTICE).
+  네트워크를 쓰지 않으므로 상한만 적용한다. 50개 초과 폴더는 나눠서 실행.
 - '악성 여부'가 아니라 '수동 확인 필요 신호'만 출력한다.
 """
 from __future__ import annotations
@@ -35,6 +38,9 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import collection_gate as gate  # noqa: E402
 
 ARCHIVE_EXTS = {".zip", ".jar", ".hwpx", ".docx", ".xlsx", ".pptx"}
 TAR_EXTS = {".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz"}
@@ -217,7 +223,10 @@ def audit_archive(path: Path, sig=None) -> dict:
     return {"file": str(path), "error": "지원하지 않는 아카이브 형식 (RAR/7z는 외부 도구 필요)"}
 
 
-def scan(root: Path) -> list[dict]:
+def scan(root: Path, max_items: int = gate.ITEM_CAP,
+         skipped: list[str] | None = None) -> list[dict]:
+    """아카이브를 max_items(최대 50)개까지 처리. 초과분 경로는 skipped에 추가."""
+    max_items = min(max_items, gate.ITEM_CAP)
     sig = _sig_mod()
     out = []
     for p in sorted(root.rglob("*")):
@@ -226,6 +235,10 @@ def scan(root: Path) -> list[dict]:
         suf, name = p.suffix.lower(), p.name.lower()
         if suf in ARCHIVE_EXTS or suf in TAR_EXTS or name.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
             if zipfile.is_zipfile(p) or suf in TAR_EXTS or ".tar." in name:
+                if len(out) >= max_items:
+                    if skipped is not None:
+                        skipped.append(str(p))
+                    continue
                 out.append(audit_archive(p, sig))
     return out
 
@@ -237,8 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     target = Path(args.target)
+    skipped: list[str] = []
     if target.is_dir():
-        records = scan(target)
+        records = scan(target, skipped=skipped)
     elif target.is_file():
         records = [audit_archive(target)]
     else:
@@ -248,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     flagged = [m for r in records for m in r.get("members", []) if m["flags"]]
     if args.json:
         print(json.dumps({"archives": len(records), "flagged_members": len(flagged),
-                          "records": records}, ensure_ascii=False, indent=2))
+                          "skipped": skipped, "records": records}, ensure_ascii=False, indent=2))
     else:
         for r in records:
             if "error" in r:
@@ -259,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
             for m in r["members"]:
                 if m["flags"]:
                     print(f"  ⚠ {m['name']} — {', '.join(m['flags'])}")
+        if skipped:
+            print(f"[게이트] 상한 {gate.ITEM_CAP}개 초과로 {len(skipped)}개 건너뜀 — 하위 폴더로 나눠 다시 실행")
     return 1 if flagged else 0
 
 

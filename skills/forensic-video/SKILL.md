@@ -28,3 +28,20 @@ python skills/forensic-video/scripts/watch.py "<동영상경로>" --upload-audio
 추출된 프레임은 호스트 `Read`로 본다. `view_file`을 만들지 말 것.
 해석은 `invoke_subagent` `Model: "flash"`, 태그 vs `os.stat` 대조는 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약).
 번호판·신원 단정, 편집 여부 확정을 쓰지 않는다.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | CCTV/블랙박스 영상에서 프레임을 뽑고 ffprobe 태그를 읽는다. |
+| Scope | ffmpeg 필요. 촬영일시 조작의 법정 증명은 하지 않는다. 원본은 수정하지 않는다. |
+| Evidence | ffprobe 출력과 추출한 프레임 경로, 해시. |
+| Stop | 프레임과 태그를 보고하면 끝. |
+
+### 활성화 예시
+
+- 긍정: "이 블랙박스 영상 프레임 뽑고 태그 보여줘"
+- 부정: "이 영상 촬영 시각이 조작됐다고 증명해줘"
+- 경계: "ffmpeg가 없어" → 설치 안내만 하고 결과는 만들지 않는다
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

@@ -49,3 +49,20 @@ python scripts/verify_report.py "보고서초안.md" --evidence audit.json --jso
 ```
 
 어느 형태로 불러도 동일 검증 (`verify_report.py`)이 돈다.
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 보고서/문서의 금지 문구와 근거 없는 해시를 무조건 검증한다. |
+| Scope | verify_report/verify_claim_ledger를 실행한다. 보고서 내용을 새로 지어내지 않는다. |
+| Evidence | 검증기 실행 기록과 종료 코드. 실행하지 않았으면 not_checked. |
+| Stop | 검증 결과를 보고하면 끝. FAIL은 숨기지 않는다. |
+
+### 활성화 예시
+
+- 긍정: "이 보고서 검증해줘"
+- 부정: "검증 없이 통과시켜줘"
+- 경계: "초안이 아직 비었어" → 있는 부분만 검증하고 빈 구간을 알린다
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->

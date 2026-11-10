@@ -39,3 +39,20 @@ python scripts/check_tool.py --python-module dissect MFTECmd.exe PECmd.exe   # e
 ## 하지 않는 일
 - Dissect/EZ-Tools 미설치 상태에서 MFT 타임라인 생성
 - Timestomping 자동 판정, 법원 적격성 보장
+
+## 계약
+
+| 항목 | 내용 |
+|---|---|
+| Intent | 사용자가 가진 Dissect/EZ-Tools로 MFT/Prefetch를 파싱하는 명령을 만든다. |
+| Scope | $MFT 미포함. 게이트 통과 후에만 명령을 만들고 출력은 원문 그대로 인용한다. |
+| Evidence | 게이트 기록, 명령, 도구 출력 원문(observed). |
+| Stop | 출력을 전달하면 끝. 도구 부재 시 결과 없이 exit 3. |
+
+### 활성화 예시
+
+- 긍정: "ez-tools로 이 $MFT 파싱해줘"
+- 부정: "MFT 없이 파일 이력 만들어줘"
+- 경계: "프리패치만 있어" → Prefetch 경로로만 진행한다
+
+<!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->
