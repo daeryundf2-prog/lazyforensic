@@ -100,6 +100,24 @@ canonical: lazyforensic. 어느 저장소도 여기와 다른 규칙을 단독�
   캐시 매칭은 "공식 원문 확인"이 아니라 **보조 대조(corroboration)**로만
   표기한다. 결과에 발췌 출처를 명시한다.
 
+## 7. 웹 증거 출처 라벨 (선택 필드 `source.origin`)
+
+웹에서 내려받은 소스는 어느 경로로 받았는지가 증거 성격을 정한다. 로컬 파일 소스는 필드를 생략한다(기존 receipt 에는 영향 없음).
+
+| origin | 뜻 | 추가로 필수인 `source` 키 |
+| --- | --- | --- |
+| `live` | 원본 사이트가 직접 준 응답 | 없음 |
+| `api` | 같은 플랫폼의 공식 엔드포인트 응답 | 없음 |
+| `reader` | 제3자 리더가 렌더해 준 사본 | `reader` (리더 이름) |
+| `snapshot` | 아카이브 사본 | `archive`, `snapshot_at` (UTC) |
+| `rendered` | 브라우저에서 JS 실행 뒤의 DOM | 없음 |
+
+- `snapshot` 은 "<아카이브> 사본, <snapshot_at> 기준"으로만 표기하고 현재 페이지로 쓰지 않는다.
+- 두 경로의 내용이 다르면 합치지 말고 라벨과 함께 둘 다 보고한다.
+- `validate_receipt` 가 알 수 없는 값과 빠진 추가 키를 거부한다. 필드가 없는 receipt 는 이전과 동일하게 통과한다.
+
+출처: hypercore hyper-browsing rules/evidence-and-report.md §3 (MIT, NOTICE 참조).
+
 ## 변경 영향 요약
 
 | 저장소 | 필요 변경 |

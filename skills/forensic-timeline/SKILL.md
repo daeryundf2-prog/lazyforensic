@@ -37,6 +37,43 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input events.json
 
 호스트 `Read`/`Write`만 쓴다. 파싱은 `invoke_subagent` `Model: "flash"`, HTML 검증은 `Model: "pro"`(세션 모델과 무관, Claude 할당량 절약). 도구 모양은 `../../docs/antigravity-tools.md`.
 
+## 데이터 질문 답 보고 틀
+
+"그 시간대에 몇 건이 있냐" 같은 집계 질문을 이벤트 JSON에 대고 답할 때는 질문이 묻는 것만 답한다. 보너스 차트·추가 분류는 질문이 요구할 때만 넣는다. 데이터로 답할 수 없는 질문("왜 그런 일이")은 계산한 변화를 먼저 쓰고 원인은 검증되지 않은 가설로 뒤에 둔다.
+
+보고 순서는 답, 질문(지표·단위·모집단·필터·기간과 시간대), 실제로 돌린 질의 원문, 행 수(읽은 행/결과 행), null·중복 처리, 입력 파일 SHA-256과 소요 시간, 대표 수치의 두 번째 경로 교차검증이다. 측정하지 않은 행 수·시간은 "미측정"이라고 적고, 두 번째 경로가 없으면 일치한다고 쓰지 않는다.
+
+```markdown
+## 답
+
+2026-03-11 09:00~12:00 KST 이벤트 17건
+
+## 질문
+
+지표: 이벤트 건수 / 단위: 건 / 모집단: events.json 전체 / 필터: 없음 / 기간: 위 시간대(KST)
+
+## 질의 원문
+
+(실제로 돌린 질의 또는 스크립트 인자)
+
+## 행 수와 처리
+
+읽은 행 120 / 결과 행 17 / 널·중복 처리: 시각 널 3건 제외, 중복 id 0건
+
+## 입력과 소요 시간
+
+events.json (SHA-256 ...), 미측정
+
+## 교차검증
+
+원본 대화 내보내기의 행 수와 대조: 일치 / 차이 N건 / 미실시
+
+Result: answered
+```
+
+- `Result:` 줄은 하나만 쓰고 `answered`(답과 행 수·입력 해시를 적음), `prerequisite_missing`(필요한 도구가 없음 — 무엇이 없는지만 적고 설치하지 않음), `awaiting_input`(답이 달라지는 질문 하나가 남음: 시간대 경계, 두 파일 중 정본), `blocked`(읽을 수 없거나 접근 불가) 중 하나다.
+- 같은 질문 안에서 질의를 다시 쓰는 것은 2회까지다. 세 번째도 실패하면 실패한 질의와 오류를 적고 `blocked` 로 끝낸다.
+
 ## 계약
 
 | 항목 | 내용 |
@@ -53,3 +90,4 @@ python skills/forensic-timeline/scripts/generate_timeline.py --input events.json
 - 경계: "시각 형식이 섞여 있어" → 입력 순서를 유지하고 HTML에 그 사실을 표시
 
 <!-- 계약 틀 출처: hypercore hyper-loop SKILL.md (MIT, NOTICE 참조) -->
+<!-- 데이터 질문 답 보고 틀 출처: hypercore hyper-data rules/query-evidence.md (MIT, NOTICE 참조) -->

@@ -11,6 +11,7 @@ TOOL_VERSION = "1.1.0"
 RECEIPT_SCHEMA_VERSION = "1.0"
 STATUSES = ("complete", "partial", "failed", "not_measured")
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
+SOURCE_ORIGINS = ("live", "api", "reader", "snapshot", "rendered")
 
 
 def utc_now_iso():
@@ -66,6 +67,25 @@ def _entry(value, nullable):
                      and SHA256_RE.fullmatch(value["sha256"]) is not None)))
 
 
+def _origin_errors(source):
+    if not isinstance(source, dict) or "origin" not in source:
+        return []
+    origin = source["origin"]
+    if origin not in SOURCE_ORIGINS:
+        return ["Invalid source origin"]
+    errors = []
+    if origin == "snapshot":
+        if not isinstance(source.get("archive"), str) or not source["archive"].strip():
+            errors.append("Snapshot origin requires archive")
+        try:
+            _utc(source.get("snapshot_at"))
+        except (ValueError, TypeError):
+            errors.append("Snapshot origin requires UTC snapshot_at")
+    if origin == "reader" and (not isinstance(source.get("reader"), str) or not source["reader"].strip()):
+        errors.append("Reader origin requires reader name")
+    return errors
+
+
 def validate_receipt(receipt):
     """Validate an inner processing_receipt object. See docs/processing-receipt-contract.md."""
     if not isinstance(receipt, dict):
@@ -85,6 +105,7 @@ def validate_receipt(receipt):
         errors.append("Invalid status")
     if not _entry(receipt.get("source"), True):
         errors.append("Invalid source")
+    errors.extend(_origin_errors(receipt.get("source")))
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, list) or not all(_entry(a, False) for a in artifacts):
         errors.append("Invalid artifacts")
