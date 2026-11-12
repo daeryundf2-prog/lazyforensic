@@ -44,6 +44,7 @@ Antigravity 진입점. 먼저 `GEMINI.md`를 읽고, **레인 하나**만 고른
 | 녹음에서 말하는 구간·무음 | `python scripts/audio_survey.py <대상>` |
 | 이 사진이랑 비슷한 거·같은 사진 | `python scripts/image_similarity.py <폴더> [--query 사진]` |
 | 이 영상이랑 같은 영상·영상 지문 | `python scripts/video_fingerprint.py <영상> --scan <폴더>` |
+| 긴 영상 장면 전환·컷 지점·샷 목록 | `python scripts/scene_cuts.py <영상> [--out shots.json]` (PySceneDetect 필요, 컷은 후보일 뿐 편집 판정 아님) |
 | 이 영상 손상됐는지·잘렸는지·재생 안 돼 | `python scripts/video_integrity.py <대상>` |
 | 같은 녹음 다른 파일·음성 중복 | `python scripts/audio_fingerprint.py <폴더>` (fpcalc 필요) |
 | 사진 정보·촬영시각·EXIF | `python scripts/exif_audit.py <대상>` |

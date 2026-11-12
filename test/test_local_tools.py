@@ -24,6 +24,7 @@ imgsim = load_module("image_similarity", "scripts/image_similarity.py")
 vidfp = load_module("video_fingerprint", "scripts/video_fingerprint.py")
 local_stt = load_module("local_stt", "scripts/local_stt.py")
 audit_local = load_module("local_only_audit", "scripts/local_only_audit.py")
+scene_cuts = load_module("scene_cuts", "scripts/scene_cuts.py")
 
 try:
     from PIL import Image  # noqa: F401
@@ -202,6 +203,20 @@ class LocalSttTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "a.wav").write_bytes(b"RIFF")
             self.assertEqual(local_stt.main([tmp]), 3)
+
+
+class SceneCutsTests(unittest.TestCase):
+    def test_missing_input_or_dependency_exit_code(self):
+        has_dep = importlib.util.find_spec("scenedetect") is not None
+        self.assertEqual(scene_cuts.main(["/nonexistent.mp4"]), 2 if has_dep else 3)
+
+    def test_missing_dependency_fail_closed(self):
+        if importlib.util.find_spec("scenedetect") is not None:
+            self.skipTest("scenedetect installed - fail-closed path not exercised")
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "a.mp4"
+            video.write_bytes(b"\x00")
+            self.assertEqual(scene_cuts.main([str(video)]), 3)
 
 
 class LocalOnlyAuditTests(unittest.TestCase):
