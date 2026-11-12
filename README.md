@@ -153,6 +153,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | HWPX 텍스트 추출 | ✅ | `python scripts/extract_hwpx.py <파일|폴더>` — stdlib 전용, 바이너리 .hwp는 외부 도구 영역 |
 | 신구대비 텍스트 비교 | ✅ | `python scripts/doc_diff.py old.txt new.txt --markdown` — 현행/신안/비고 표 |
 | 오디오 발화 구간 선조사 | ✅ | `python scripts/audio_survey.py <파일|폴더>` — WAV stdlib 직독, 그 외는 ffmpeg 경유. STT 전 스크리닝용 |
+| 영상 장면 컷(샷 목록) 선조사 | ✅ | `python scripts/scene_cuts.py <영상> [--out shots.json]` — PySceneDetect 선택 의존성(없으면 설치 안내 후 exit 3), 기본 adaptive 검출기. 컷 지점은 후보이지 편집·조작 판정이 아님 |
 | 이미지 EXIF 감사 | ✅ | `python scripts/exif_audit.py <파일|폴더>` — Pillow 필요, 촬영일시·기기·GPS·편집흔적 표면 조사 |
 | 증거형 키워드 검색 리포트 | ✅ | `python scripts/keyword_report.py <폴더> "키워드"` — file:line:원문+SHA-256, 부재도 '전수 검색 미검출'로 기록 |
 | 파일 위장 감사 (매직바이트 vs 확장자) | ✅ | `python scripts/signature_check.py <폴더>` — 'jpg인 척하는 exe' 등 스크리닝, 불일치 시 exit 1 |

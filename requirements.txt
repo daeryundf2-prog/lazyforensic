@@ -19,6 +19,12 @@ matplotlib>=3.8,<4
 # 외부 STT API 호출 (skills/video-editor/helpers/transcribe.py)
 requests>=2.31,<3
 
+# 로컬 STT (scripts/local_stt.py): av 17+ 와 faster-whisper 조합은 open() metadata_errors 오류가 나므로 av 를 고정한다
+# faster-whisper>=1.1,<2
+# av>=14,<17
+# 영상 장면 컷 (scripts/scene_cuts.py)
+# scenedetect[opencv-headless]>=0.6.4,<0.8
+
 # 영상 다운로드 (skills/forensic-video). CLI 로 설치해도 된다
 # yt-dlp>=2024.1.0
 
