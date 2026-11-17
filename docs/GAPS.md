@@ -62,7 +62,7 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/pii_mask.py`는 정규식 기반이라 이름·주소 같은 비정형 PII는 탐지하지 못하고, 날짜-계좌번호 같은 경계는 패턴으로만 구분한다. 마스킹본도 사람 검토가 필요하다.
 - `scripts/local_only_audit.py`는 정적 검사라 subprocess가 띄운 외부 바이너리의 송신은 못 본다. 실제 반출 차단은 OS 방화벽·네트워크 격리의 몫이다.
 - `scripts/evidence_manifest.py`는 `os.stat` 표면값이다 — 타임스탬핑 위조는 못 잡는다. '무결성 보장'이 아니라 '변경 탐지'다.
-- `scripts/extract_hwpx.py`는 HWPX(ZIP+XML)만 읽고 바이너리 .hwp는 못 읽는다. 표 구조·서식은 잃고 텍스트 순서만 남는다.
+- `scripts/extract_hwpx.py`는 HWPX(ZIP+XML)만 읽고 바이너리 .hwp는 못 읽는다. 표 구조·서식은 잃고 텍스트 순서만 남는다. kordoc가 설치돼 있고 `--kordoc`를 줄 때만 실패한 파일을 `KORDOC_OFFLINE=1`로 kordoc에 넘긴다(기본 꺼짐).
 - `scripts/doc_diff.py`는 줄 단위 비교라 문장 내 부분 변경은 줄 전체가 '변경'으로 표시된다.
 - `scripts/audio_survey.py`의 RMS 발화 구간은 '후보'다 — 배경소음이 크면 무음도 발화로 잡힌다.
 - `scripts/exif_audit.py`의 EXIF는 자유롭게 편집 가능하다. '기록된 값'이지 '진실'이 아니며, EXIF 부재는 메신저 경유 흔적일 뿐 조작 증거가 아니다.

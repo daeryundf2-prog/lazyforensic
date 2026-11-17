@@ -150,7 +150,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
 | 외부 반출 가능 경로 정적 감사 | ✅ | `python scripts/local_only_audit.py` — 네트워크 송신 지점을 GATED/UNGATED로 분류 |
 | 증거 매니페스트 (체인 오브 커스터디 초안) | ✅ | `python scripts/evidence_manifest.py <폴더> -o m.json` / `--verify m.json` — 변경·신규·삭제 파일 탐지 |
-| HWPX 텍스트 추출 | ✅ | `python scripts/extract_hwpx.py <파일|폴더>` — stdlib 전용, 바이너리 .hwp는 외부 도구 영역 |
+| HWPX 텍스트 추출 | ✅ | `python scripts/extract_hwpx.py <파일|폴더>` — stdlib 전용, 바이너리 .hwp는 외부 도구 영역. 선택: kordoc CLI 설치 시 `--kordoc`로 실패 파일(.hwp 포함)만 오프라인 폴백 |
 | 신구대비 텍스트 비교 | ✅ | `python scripts/doc_diff.py old.txt new.txt --markdown` — 현행/신안/비고 표 |
 | 오디오 발화 구간 선조사 | ✅ | `python scripts/audio_survey.py <파일|폴더>` — WAV stdlib 직독, 그 외는 ffmpeg 경유. STT 전 스크리닝용 |
 | 영상 장면 컷(샷 목록) 선조사 | ✅ | `python scripts/scene_cuts.py <영상> [--out shots.json]` — PySceneDetect 선택 의존성(없으면 설치 안내 후 exit 3), 기본 adaptive 검출기. 컷 지점은 후보이지 편집·조작 판정이 아님 |
