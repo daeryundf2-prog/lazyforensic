@@ -28,8 +28,23 @@ open(out, "w", encoding="utf-8").write("STUB:" + os.path.basename(args[0]) + "\\
 def make_stub(tmp: str) -> str:
     p = Path(tmp) / "kordoc-stub"
     p.write_text(STUB % sys.executable, encoding="utf-8")
+    if os.name == "nt":  # Windows는 shebang 스크립트를 직접 실행하지 못한다 (npm kordoc도 .cmd 래퍼)
+        cmd = Path(tmp) / "kordoc-stub.cmd"
+        cmd.write_text(f'@"{sys.executable}" "{p}" %*\r\n', encoding="utf-8")
+        return str(cmd)
     p.chmod(p.stat().st_mode | stat.S_IXUSR)
     return str(p)
+
+
+def make_failing_stub(tmp: str) -> str:
+    if os.name == "nt":
+        bad = Path(tmp) / "kordoc-bad.cmd"
+        bad.write_text("@exit /b 3\r\n", encoding="utf-8")
+        return str(bad)
+    bad = Path(tmp) / "kordoc-bad"
+    bad.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    bad.chmod(0o755)
+    return str(bad)
 
 
 class KordocAbsent(unittest.TestCase):
@@ -59,10 +74,8 @@ class KordocStub(unittest.TestCase):
 
     def test_kordoc_failure_keeps_original_error(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bad = Path(tmp) / "kordoc-bad"
-            bad.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
-            bad.chmod(0o755)
-            with mock.patch.dict(os.environ, {"LAZYFORENSIC_KORDOC_BIN": str(bad)}):
+            bad = make_failing_stub(tmp)
+            with mock.patch.dict(os.environ, {"LAZYFORENSIC_KORDOC_BIN": bad}):
                 r = hwpx.process(HWP / "textbox-nested.hwp", use_kordoc=True)
         self.assertEqual(r["status"], "failed")
         self.assertIn("kordoc", r["kordoc_error"])
