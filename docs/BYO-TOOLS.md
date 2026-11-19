@@ -17,7 +17,7 @@
 | **Unlimited-OCR** (Baidu) | 40p+ PDF 통째 OCR | GitHub | 스캔 증거 문서 대량 텍스트화 후 `keyword_report.py` |
 | **Upscayl** | 저해상도 이미지 업스케일 (로컬, 오픈소스) | 릴리스 다운로드 | 증거 사진 선명화 — 단, 업스케일본은 파생물로 표시 |
 | **claude-video (`/watch`)** | 영상 링크→프레임+전사+AI 분석 | `github.com/bradautomates/claude-video` | 프레임 추출은 `forensic-video`와 겹침 — 영상 '내용 읽기'용 |
-| **kordoc** | HWPX 글자 100% 보존 검증된 파서/리팩터링 사례 | GitHub | `extract_hwpx.py`가 못 읽는 구조(표·서식)가 필요할 때 |
+| **kordoc** | HWPX 글자 100% 보존 검증된 파서/리팩터링 사례 | GitHub | `extract_hwpx.py`가 못 읽는 구조(표·서식)나 바이너리 .hwp가 필요할 때 — `extract_hwpx.py --kordoc`가 PATH 또는 `LAZYFORENSIC_KORDOC_BIN`의 kordoc를 `KORDOC_OFFLINE=1`로 호출(선택, 없으면 기존 동작) |
 | **Camofox** | OSINT용 어사이드 연동 브라우저 (봇 탐지 회피 설계) | GitHub | sherlock이 막히는 사이트 수동 확인용. ⚠️ 외부 접속 — 동의 필요 |
 | **검색 API 무료 티어** (Exa·Tavily·SerpAPI·Brave) | OSINT 웹 검색 보조 | 각 사이트 키 발급 | `osint_username.py` 보조 — 외부 쿼리이므로 allowlist 검토 대상 |
 | **untrunc** | moov 손상 mp4 복구 (정상 참조 파일 필요) | GitHub | `video_integrity.py`가 DAMAGED/UNREADABLE로 잡은 파일의 복구 시도 |
