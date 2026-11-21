@@ -95,6 +95,9 @@ jobs:
           $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
           $bin = Join-Path $env:LOCALAPPDATA "LazyForensic\bin"
           if (($userPath -split ";") -notcontains $bin) { throw "user PATH missing $bin" }
+          # The installer only warns when Pillow fails; fail here so EXIF checks never silently drop out.
+          & (Join-Path $env:USERPROFILE ".lfenv\Scripts\python.exe") -c "import PIL, sys; print('Pillow', PIL.__version__, 'on', sys.version.split()[0])"
+          if ($LASTEXITCODE -ne 0) { throw "Pillow missing in .lfenv" }
           $ev = Join-Path $env:RUNNER_TEMP $env:EV_NAME
           New-Item -ItemType Directory -Path $ev | Out-Null
           Copy-Item test\fixtures\ewf\synthetic.E01 $ev
@@ -117,6 +120,7 @@ jobs:
       - name: Report smoke (macOS/Linux, 새 셸)
         if: runner.os != 'Windows'
         run: |
+          "$HOME/.lfenv/bin/python" -c "import PIL, sys; print('Pillow', PIL.__version__, 'on', sys.version.split()[0])"
           ev="$RUNNER_TEMP/증거 폴더"
           mkdir -p "$ev"
           cp test/fixtures/ewf/synthetic.E01 "$ev/"

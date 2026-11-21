@@ -39,7 +39,13 @@ function Test-Python($exe, $extra) {
 }
 
 function Find-Python {
+    # Prefer versions Pillow ships Windows wheels for; bare "py -3" picks the newest
+    # installed Python, which may be a preview without wheels (seen on CI: 3.15).
     $cands = @(
+        @{ exe = "py"; extra = @("-3.13") },
+        @{ exe = "py"; extra = @("-3.12") },
+        @{ exe = "py"; extra = @("-3.11") },
+        @{ exe = "py"; extra = @("-3.10") },
         @{ exe = "py"; extra = @("-3") },
         @{ exe = "python"; extra = @() },
         @{ exe = "python3"; extra = @() }
