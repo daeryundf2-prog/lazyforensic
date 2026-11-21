@@ -85,21 +85,28 @@ jobs:
       - name: Report smoke (Windows, 새 셸 + cmd 진입점)
         if: runner.os == 'Windows'
         shell: powershell
+        # 러너는 이 스크립트를 BOM 없는 UTF-8로 써서 PowerShell 5.1이 ANSI로 읽는다 → 한글 리터럴은 env로 넘긴다.
+        env:
+          EV_NAME: "증거 폴더"
+          MEMO_NAME: "메모.txt"
+          OUT_NAME: "결과"
+          EXPECTED: "보고서초안.html;보고서초안.md;파일해시목록.csv;무결성검증.json"
         run: |
           $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
           $bin = Join-Path $env:LOCALAPPDATA "LazyForensic\bin"
           if (($userPath -split ";") -notcontains $bin) { throw "user PATH missing $bin" }
-          $ev = Join-Path $env:RUNNER_TEMP "증거 폴더"
+          $ev = Join-Path $env:RUNNER_TEMP $env:EV_NAME
           New-Item -ItemType Directory -Path $ev | Out-Null
           Copy-Item test\fixtures\ewf\synthetic.E01 $ev
-          Set-Content -Path (Join-Path $ev "메모.txt") -Value "smoke" -Encoding UTF8
-          $out = Join-Path $env:RUNNER_TEMP "결과"
+          Set-Content -Path (Join-Path $ev $env:MEMO_NAME) -Value "smoke" -Encoding UTF8
+          $out = Join-Path $env:RUNNER_TEMP $env:OUT_NAME
           & (Join-Path $bin "lazyforensic.cmd") report $ev -o $out
           if ($LASTEXITCODE -ne 0) { throw "lazyforensic report exit $LASTEXITCODE" }
-          foreach ($f in @("보고서초안.html", "보고서초안.md", "파일해시목록.csv", "무결성검증.json")) {
-            if (-not (Test-Path (Join-Path $out $f))) { throw "missing $f" }
+          $expected = $env:EXPECTED -split ";"
+          foreach ($f in $expected) {
+            if (-not (Test-Path -LiteralPath (Join-Path $out $f))) { throw "missing $f" }
           }
-          $md = Get-Content -Raw -Encoding UTF8 (Join-Path $out "보고서초안.md")
+          $md = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $out $expected[1])
           if ($md -notmatch "TEST-2026-001") { throw "E01 header not in report" }
       - name: Install (macOS/Linux, "curl | sh" 경로를 stdin 실행으로 재현)
         if: runner.os != 'Windows'
