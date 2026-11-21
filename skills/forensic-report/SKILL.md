@@ -25,6 +25,8 @@ description: 포렌식 감정서/보고서 초안. 측정값만 채운다. 의�
 
 서식: `templates/forensic_report_template.md`. 초안은 `invoke_subagent` `Model: "flash"`, 선결론 점검은 `Model: "pro"`.
 
+측정값 뼈대는 먼저 `python scripts/report_draft.py <증거폴더> [--case-info …] [--hashes …]`로 만든다(해시·E01 대조·타임라인·선조사가 채워진 `보고서초안.md`, 근거 파일 `무결성검증.json`). 서술은 그 초안 위에 덧붙이고, 검증 시 `--evidence 무결성검증.json`을 넘긴다.
+
 ## Antigravity hard grounding (할루시네이션 차단)
 
 `gemini_hallucination_mitigation_deep_dive.md`의 전수 환각 억제 프로토콜을 강제합니다:

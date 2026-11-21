@@ -2,6 +2,18 @@
 
 이 레포의 실제 변경을 기록한다. 형식은 Keep a Changelog 를 따르고, 항목은 커밋 해시로 추적한다.
 
+### Added — 에이전트 없이 쓰는 보고서 초안·E01 검증·한 줄 설치 (1.1.0)
+
+- `scripts/report_draft.py` (`lazyforensic report <증거폴더>`): 증거 폴더 하나로 한국어 분석 보고서 초안(`보고서초안.md`/`.html`)과 무결성 검증 결과를 만든다. 전체 파일 MD5·SHA-1·SHA-256, E01 저장 해시 재계산 대조, 참조 해시 대조(`--hashes`), 선조사(시그니처·중복·EXIF·압축·PDF·SQLite·개인정보 패턴), 타임라인(mtime KST 환산·EXIF 시간대 미기록·E01 획득 시각), 분석 전후 재해시, 작성한 초안의 `verify_report.py` 검증까지 한 번에 수행. 사건 정보는 `--case-info`(양식: `--case-template`), 없으면 "미확인". 증거 폴더 안 출력은 거부하고, 출력물에 분석 PC 절대 경로를 남기지 않는다. 종료 코드 1 = 해시 불일치·판독 오류·초안 FAIL.
+- `scripts/ewf_image.py` (`lazyforensic e01`): 표준 라이브러리만으로 EWF-E01(단일·분할 세그먼트, deflate/비압축) 판독 — 헤더 기록값(사건번호·검사자·획득 도구·OS·일시), 미디어 정보, 저장 MD5/SHA-1, 미디어 전체 MD5·SHA-1·SHA-256 재계산과 대조. Ex01/L01/S01·손상 체인·세그먼트 누락은 '미지원/판독 오류'로 끝낸다. libewf `ewfverify`와 공개 이미지 4개에서 결과 일치 확인.
+- `scripts/hash_reference.py`: 참조 해시 목록 판독 — `sha256sum`/`md5sum`, BSD `SHA1 (f) = h`, `이름 크기 해시` 표, 머리행 있는 CSV, `Filename:`/`SHA1:` 블록. 한 줄에 해시나 파일명이 둘 이상이면 버리고, 같은 이름이 여럿이면 대조를 보류한다.
+- `install.ps1` / `install.sh`: Windows `irm … | iex`, macOS/Linux `curl … | sh` 한 줄 설치(오프라인 설치 폴더 실행 지원). Python 3.10+ 확인(Windows는 winget, macOS는 Homebrew로 자동 설치 시도), `~/.lfenv` venv + Pillow, `lazyforensic` 명령 PATH 등록.
+- `docs/QUICKSTART.md`(동료용 한국어 빠른 시작), `examples/nps-2009-canon2/`(Digital Corpora 공개 표본으로 돌린 명령과 결과 전체), `templates/case_info_example.txt`.
+- `bin/lazyforensic`·`bin/lazyforensic.ps1`: `report`, `e01` 서브커맨드. `.ps1`은 Windows PowerShell 5.1에서 한글이 깨지지 않도록 UTF-8 BOM으로 저장.
+- `scripts/case_survey.py`: `survey(..., manifest=)`로 호출자가 계산한 매니페스트를 재사용(같은 파일 이중 해시 방지).
+- CI: macOS 러너와 Python 3.10 최소 버전 잡 추가, 설치 스크립트 → 새 셸 → `lazyforensic report` 스모크(Windows PowerShell 5.1·macOS·Linux, 한글·공백 경로) 추가.
+- `test/test_report_draft.py` + `test/fixtures/ewf/`(libewf로 획득한 합성 E01, 실제 데이터 없음).
+
 ### Removed — 미사용 카카오 DB 래퍼 정리 및 antigravity-tools 문서 위치 이전 (1.0.4)
 
 - `skills/kakao-db-decryptor`: 복호화 기능을 제공하지 않고 안내만 담고 있던 래퍼 스킬 삭제. 카카오톡 SQLite 분석은 `lazyothers` 플러그인의 `sqlite-evidence-query` 스킬로 안내하도록 `GEMINI.md`, `README.md`, `skills/lazyforensic/SKILL.md`, `docs/GAPS.md`, `docs/USER_GUIDE.md` 갱신.
