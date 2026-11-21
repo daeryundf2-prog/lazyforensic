@@ -1,4 +1,4 @@
-# LazyForensic (v1.0.4)
+# LazyForensic (v1.1.0)
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node 18+](https://img.shields.io/badge/Node-18%2B-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -13,6 +13,30 @@
 > (**not a forensic acquisition or court-admissibility suite**). 판단과 획득은 별도 검증된
 > 도구/분석가의 몫이며, 이 플러그인은 "확인되지 않은 것은 `미확인`으로 비워 둔다"는
 > fail-closed 원칙으로 초안을 만든다. 한계 목록은 [`docs/GAPS.md`](docs/GAPS.md).
+
+---
+
+## 바로 쓰기: 증거 폴더 → 한국어 보고서 초안 (에이전트 없이)
+
+설치 한 줄, 실행 한 줄. 자세한 안내는 [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.ps1 | iex
+```
+
+```sh
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.sh | sh
+```
+
+```text
+lazyforensic report <증거 폴더> [--case-info 사건정보.txt] [--hashes 해시목록.txt]
+```
+
+증거 폴더(E01 이미지나 내보낸 파일)의 MD5·SHA-1·SHA-256 계산, E01 저장 해시 재계산 대조, 참조 해시 대조,
+분석 전후 재해시, 선조사·타임라인을 거쳐 `<폴더명>_분석결과/보고서초안.html`을 만든다. 확인하지 못한 값은 "미확인".
+공개 표본(Digital Corpora `nps-2009-canon2`)으로 돌린 실제 결과: [`examples/nps-2009-canon2`](examples/nps-2009-canon2/).
 
 ---
 
@@ -46,7 +70,7 @@
 
 ```bash
 git clone https://github.com/daeryundf2-prog/lazyforensic && cd lazyforensic
-python -m pytest test/ -v   # 권장: 297개 테스트 (로컬 약 30~40초). pytest 없으면 python -m unittest discover -s test
+python -m pytest test/ -v   # 권장: 343개 수집, 선택 의존성이 없으면 일부 skip (로컬 약 10~40초). pytest 없으면 python -m unittest discover -s test
 ```
 
 ### C. 다른 컴퓨터에서 한 방 세팅 (선택 의존성 포함)
@@ -144,7 +168,9 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 서증 목록표 초안 | ✅ | `python scripts/court_evidence_sheet.py <manifest.json> --party 갑` — 관행 양식 **초안**(제출 전 검토 필수), 입증취지는 `--purpose` 지정분만 기재 |
 | lazyothers 증거 JSON보내기 | ✅ | `python scripts/evidence_export.py <manifest.json> -o evidence.json` — lazyothers `generate_evidence_doc.py`/`bind_court_pdf.py`가 그대로 소비하는 형식 (scan→서증→표찰·병합 파이프라인) |
 | DLP 로그 체크리스트 정리 | ✅ | `python scripts/dlp_log_table.py <로그.csv>` — 확보된 로그의 시간순·4축 재배열. **탐지 아님** — 없는 로그는 만들지 않음 |
-| CLI 래퍼 | ✅ | `bin/lazyforensic scan\|stt\|pii\|manifest\|timeline\|sheet\|export\|dlp ...` — `bin/`을 PATH에 추가. Windows는 `bin/lazyforensic.cmd`(또는 `.ps1`)로 동일 서브커맨드 |
+| 보고서 초안 + 무결성 검증 (에이전트 불필요) | ✅ | `lazyforensic report <폴더> [--case-info …] [--hashes …]` — [`docs/QUICKSTART.md`](docs/QUICKSTART.md). 사람 판단이 필요한 칸은 "미확인" |
+| E01 판독·저장 해시 재계산 대조 | ✅ | `lazyforensic e01 <이미지.E01>` — 표준 라이브러리만으로 EWF-E01 판독. Ex01/L01/S01 미지원 |
+| CLI 래퍼 | ✅ | `bin/lazyforensic report\|e01\|scan\|stt\|pii\|manifest\|timeline\|sheet\|export\|dlp ...` — `bin/`을 PATH에 추가(설치 스크립트가 자동 처리). Windows는 `bin/lazyforensic.cmd`(또는 `.ps1`)로 동일 서브커맨드 |
 | 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
@@ -204,7 +230,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 python -m pytest test/ -v
 ```
 
-`.github/workflows/ci.yml`: Ubuntu/Windows 유닛 테스트 + 훅 가드 단언, korean-law-mcp 빌드+vitest.
+`.github/workflows/ci.yml`: Ubuntu/Windows/macOS 유닛 테스트 + 설치 스크립트·`lazyforensic report` 스모크 + 훅 가드 단언, korean-law-mcp 빌드+vitest.
 
 ## Lazy 생태계 (레포 경계)
 

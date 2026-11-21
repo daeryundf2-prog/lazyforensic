@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
-TOOL_VERSION = "1.0.4"
+TOOL_VERSION = "1.1.0"
 
 
 def sha256_file(path: Path) -> str:

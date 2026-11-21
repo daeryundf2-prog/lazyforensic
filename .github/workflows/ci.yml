@@ -9,16 +9,22 @@ jobs:
   python-tests:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        # Windows 에서도 훅/파서의 경로·인코딩 동작을 검증한다
-        os: [ubuntu-latest, windows-latest]
+        # Windows 에서도 훅/파서의 경로·인코딩 동작을 검증한다. macOS는 센터 보조 OS.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12"]
+        include:
+          # README가 약속하는 최소 버전
+          - os: ubuntu-latest
+            python: "3.10"
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - name: Install pytest
         run: |
           python -m pip install --upgrade pip
@@ -38,7 +44,7 @@ jobs:
       - name: Local-only egress audit (새 UNGATED 외부 송신 경로 차단)
         run: |
           python scripts/local_only_audit.py --json
-      - name: Hook guard assertions (env + stdin pipe, Linux/Windows)
+      - name: Hook guard assertions (env + stdin pipe, Linux/Windows/macOS)
         run: |
           node - <<'EOF'
           const { spawnSync } = require('child_process');
@@ -54,6 +60,74 @@ jobs:
           console.log('guards OK');
           EOF
         shell: bash
+
+  # 동료 PC 경로 그대로: 설치 스크립트 → 새 셸에서 `lazyforensic report` (한글·공백 경로)
+  install-smoke:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install (Windows PowerShell 5.1, "irm | iex" 경로를 Get-Content | iex로 재현)
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          LAZYFORENSIC_SOURCE: ${{ github.workspace }}
+        run: |
+          Get-Content -Raw -Encoding UTF8 .\install.ps1 | Invoke-Expression
+      - name: Report smoke (Windows, 새 셸 + cmd 진입점)
+        if: runner.os == 'Windows'
+        shell: powershell
+        # 러너는 이 스크립트를 BOM 없는 UTF-8로 써서 PowerShell 5.1이 ANSI로 읽는다 → 한글 리터럴은 env로 넘긴다.
+        env:
+          EV_NAME: "증거 폴더"
+          MEMO_NAME: "메모.txt"
+          OUT_NAME: "결과"
+          EXPECTED: "보고서초안.html;보고서초안.md;파일해시목록.csv;무결성검증.json"
+        run: |
+          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          $bin = Join-Path $env:LOCALAPPDATA "LazyForensic\bin"
+          if (($userPath -split ";") -notcontains $bin) { throw "user PATH missing $bin" }
+          # The installer only warns when Pillow fails; fail here so EXIF checks never silently drop out.
+          & (Join-Path $env:USERPROFILE ".lfenv\Scripts\python.exe") -c "import PIL, sys; print('Pillow', PIL.__version__, 'on', sys.version.split()[0])"
+          if ($LASTEXITCODE -ne 0) { throw "Pillow missing in .lfenv" }
+          $ev = Join-Path $env:RUNNER_TEMP $env:EV_NAME
+          New-Item -ItemType Directory -Path $ev | Out-Null
+          Copy-Item test\fixtures\ewf\synthetic.E01 $ev
+          Set-Content -Path (Join-Path $ev $env:MEMO_NAME) -Value "smoke" -Encoding UTF8
+          $out = Join-Path $env:RUNNER_TEMP $env:OUT_NAME
+          & (Join-Path $bin "lazyforensic.cmd") report $ev -o $out
+          if ($LASTEXITCODE -ne 0) { throw "lazyforensic report exit $LASTEXITCODE" }
+          $expected = $env:EXPECTED -split ";"
+          foreach ($f in $expected) {
+            if (-not (Test-Path -LiteralPath (Join-Path $out $f))) { throw "missing $f" }
+          }
+          $md = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $out $expected[1])
+          if ($md -notmatch "TEST-2026-001") { throw "E01 header not in report" }
+      - name: Install (macOS/Linux, "curl | sh" 경로를 stdin 실행으로 재현)
+        if: runner.os != 'Windows'
+        env:
+          LAZYFORENSIC_SOURCE: ${{ github.workspace }}
+        run: |
+          sh < install.sh
+      - name: Report smoke (macOS/Linux, 새 셸)
+        if: runner.os != 'Windows'
+        run: |
+          "$HOME/.lfenv/bin/python" -c "import PIL, sys; print('Pillow', PIL.__version__, 'on', sys.version.split()[0])"
+          ev="$RUNNER_TEMP/증거 폴더"
+          mkdir -p "$ev"
+          cp test/fixtures/ewf/synthetic.E01 "$ev/"
+          echo smoke > "$ev/메모.txt"
+          "$HOME/.local/bin/lazyforensic" report "$ev" -o "$RUNNER_TEMP/결과"
+          for f in 보고서초안.html 보고서초안.md 파일해시목록.csv 무결성검증.json; do test -f "$RUNNER_TEMP/결과/$f"; done
+          grep -q TEST-2026-001 "$RUNNER_TEMP/결과/보고서초안.md"
 
   node-syntax:
     runs-on: ubuntu-latest

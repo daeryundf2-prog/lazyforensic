@@ -1,0 +1,888 @@
+{
+  "tool": "LazyForensic 1.1.0 report_draft.py",
+  "evidence_root": "evidence",
+  "analysis_started": "2026-11-21 17:10:46",
+  "analysis_finished": "2026-11-21 17:10:47",
+  "files": [
+    {
+      "path": "files-gen6/IMG_0003.JPG",
+      "size": 840101,
+      "mtime": "2010-01-31T12:17:56+09:00",
+      "md5": "fde12217846c1e74bb9681b67bebd886",
+      "sha1": "214ad4f47b772e38cc295a8192e1664a235ced82",
+      "sha256": "785a03f148bb12cec5ef3721e5ee6c38d7a2b40950768ad175dbcc4f2f85a170",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0007.JPG",
+      "size": 865313,
+      "mtime": "2010-01-31T12:18:00+09:00",
+      "md5": "dbccff636c1af4880fc04b1b0c43968d",
+      "sha1": "770b4ef7714998d954668b29a2a7911c359e56f3",
+      "sha256": "d927bfa9c7a86f18f3328ee9200c39bcb128fac1bd1217e02adb4a8e8bbd46f3",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0009.JPG",
+      "size": 840692,
+      "mtime": "2010-01-31T12:18:01+09:00",
+      "md5": "82e93a6092da00ea9a4b11dadd724b7f",
+      "sha1": "b4fdefeb1bfbe889aed7f4c0aa755cdef302e1e9",
+      "sha256": "a400f500a6a9b57ec9757eace0c1cc573bbe1f0addc70db5469af8848d6b5cbf",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0011.JPG",
+      "size": 771052,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "46ee4abaae3a50eb041945393aa657ff",
+      "sha1": "25eb57e8a094d0bf33e43742681ddbd01d0b93a3",
+      "sha256": "92e182ce10f9f767241024e39b109cb545998b2c0854bb163585b86f722f3256",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0013.JPG",
+      "size": 842160,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "7690b9854abca6cafa9f0ff3fab67a16",
+      "sha1": "fccf7639029bda2eb748fafdb660d985779736a7",
+      "sha256": "e9602e0a9e5d0ce790dbb6aba5178384f8bdd86aaef8bdeeb90f28b9e8c94dba",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0014.JPG",
+      "size": 873437,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "2c11f3b009dacc24896c0c0cb0df924c",
+      "sha1": "6c9e27f9911f37488ef0d6e878c68f2a61100b2c",
+      "sha256": "3c837350507e57f2717d851c3d8e9b90e720b6f45f5ec9cef396c8aba8ad11f9",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0016.JPG",
+      "size": 853839,
+      "mtime": "2010-01-31T12:18:03+09:00",
+      "md5": "dd3852ec13dd160ca134551d68ed2b8d",
+      "sha1": "aa2b9eb89628485e51b5de57edad2487b648e574",
+      "sha256": "6adc90069c28e2da91bfc0879279134ad13731653fd3c9986533205e129df398",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0017.JPG",
+      "size": 795574,
+      "mtime": "2010-01-31T12:18:03+09:00",
+      "md5": "e9078510fde89c08f9eda08b60aceb2a",
+      "sha1": "2b7dee3b405ba577c3a17e6dfb2e4e182712bf6c",
+      "sha256": "996da4e3f15a1502f9ee89df318c29b52ac6babbe78a909852eb8d0a778359fe",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0018.JPG",
+      "size": 784455,
+      "mtime": "2010-01-31T12:18:03+09:00",
+      "md5": "fc8c2080322a93d7517876dd94b6c271",
+      "sha1": "68f6b646041516e60cf6581181f968f7b9bd3bc9",
+      "sha256": "17fe87b27243edd4a0ea2e6b6ab4bb8118dbef792c27f75fd2abfdb36809423a",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0019.JPG",
+      "size": 864257,
+      "mtime": "2010-01-31T12:18:03+09:00",
+      "md5": "1b520e0637ff9257a569a639ee7e48c6",
+      "sha1": "7661a34788eedc94f3a66c132c1e7ac6ace78be2",
+      "sha256": "35b9fef912b00e6a28afb34252ab0cdd73fb86e1ec12f6b9eacf5b021463b5ba",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0021.JPG",
+      "size": 819599,
+      "mtime": "2010-01-31T12:18:04+09:00",
+      "md5": "c0a215a6125491b6d1f708c109729844",
+      "sha1": "a87c594b86ca41c88547e128335ec3919bc27d87",
+      "sha256": "e0822427ebc97118f35feac984c00c414799859c6588f7efb5f943d59a62a53f",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0022.JPG",
+      "size": 728696,
+      "mtime": "2010-01-31T12:18:04+09:00",
+      "md5": "0ccab34b30ea983b77eedd27cae86e73",
+      "sha1": "00ef4d79b36d32ba42c6cc808421439f0fbcb662",
+      "sha256": "98adc4980baa675cfdcaf35892470a89226aec00d217246a6a800905127397f3",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0023.JPG",
+      "size": 858798,
+      "mtime": "2010-01-31T12:18:05+09:00",
+      "md5": "788e8ea46f70a367004915d5af75a22c",
+      "sha1": "9e81a566e8c7a4d49cb1cb834cb621023b3729a5",
+      "sha256": "5508b38c9391e68b10e9f49754acce483487fa35261fdeaa0098da298fc13334",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0024.JPG",
+      "size": 838434,
+      "mtime": "2010-01-31T12:18:05+09:00",
+      "md5": "b291cbbf970cd7913ee0177e7b0bfdbb",
+      "sha1": "12d2e78fa5b118a0f3144bda4e8e331c8a34ccbc",
+      "sha256": "5207a01f18af13f361a86a04d987738a12a74cb45f508775ac86207fd8d4c7ee",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0026.JPG",
+      "size": 768385,
+      "mtime": "2010-01-31T12:18:05+09:00",
+      "md5": "d495f85075f774cbbc31f6e39ef7afea",
+      "sha1": "0745141aefe2ede7c788f9d80c3a3897134b0353",
+      "sha256": "e9df5244acbf929c6f391123c57b580c1b270d3ff8d526618647f0b22960d34b",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0027.JPG",
+      "size": 840253,
+      "mtime": "2010-01-31T12:18:05+09:00",
+      "md5": "a822e6a4782a19e3882d9f0cfef448ad",
+      "sha1": "e5721ef38a1bc7bb92895ad3df23786cffa84bb8",
+      "sha256": "cb758b187c189bd5abe9164ce3d42f0d346b1e992a1887b0d99d153f4b1cea74",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0028.JPG",
+      "size": 815636,
+      "mtime": "2010-01-31T12:18:05+09:00",
+      "md5": "f7e33ce7a2a624568282ddcad83fe3d1",
+      "sha1": "04d3290232dad550d7bccf45f768793d0512da9a",
+      "sha256": "9e907caf4fedb3aeac6113b660a61ab4e08efe5b6a0cb318676c2879a0a5a105",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0029.JPG",
+      "size": 861552,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "434fd5c55b51456e582d93919092a576",
+      "sha1": "ce7068a8b8eec06f1bf269da519de462e72f6ee8",
+      "sha256": "1a89d4bee6a8d6182d315492ce9cdb697e33733e4a4e7c3f8d15f34cb0fc835d",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0031.JPG",
+      "size": 749202,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "2d2a5aab898c36dc387546881224438f",
+      "sha1": "16495400c6b982c69c3e12ad80b900a6d2ab3d8f",
+      "sha256": "12118d11ccc821ba46905dd1e56d8a1c6f5c49672a32c435a7a049a8eb3f30cd",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0032.JPG",
+      "size": 879834,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "eaaeb62af36bbc276e49cee8472fe941",
+      "sha1": "3e4be3780f41df5f4cc24d5466219bf67556af5e",
+      "sha256": "2fca9fb796763d8064c139df331138551c76c9e8b7b691f131b4576d2a077cd3",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0033.JPG",
+      "size": 845375,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "d05a1fdf5d34545ed90c4c27e6f007cf",
+      "sha1": "b11a5f20be9c60910f1f13d2a2742f069064145c",
+      "sha256": "7c64a8b5528b67633ea281e364e5b79cce312df6bc99e8db075e1d6d0624178f",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0034.JPG",
+      "size": 812465,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "ff2471aba536ec5d0177b03c1b8846d8",
+      "sha1": "81b6f65e803d6fba9a61e21c6f4b579b911f1b22",
+      "sha256": "78781832a513a9103cad84b4e074da65372d20853795561884e9314537c8b080",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0036.JPG",
+      "size": 882337,
+      "mtime": "2010-01-31T12:18:06+09:00",
+      "md5": "3cc16c38c8b0ba10d5d5dda73b2ba80c",
+      "sha1": "4f08862b159807f22e7fb568bbc750abfcba8ace",
+      "sha256": "02912caa1357988a5b6a6128583295b1c4456c4eab1df11e38f7251e5289a690",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0038.JPG",
+      "size": 1296150,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "b10821b19fc5ac436f67e47a77e15f7d",
+      "sha1": "b2575a16cb6eaf22289b4d90dffd77b2ba45c995",
+      "sha256": "ce6c139a0f6db9eba78c53dfe952e6a9f2f5a39740270bd93721bed66a2d5af7",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0039.JPG",
+      "size": 861552,
+      "mtime": "2012-08-29T21:39:30+09:00",
+      "md5": "434fd5c55b51456e582d93919092a576",
+      "sha1": "ce7068a8b8eec06f1bf269da519de462e72f6ee8",
+      "sha256": "1a89d4bee6a8d6182d315492ce9cdb697e33733e4a4e7c3f8d15f34cb0fc835d",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0040.JPG",
+      "size": 1451033,
+      "mtime": "2012-08-29T21:41:58+09:00",
+      "md5": "b83db36652390cdec3e3dcddc3025438",
+      "sha1": "b83a2bc3922232b80c6dec244fc321e5e6980a70",
+      "sha256": "80da64d5ae33b71f31da267f38f8db9b12bfb190710f4a499b8b7c768d0ccee8",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0041.JPG",
+      "size": 1315993,
+      "mtime": "2012-08-29T21:39:31+09:00",
+      "md5": "28bfe4054cc82fcb9a06ef1aa891ac9c",
+      "sha1": "9c78efb7e799561a2e87f3c9c17f9759f786d96a",
+      "sha256": "55695de4d720da3c11ef2e103c2b3c62ebc3cff56da061d5b307eec21da186c9",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0042.JPG",
+      "size": 1361807,
+      "mtime": "2010-01-31T12:17:56+09:00",
+      "md5": "71fc8955355b39cc708d2ea12464f8ba",
+      "sha1": "8b9080d2eeaf8dba2d510baa5738e1d2ac62dafc",
+      "sha256": "bc0255426d5c6e56e9cc3a43ffc6a832c712768c5300cf320c5bd9caa2fed896",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0043.JPG",
+      "size": 2834018,
+      "mtime": "2010-01-31T12:17:59+09:00",
+      "md5": "a7767ecba3de8f47bb0a4ba61392f516",
+      "sha1": "7aca4cfa02da88f91d11c85db16e12ddb286c622",
+      "sha256": "dc6b724edf8319417c8527c261b8c8d0bf85075db6fd6238b6c02ccb89a88bc5",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0044.JPG",
+      "size": 105195,
+      "mtime": "2010-01-31T12:17:56+09:00",
+      "md5": "cef79634dd3a86455a2cd900a691adf3",
+      "sha1": "916a88a00c58b7a566711acd25e61d549df5d303",
+      "sha256": "8a108ffee8a96605bf6d5af8b1f95f0a1bfee67a3261c4631d0e5879ae5b2fa7",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0045.JPG",
+      "size": 110686,
+      "mtime": "2010-01-31T12:18:00+09:00",
+      "md5": "c2a0a4ae109e1f23452c66d6a7878f8e",
+      "sha1": "72760dab05562ceb41b2afb6c3895d7e5d017980",
+      "sha256": "185974b9283756dcae291fb758262c2198d7616d10fca5fa85052932c89bc0dd",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0046.JPG",
+      "size": 116135,
+      "mtime": "2010-01-31T12:18:00+09:00",
+      "md5": "0db645b7a4d69e712cc879b87e0ab408",
+      "sha1": "97589b7e1fafefd609b4828a2c62d19a9ba14d4b",
+      "sha256": "2798d0604d1ac8b1fd7fa9b6fa4293461a3b0d36bf6c7f2429284e7990d23032",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0047.JPG",
+      "size": 120441,
+      "mtime": "2010-01-31T12:18:01+09:00",
+      "md5": "a1e9a7e3ad23def9bd2d85e69a05ae71",
+      "sha1": "805c0aca98415c69e696c4bc3a58c663c296ec59",
+      "sha256": "2a78b45e591589762dd35279760f4de4995482a0f29b14fb5b3c2cadd62ac102",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0048.JPG",
+      "size": 124906,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "16cfd28b267c34f430baee168dd387ff",
+      "sha1": "b438b62b04bed3ea02d11ed3ed51c9dca58893ec",
+      "sha256": "48107c820060b60ae5c6278d055c5ad696df7a6468f5bbe66626b8dcd2da7fc2",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0049.JPG",
+      "size": 114940,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "43376934ed3f22329a5023f8fe8e6a51",
+      "sha1": "d69d8d907f0f4bdb151be9826a62b4b5c7a77f56",
+      "sha256": "6134d2160c8205cd5eab03ae5bd4501bedd8724a2cfb620c248cce5a96a27ae6",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0050.JPG",
+      "size": 127191,
+      "mtime": "2010-01-31T12:18:02+09:00",
+      "md5": "2e5f0632b0a35ae060af4200bfab38bf",
+      "sha1": "887fd6dd3ab09a50b227aa7e025ace16b9dc3e36",
+      "sha256": "0eff4e44ecd7b3dd3e02447c8c3db11ed290b71bb55f578e6b44b95809a14dcb",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "files-gen6/IMG_0051.JPG",
+      "size": 130418,
+      "mtime": "2010-01-31T12:18:04+09:00",
+      "md5": "7e5e68efac8c9a218f34b512f49e1b1e",
+      "sha1": "7ef5225f992dc731907a79816c904a83df3bdab5",
+      "sha256": "7450941496e2f74bc1bd13efa0bf589b723d6575782bd27daac56b893f00cbbe",
+      "category": "이미지(사진)"
+    },
+    {
+      "path": "nps-2009-canon2-gen6.E01",
+      "size": 31144390,
+      "mtime": "2026-11-21T16:57:03+09:00",
+      "md5": "5ab5d74c7124d4f3e1f13a4a5a044129",
+      "sha1": "e6212ddcabcf13f243684fa7fef952704af0b0ae",
+      "sha256": "10483722d84e0cefcb693b11dea2d32dbd3ad2f06f8c9656688c8c730fe41579",
+      "category": "디스크 이미지"
+    }
+  ],
+  "post_check": {
+    "status": "match",
+    "checked": 38,
+    "changed": [],
+    "missing": [],
+    "new": [],
+    "unreadable": []
+  },
+  "images": [
+    {
+      "image": "nps-2009-canon2-gen6.E01",
+      "segments": [
+        "nps-2009-canon2-gen6.E01"
+      ],
+      "format": "EnCase (EWF-E01)",
+      "media": {
+        "media_type": "removable disk",
+        "chunk_count": 950,
+        "sectors_per_chunk": 64,
+        "bytes_per_sector": 512,
+        "sector_count": 60800,
+        "media_size": 31129600
+      },
+      "acquisition": {
+        "acquiry_software_version": "20090927",
+        "acquiry_os": "Darwin",
+        "acquisition_date": "2010-08-06 00:06:08 UTC",
+        "system_date": "2010-08-06 00:06:08 UTC"
+      },
+      "stored_hashes": {
+        "md5": "750b509d8fbed37a5213480aaccfdc61",
+        "sha1": null
+      },
+      "computed_hashes": {
+        "md5": "750b509d8fbed37a5213480aaccfdc61",
+        "sha1": "4742c325f10583dab1eb4c55d0d45ab3beb99eb3",
+        "sha256": "09066032400ff931909ec7b12a433d01e1710bf8f7291c12e8a84187c0cfcddb",
+        "bytes": 31129600
+      },
+      "comparison": {
+        "md5": "match"
+      },
+      "status": "verified",
+      "file": "nps-2009-canon2-gen6.E01"
+    }
+  ],
+  "reference": {
+    "sources": [
+      "narrative.txt",
+      "report.txt"
+    ],
+    "entries": [
+      {
+        "name": "nps-2009-canon2-gen6.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 13,
+        "result": "match",
+        "file": "nps-2009-canon2-gen6.E01",
+        "matched_by": "image_media",
+        "actual": "4742c325f10583dab1eb4c55d0d45ab3beb99eb3",
+        "sha1": "4742c325f10583dab1eb4c55d0d45ab3beb99eb3"
+      },
+      {
+        "name": "nps-2009-canon2-gen1.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 8,
+        "result": "not_found",
+        "file": null,
+        "sha1": "67364b0894a0465d6ada8c4966b6bbcaf7039082"
+      },
+      {
+        "name": "nps-2009-canon2-gen2.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 9,
+        "result": "not_found",
+        "file": null,
+        "sha1": "0e3cdef3b1a7d3762f9704bfd4349033fe808eda"
+      },
+      {
+        "name": "nps-2009-canon2-gen3.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 10,
+        "result": "not_found",
+        "file": null,
+        "sha1": "7dc8be7f3993c37f101c0ed0fec4274abccacf3c"
+      },
+      {
+        "name": "nps-2009-canon2-gen4.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 11,
+        "result": "not_found",
+        "file": null,
+        "sha1": "ed1c7dea94096ad309b32037cb6d43a291952d8d"
+      },
+      {
+        "name": "nps-2009-canon2-gen5.raw",
+        "algorithm": "sha1",
+        "source": "narrative.txt",
+        "line": 12,
+        "result": "not_found",
+        "file": null,
+        "sha1": "63e7f9daf8dbcd1744579e579f3f0fddebe2ee90"
+      },
+      {
+        "name": "DCIM/CANONMSC/M0100.CTG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 2,
+        "result": "not_found",
+        "file": null,
+        "sha1": "8ce272c91a2289a610eeecdc4f2228553313353c"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0044.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 6,
+        "result": "match",
+        "file": "files-gen6/IMG_0044.JPG",
+        "matched_by": "basename",
+        "actual": "916a88a00c58b7a566711acd25e61d549df5d303",
+        "sha1": "916a88a00c58b7a566711acd25e61d549df5d303"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0042.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 12,
+        "result": "match",
+        "file": "files-gen6/IMG_0042.JPG",
+        "matched_by": "basename",
+        "actual": "8b9080d2eeaf8dba2d510baa5738e1d2ac62dafc",
+        "sha1": "8b9080d2eeaf8dba2d510baa5738e1d2ac62dafc"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0043.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 16,
+        "result": "match",
+        "file": "files-gen6/IMG_0043.JPG",
+        "matched_by": "basename",
+        "actual": "7aca4cfa02da88f91d11c85db16e12ddb286c622",
+        "sha1": "7aca4cfa02da88f91d11c85db16e12ddb286c622"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0003.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 23,
+        "result": "match",
+        "file": "files-gen6/IMG_0003.JPG",
+        "matched_by": "basename",
+        "actual": "214ad4f47b772e38cc295a8192e1664a235ced82",
+        "sha1": "214ad4f47b772e38cc295a8192e1664a235ced82"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0038.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 27,
+        "result": "match",
+        "file": "files-gen6/IMG_0038.JPG",
+        "matched_by": "basename",
+        "actual": "b2575a16cb6eaf22289b4d90dffd77b2ba45c995",
+        "sha1": "b2575a16cb6eaf22289b4d90dffd77b2ba45c995"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0007.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 33,
+        "result": "match",
+        "file": "files-gen6/IMG_0007.JPG",
+        "matched_by": "basename",
+        "actual": "770b4ef7714998d954668b29a2a7911c359e56f3",
+        "sha1": "770b4ef7714998d954668b29a2a7911c359e56f3"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0045.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 37,
+        "result": "match",
+        "file": "files-gen6/IMG_0045.JPG",
+        "matched_by": "basename",
+        "actual": "72760dab05562ceb41b2afb6c3895d7e5d017980",
+        "sha1": "72760dab05562ceb41b2afb6c3895d7e5d017980"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0046.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 41,
+        "result": "match",
+        "file": "files-gen6/IMG_0046.JPG",
+        "matched_by": "basename",
+        "actual": "97589b7e1fafefd609b4828a2c62d19a9ba14d4b",
+        "sha1": "97589b7e1fafefd609b4828a2c62d19a9ba14d4b"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0047.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 45,
+        "result": "match",
+        "file": "files-gen6/IMG_0047.JPG",
+        "matched_by": "basename",
+        "actual": "805c0aca98415c69e696c4bc3a58c663c296ec59",
+        "sha1": "805c0aca98415c69e696c4bc3a58c663c296ec59"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0048.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 49,
+        "result": "match",
+        "file": "files-gen6/IMG_0048.JPG",
+        "matched_by": "basename",
+        "actual": "b438b62b04bed3ea02d11ed3ed51c9dca58893ec",
+        "sha1": "b438b62b04bed3ea02d11ed3ed51c9dca58893ec"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0009.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 54,
+        "result": "match",
+        "file": "files-gen6/IMG_0009.JPG",
+        "matched_by": "basename",
+        "actual": "b4fdefeb1bfbe889aed7f4c0aa755cdef302e1e9",
+        "sha1": "b4fdefeb1bfbe889aed7f4c0aa755cdef302e1e9"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0011.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 58,
+        "result": "match",
+        "file": "files-gen6/IMG_0011.JPG",
+        "matched_by": "basename",
+        "actual": "25eb57e8a094d0bf33e43742681ddbd01d0b93a3",
+        "sha1": "25eb57e8a094d0bf33e43742681ddbd01d0b93a3"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0049.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 62,
+        "result": "match",
+        "file": "files-gen6/IMG_0049.JPG",
+        "matched_by": "basename",
+        "actual": "d69d8d907f0f4bdb151be9826a62b4b5c7a77f56",
+        "sha1": "d69d8d907f0f4bdb151be9826a62b4b5c7a77f56"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0050.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 66,
+        "result": "match",
+        "file": "files-gen6/IMG_0050.JPG",
+        "matched_by": "basename",
+        "actual": "887fd6dd3ab09a50b227aa7e025ace16b9dc3e36",
+        "sha1": "887fd6dd3ab09a50b227aa7e025ace16b9dc3e36"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0051.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 70,
+        "result": "match",
+        "file": "files-gen6/IMG_0051.JPG",
+        "matched_by": "basename",
+        "actual": "7ef5225f992dc731907a79816c904a83df3bdab5",
+        "sha1": "7ef5225f992dc731907a79816c904a83df3bdab5"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0013.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 74,
+        "result": "match",
+        "file": "files-gen6/IMG_0013.JPG",
+        "matched_by": "basename",
+        "actual": "fccf7639029bda2eb748fafdb660d985779736a7",
+        "sha1": "fccf7639029bda2eb748fafdb660d985779736a7"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0014.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 78,
+        "result": "match",
+        "file": "files-gen6/IMG_0014.JPG",
+        "matched_by": "basename",
+        "actual": "6c9e27f9911f37488ef0d6e878c68f2a61100b2c",
+        "sha1": "6c9e27f9911f37488ef0d6e878c68f2a61100b2c"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0016.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 82,
+        "result": "match",
+        "file": "files-gen6/IMG_0016.JPG",
+        "matched_by": "basename",
+        "actual": "aa2b9eb89628485e51b5de57edad2487b648e574",
+        "sha1": "aa2b9eb89628485e51b5de57edad2487b648e574"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0017.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 86,
+        "result": "match",
+        "file": "files-gen6/IMG_0017.JPG",
+        "matched_by": "basename",
+        "actual": "2b7dee3b405ba577c3a17e6dfb2e4e182712bf6c",
+        "sha1": "2b7dee3b405ba577c3a17e6dfb2e4e182712bf6c"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0018.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 90,
+        "result": "match",
+        "file": "files-gen6/IMG_0018.JPG",
+        "matched_by": "basename",
+        "actual": "68f6b646041516e60cf6581181f968f7b9bd3bc9",
+        "sha1": "68f6b646041516e60cf6581181f968f7b9bd3bc9"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0019.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 94,
+        "result": "match",
+        "file": "files-gen6/IMG_0019.JPG",
+        "matched_by": "basename",
+        "actual": "7661a34788eedc94f3a66c132c1e7ac6ace78be2",
+        "sha1": "7661a34788eedc94f3a66c132c1e7ac6ace78be2"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0020.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 98,
+        "result": "not_found",
+        "file": null,
+        "sha1": "825c04774ea2b9171c267e682abbecb82baa4e29"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0021.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 102,
+        "result": "match",
+        "file": "files-gen6/IMG_0021.JPG",
+        "matched_by": "basename",
+        "actual": "a87c594b86ca41c88547e128335ec3919bc27d87",
+        "sha1": "a87c594b86ca41c88547e128335ec3919bc27d87"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0022.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 106,
+        "result": "match",
+        "file": "files-gen6/IMG_0022.JPG",
+        "matched_by": "basename",
+        "actual": "00ef4d79b36d32ba42c6cc808421439f0fbcb662",
+        "sha1": "00ef4d79b36d32ba42c6cc808421439f0fbcb662"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0023.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 110,
+        "result": "match",
+        "file": "files-gen6/IMG_0023.JPG",
+        "matched_by": "basename",
+        "actual": "9e81a566e8c7a4d49cb1cb834cb621023b3729a5",
+        "sha1": "9e81a566e8c7a4d49cb1cb834cb621023b3729a5"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0024.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 114,
+        "result": "match",
+        "file": "files-gen6/IMG_0024.JPG",
+        "matched_by": "basename",
+        "actual": "12d2e78fa5b118a0f3144bda4e8e331c8a34ccbc",
+        "sha1": "12d2e78fa5b118a0f3144bda4e8e331c8a34ccbc"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0025.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 118,
+        "result": "not_found",
+        "file": null,
+        "sha1": "a6cfff9c614dc3aeb3470185bcf63e5a7eeaf33a"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0026.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 122,
+        "result": "match",
+        "file": "files-gen6/IMG_0026.JPG",
+        "matched_by": "basename",
+        "actual": "0745141aefe2ede7c788f9d80c3a3897134b0353",
+        "sha1": "0745141aefe2ede7c788f9d80c3a3897134b0353"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0027.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 126,
+        "result": "match",
+        "file": "files-gen6/IMG_0027.JPG",
+        "matched_by": "basename",
+        "actual": "e5721ef38a1bc7bb92895ad3df23786cffa84bb8",
+        "sha1": "e5721ef38a1bc7bb92895ad3df23786cffa84bb8"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0028.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 130,
+        "result": "match",
+        "file": "files-gen6/IMG_0028.JPG",
+        "matched_by": "basename",
+        "actual": "04d3290232dad550d7bccf45f768793d0512da9a",
+        "sha1": "04d3290232dad550d7bccf45f768793d0512da9a"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0029.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 134,
+        "result": "match",
+        "file": "files-gen6/IMG_0029.JPG",
+        "matched_by": "basename",
+        "actual": "ce7068a8b8eec06f1bf269da519de462e72f6ee8",
+        "sha1": "ce7068a8b8eec06f1bf269da519de462e72f6ee8"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0030.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 138,
+        "result": "not_found",
+        "file": null,
+        "sha1": "49bf2c6db487177abc32decdba727c813af1d122"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0031.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 142,
+        "result": "match",
+        "file": "files-gen6/IMG_0031.JPG",
+        "matched_by": "basename",
+        "actual": "16495400c6b982c69c3e12ad80b900a6d2ab3d8f",
+        "sha1": "16495400c6b982c69c3e12ad80b900a6d2ab3d8f"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0032.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 146,
+        "result": "match",
+        "file": "files-gen6/IMG_0032.JPG",
+        "matched_by": "basename",
+        "actual": "3e4be3780f41df5f4cc24d5466219bf67556af5e",
+        "sha1": "3e4be3780f41df5f4cc24d5466219bf67556af5e"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0033.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 150,
+        "result": "match",
+        "file": "files-gen6/IMG_0033.JPG",
+        "matched_by": "basename",
+        "actual": "b11a5f20be9c60910f1f13d2a2742f069064145c",
+        "sha1": "b11a5f20be9c60910f1f13d2a2742f069064145c"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0034.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 154,
+        "result": "match",
+        "file": "files-gen6/IMG_0034.JPG",
+        "matched_by": "basename",
+        "actual": "81b6f65e803d6fba9a61e21c6f4b579b911f1b22",
+        "sha1": "81b6f65e803d6fba9a61e21c6f4b579b911f1b22"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0035.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 158,
+        "result": "not_found",
+        "file": null,
+        "sha1": "211b050e56c049e9e4349a23d77a6900770ac913"
+      },
+      {
+        "name": "DCIM/100CANON/IMG_0036.JPG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 162,
+        "result": "match",
+        "file": "files-gen6/IMG_0036.JPG",
+        "matched_by": "basename",
+        "actual": "4f08862b159807f22e7fb568bbc750abfcba8ace",
+        "sha1": "4f08862b159807f22e7fb568bbc750abfcba8ace"
+      },
+      {
+        "name": "DCIM/CANONMSC/M0100.CTG",
+        "algorithm": "sha1",
+        "source": "report.txt",
+        "line": 166,
+        "result": "not_found",
+        "file": null,
+        "sha1": "69b30c352ee802f49b1ea25325af9fa05c3ffca1"
+      }
+    ]
+  }
+}

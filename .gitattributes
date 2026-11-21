@@ -17,6 +17,11 @@ audit_trail.jsonl export-ignore
 *.cmd text eol=crlf
 *.bat text eol=crlf
 
+# Forensic image fixtures — byte-exact
+*.E01 binary
+*.E02 binary
+*.gz binary
+
 # Contract files are pinned by SHA-256 — git must not alter a single byte.
 # (last rule wins, so this stays below the wildcard rules)
 contracts/** -text

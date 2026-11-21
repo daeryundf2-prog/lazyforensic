@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>디지털포렌식 분석 보고서 (초안) — evidence</title><style>body{font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;max-width:1100px;margin:24px auto;padding:0 16px;line-height:1.6;color:#111}h1{border-bottom:2px solid #333;padding-bottom:6px}h2{border-bottom:1px solid #999;margin-top:32px}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:13px}th,td{border:1px solid #888;padding:4px 6px;vertical-align:top;word-break:break-all}th{background:#eee}blockquote{border-left:4px solid #c00;margin:8px 0;padding:6px 12px;background:#fff4f4}code{font-family:Consolas,Menlo,monospace;font-size:12px}@media print{body{margin:0;max-width:none}h2{page-break-after:avoid}tr{page-break-inside:avoid}}</style></head><body>
+<h1>디지털포렌식 분석 보고서 (초안)</h1>
+<blockquote>이 문서는 LazyForensic이 자동으로 만든 <strong>초안</strong>이다. 도구가 직접 측정한 값만 채웠고, 측정하지 못했거나 기록이 없는 항목은 "미확인"으로 남겼다. 의견·결론·법적 판단은 쓰지 않았다. 분석관이 원자료와 대조해 검토·보완한 뒤에만 사용한다.</blockquote>
+<h2>1. 사건 개요</h2>
+<table><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>
+<tr><td>사건번호</td><td>예시-2026-001</td></tr>
+<tr><td>사건명</td><td>공개 표본 데이터 시연 (Digital Corpora nps-2009-canon2)</td></tr>
+<tr><td>의뢰인</td><td>없음 (시연)</td></tr>
+<tr><td>의뢰일자</td><td>미확인</td></tr>
+<tr><td>분석 목적</td><td>SD 카드 이미지와 복구 사진의 해시·무결성 확인, 촬영 시각 정리</td></tr>
+<tr><td>분석 담당</td><td>미확인</td></tr>
+</tbody></table>
+<h2>2. 분석 대상 증거</h2>
+<h3>가. 증거 요약</h3>
+<ul>
+<li>증거 폴더: <code>evidence</code></li>
+<li>파일 수: 38개 (해시 계산 38개, 읽기 실패 0개)</li>
+<li>총 크기: 57.5 MB (60,246,301 바이트)</li>
+</ul>
+<table><thead><tr><th>유형</th><th>파일 수</th><th>크기</th></tr></thead><tbody>
+<tr><td>이미지(사진)</td><td>37</td><td>27.8 MB</td></tr>
+<tr><td>디스크 이미지</td><td>1</td><td>29.7 MB</td></tr>
+</tbody></table>
+<h3>나. 디스크 이미지 (E01)</h3>
+<p>아래 획득 정보는 이미지 파일 안에 획득 도구가 기록한 값이다. 이 도구가 획득 과정을 확인한 것은 아니다.</p>
+<p><strong>nps-2009-canon2-gen6.E01</strong></p>
+<table><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>
+<tr><td>세그먼트 파일</td><td>nps-2009-canon2-gen6.E01</td></tr>
+<tr><td>형식</td><td>EnCase (EWF-E01)</td></tr>
+<tr><td>미디어 유형</td><td>removable disk</td></tr>
+<tr><td>미디어 크기</td><td>29.7 MB (31,129,600 바이트, 60,800 섹터 × 512 바이트)</td></tr>
+<tr><td>사건번호(기록값)</td><td>미확인</td></tr>
+<tr><td>증거번호(기록값)</td><td>미확인</td></tr>
+<tr><td>설명(기록값)</td><td>미확인</td></tr>
+<tr><td>검사자(기록값)</td><td>미확인</td></tr>
+<tr><td>메모(기록값)</td><td>미확인</td></tr>
+<tr><td>판독 상태</td><td>일치 (저장 해시 = 재계산 해시)</td></tr>
+</tbody></table>
+<h3>다. 증거 파일 목록과 해시 (분석 전 계산)</h3>
+<p>SHA-256만 싣는다. MD5·SHA-1·수정 시각을 포함한 전체 목록은 <code>파일해시목록.csv</code>에 있다.</p>
+<table><thead><tr><th>번호</th><th>파일</th><th>크기</th><th>SHA-256</th></tr></thead><tbody>
+<tr><td>1</td><td>files-gen6/IMG_0003.JPG</td><td>820.4 KB</td><td>785a03f148bb12cec5ef3721e5ee6c38d7a2b40950768ad175dbcc4f2f85a170</td></tr>
+<tr><td>2</td><td>files-gen6/IMG_0007.JPG</td><td>845.0 KB</td><td>d927bfa9c7a86f18f3328ee9200c39bcb128fac1bd1217e02adb4a8e8bbd46f3</td></tr>
+<tr><td>3</td><td>files-gen6/IMG_0009.JPG</td><td>821.0 KB</td><td>a400f500a6a9b57ec9757eace0c1cc573bbe1f0addc70db5469af8848d6b5cbf</td></tr>
+<tr><td>4</td><td>files-gen6/IMG_0011.JPG</td><td>753.0 KB</td><td>92e182ce10f9f767241024e39b109cb545998b2c0854bb163585b86f722f3256</td></tr>
+<tr><td>5</td><td>files-gen6/IMG_0013.JPG</td><td>822.4 KB</td><td>e9602e0a9e5d0ce790dbb6aba5178384f8bdd86aaef8bdeeb90f28b9e8c94dba</td></tr>
+<tr><td>6</td><td>files-gen6/IMG_0014.JPG</td><td>853.0 KB</td><td>3c837350507e57f2717d851c3d8e9b90e720b6f45f5ec9cef396c8aba8ad11f9</td></tr>
+<tr><td>7</td><td>files-gen6/IMG_0016.JPG</td><td>833.8 KB</td><td>6adc90069c28e2da91bfc0879279134ad13731653fd3c9986533205e129df398</td></tr>
+<tr><td>8</td><td>files-gen6/IMG_0017.JPG</td><td>776.9 KB</td><td>996da4e3f15a1502f9ee89df318c29b52ac6babbe78a909852eb8d0a778359fe</td></tr>
+<tr><td>9</td><td>files-gen6/IMG_0018.JPG</td><td>766.1 KB</td><td>17fe87b27243edd4a0ea2e6b6ab4bb8118dbef792c27f75fd2abfdb36809423a</td></tr>
+<tr><td>10</td><td>files-gen6/IMG_0019.JPG</td><td>844.0 KB</td><td>35b9fef912b00e6a28afb34252ab0cdd73fb86e1ec12f6b9eacf5b021463b5ba</td></tr>
+<tr><td>11</td><td>files-gen6/IMG_0021.JPG</td><td>800.4 KB</td><td>e0822427ebc97118f35feac984c00c414799859c6588f7efb5f943d59a62a53f</td></tr>
+<tr><td>12</td><td>files-gen6/IMG_0022.JPG</td><td>711.6 KB</td><td>98adc4980baa675cfdcaf35892470a89226aec00d217246a6a800905127397f3</td></tr>
+<tr><td>13</td><td>files-gen6/IMG_0023.JPG</td><td>838.7 KB</td><td>5508b38c9391e68b10e9f49754acce483487fa35261fdeaa0098da298fc13334</td></tr>
+<tr><td>14</td><td>files-gen6/IMG_0024.JPG</td><td>818.8 KB</td><td>5207a01f18af13f361a86a04d987738a12a74cb45f508775ac86207fd8d4c7ee</td></tr>
+<tr><td>15</td><td>files-gen6/IMG_0026.JPG</td><td>750.4 KB</td><td>e9df5244acbf929c6f391123c57b580c1b270d3ff8d526618647f0b22960d34b</td></tr>
+<tr><td>16</td><td>files-gen6/IMG_0027.JPG</td><td>820.6 KB</td><td>cb758b187c189bd5abe9164ce3d42f0d346b1e992a1887b0d99d153f4b1cea74</td></tr>
+<tr><td>17</td><td>files-gen6/IMG_0028.JPG</td><td>796.5 KB</td><td>9e907caf4fedb3aeac6113b660a61ab4e08efe5b6a0cb318676c2879a0a5a105</td></tr>
+<tr><td>18</td><td>files-gen6/IMG_0029.JPG</td><td>841.4 KB</td><td>1a89d4bee6a8d6182d315492ce9cdb697e33733e4a4e7c3f8d15f34cb0fc835d</td></tr>
+<tr><td>19</td><td>files-gen6/IMG_0031.JPG</td><td>731.6 KB</td><td>12118d11ccc821ba46905dd1e56d8a1c6f5c49672a32c435a7a049a8eb3f30cd</td></tr>
+<tr><td>20</td><td>files-gen6/IMG_0032.JPG</td><td>859.2 KB</td><td>2fca9fb796763d8064c139df331138551c76c9e8b7b691f131b4576d2a077cd3</td></tr>
+<tr><td>21</td><td>files-gen6/IMG_0033.JPG</td><td>825.6 KB</td><td>7c64a8b5528b67633ea281e364e5b79cce312df6bc99e8db075e1d6d0624178f</td></tr>
+<tr><td>22</td><td>files-gen6/IMG_0034.JPG</td><td>793.4 KB</td><td>78781832a513a9103cad84b4e074da65372d20853795561884e9314537c8b080</td></tr>
+<tr><td>23</td><td>files-gen6/IMG_0036.JPG</td><td>861.7 KB</td><td>02912caa1357988a5b6a6128583295b1c4456c4eab1df11e38f7251e5289a690</td></tr>
+<tr><td>24</td><td>files-gen6/IMG_0038.JPG</td><td>1.2 MB</td><td>ce6c139a0f6db9eba78c53dfe952e6a9f2f5a39740270bd93721bed66a2d5af7</td></tr>
+<tr><td>25</td><td>files-gen6/IMG_0039.JPG</td><td>841.4 KB</td><td>1a89d4bee6a8d6182d315492ce9cdb697e33733e4a4e7c3f8d15f34cb0fc835d</td></tr>
+<tr><td>26</td><td>files-gen6/IMG_0040.JPG</td><td>1.4 MB</td><td>80da64d5ae33b71f31da267f38f8db9b12bfb190710f4a499b8b7c768d0ccee8</td></tr>
+<tr><td>27</td><td>files-gen6/IMG_0041.JPG</td><td>1.3 MB</td><td>55695de4d720da3c11ef2e103c2b3c62ebc3cff56da061d5b307eec21da186c9</td></tr>
+<tr><td>28</td><td>files-gen6/IMG_0042.JPG</td><td>1.3 MB</td><td>bc0255426d5c6e56e9cc3a43ffc6a832c712768c5300cf320c5bd9caa2fed896</td></tr>
+<tr><td>29</td><td>files-gen6/IMG_0043.JPG</td><td>2.7 MB</td><td>dc6b724edf8319417c8527c261b8c8d0bf85075db6fd6238b6c02ccb89a88bc5</td></tr>
+<tr><td>30</td><td>files-gen6/IMG_0044.JPG</td><td>102.7 KB</td><td>8a108ffee8a96605bf6d5af8b1f95f0a1bfee67a3261c4631d0e5879ae5b2fa7</td></tr>
+<tr><td>31</td><td>files-gen6/IMG_0045.JPG</td><td>108.1 KB</td><td>185974b9283756dcae291fb758262c2198d7616d10fca5fa85052932c89bc0dd</td></tr>
+<tr><td>32</td><td>files-gen6/IMG_0046.JPG</td><td>113.4 KB</td><td>2798d0604d1ac8b1fd7fa9b6fa4293461a3b0d36bf6c7f2429284e7990d23032</td></tr>
+<tr><td>33</td><td>files-gen6/IMG_0047.JPG</td><td>117.6 KB</td><td>2a78b45e591589762dd35279760f4de4995482a0f29b14fb5b3c2cadd62ac102</td></tr>
+<tr><td>34</td><td>files-gen6/IMG_0048.JPG</td><td>122.0 KB</td><td>48107c820060b60ae5c6278d055c5ad696df7a6468f5bbe66626b8dcd2da7fc2</td></tr>
+<tr><td>35</td><td>files-gen6/IMG_0049.JPG</td><td>112.2 KB</td><td>6134d2160c8205cd5eab03ae5bd4501bedd8724a2cfb620c248cce5a96a27ae6</td></tr>
+<tr><td>36</td><td>files-gen6/IMG_0050.JPG</td><td>124.2 KB</td><td>0eff4e44ecd7b3dd3e02447c8c3db11ed290b71bb55f578e6b44b95809a14dcb</td></tr>
+<tr><td>37</td><td>files-gen6/IMG_0051.JPG</td><td>127.4 KB</td><td>7450941496e2f74bc1bd13efa0bf589b723d6575782bd27daac56b893f00cbbe</td></tr>
+<tr><td>38</td><td>nps-2009-canon2-gen6.E01</td><td>29.7 MB</td><td>10483722d84e0cefcb693b11dea2d32dbd3ad2f06f8c9656688c8c730fe41579</td></tr>
+</tbody></table>
+<h2>3. 무결성 검증 결과</h2>
+<table><thead><tr><th>검증 항목</th><th>결과</th><th>근거</th></tr></thead><tbody>
+<tr><td>분석 전후 재해시</td><td>일치</td><td>분석 전후 SHA-256 38개 모두 같음. 분석 중 증거가 바뀌지 않았다.</td></tr>
+<tr><td>E01 저장 해시 대조 (nps-2009-canon2-gen6.E01)</td><td>일치 (저장 해시 = 재계산 해시)</td><td>대조 알고리즘: MD5</td></tr>
+<tr><td>참조 해시 대조</td><td>일치</td><td>참조 46건: 일치 35, 불일치 0, 증거에 없음 11, 이름 중복으로 대조 보류 0, 재계산 불가 0</td></tr>
+<tr><td>쓰기 방지 장치 사용</td><td>미확인</td><td>도구는 읽기만 했으나 쓰기 방지 장치 사용 기록은 제공되지 않음</td></tr>
+<tr><td>증거 인계 기록(Chain of Custody)</td><td>미확인</td><td>인계 기록이 제공되지 않음 — 분석관이 기재</td></tr>
+</tbody></table>
+<h3>가. E01 저장 해시와 재계산 해시</h3>
+<table><thead><tr><th>이미지</th><th>알고리즘</th><th>이미지에 저장된 값</th><th>재계산 값</th><th>결과</th></tr></thead><tbody>
+<tr><td>nps-2009-canon2-gen6.E01</td><td>MD5</td><td>750b509d8fbed37a5213480aaccfdc61</td><td>750b509d8fbed37a5213480aaccfdc61</td><td>일치</td></tr>
+<tr><td>nps-2009-canon2-gen6.E01</td><td>SHA-1</td><td>기록 없음</td><td>4742c325f10583dab1eb4c55d0d45ab3beb99eb3</td><td>대조 대상 없음(참고값)</td></tr>
+<tr><td>nps-2009-canon2-gen6.E01</td><td>SHA-256</td><td>기록 없음</td><td>09066032400ff931909ec7b12a433d01e1710bf8f7291c12e8a84187c0cfcddb</td><td>대조 대상 없음(참고값)</td></tr>
+</tbody></table>
+<h3>나. 참조 해시 대조 상세</h3>
+<p>참조 목록: <code>narrative.txt</code>, <code>report.txt</code></p>
+<table><thead><tr><th>참조 항목</th><th>알고리즘</th><th>참조 해시</th><th>대조한 증거</th><th>결과</th><th>대조 방법</th></tr></thead><tbody>
+<tr><td>nps-2009-canon2-gen6.raw</td><td>SHA-1</td><td>4742c325f10583dab1eb4c55d0d45ab3beb99eb3</td><td>nps-2009-canon2-gen6.E01</td><td>일치</td><td>이미지 미디어 해시와 대조</td></tr>
+<tr><td>DCIM/100CANON/IMG_0044.JPG</td><td>SHA-1</td><td>916a88a00c58b7a566711acd25e61d549df5d303</td><td>files-gen6/IMG_0044.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0042.JPG</td><td>SHA-1</td><td>8b9080d2eeaf8dba2d510baa5738e1d2ac62dafc</td><td>files-gen6/IMG_0042.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0043.JPG</td><td>SHA-1</td><td>7aca4cfa02da88f91d11c85db16e12ddb286c622</td><td>files-gen6/IMG_0043.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0003.JPG</td><td>SHA-1</td><td>214ad4f47b772e38cc295a8192e1664a235ced82</td><td>files-gen6/IMG_0003.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0038.JPG</td><td>SHA-1</td><td>b2575a16cb6eaf22289b4d90dffd77b2ba45c995</td><td>files-gen6/IMG_0038.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0007.JPG</td><td>SHA-1</td><td>770b4ef7714998d954668b29a2a7911c359e56f3</td><td>files-gen6/IMG_0007.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0045.JPG</td><td>SHA-1</td><td>72760dab05562ceb41b2afb6c3895d7e5d017980</td><td>files-gen6/IMG_0045.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0046.JPG</td><td>SHA-1</td><td>97589b7e1fafefd609b4828a2c62d19a9ba14d4b</td><td>files-gen6/IMG_0046.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0047.JPG</td><td>SHA-1</td><td>805c0aca98415c69e696c4bc3a58c663c296ec59</td><td>files-gen6/IMG_0047.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0048.JPG</td><td>SHA-1</td><td>b438b62b04bed3ea02d11ed3ed51c9dca58893ec</td><td>files-gen6/IMG_0048.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0009.JPG</td><td>SHA-1</td><td>b4fdefeb1bfbe889aed7f4c0aa755cdef302e1e9</td><td>files-gen6/IMG_0009.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0011.JPG</td><td>SHA-1</td><td>25eb57e8a094d0bf33e43742681ddbd01d0b93a3</td><td>files-gen6/IMG_0011.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0049.JPG</td><td>SHA-1</td><td>d69d8d907f0f4bdb151be9826a62b4b5c7a77f56</td><td>files-gen6/IMG_0049.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0050.JPG</td><td>SHA-1</td><td>887fd6dd3ab09a50b227aa7e025ace16b9dc3e36</td><td>files-gen6/IMG_0050.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0051.JPG</td><td>SHA-1</td><td>7ef5225f992dc731907a79816c904a83df3bdab5</td><td>files-gen6/IMG_0051.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0013.JPG</td><td>SHA-1</td><td>fccf7639029bda2eb748fafdb660d985779736a7</td><td>files-gen6/IMG_0013.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0014.JPG</td><td>SHA-1</td><td>6c9e27f9911f37488ef0d6e878c68f2a61100b2c</td><td>files-gen6/IMG_0014.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0016.JPG</td><td>SHA-1</td><td>aa2b9eb89628485e51b5de57edad2487b648e574</td><td>files-gen6/IMG_0016.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0017.JPG</td><td>SHA-1</td><td>2b7dee3b405ba577c3a17e6dfb2e4e182712bf6c</td><td>files-gen6/IMG_0017.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0018.JPG</td><td>SHA-1</td><td>68f6b646041516e60cf6581181f968f7b9bd3bc9</td><td>files-gen6/IMG_0018.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0019.JPG</td><td>SHA-1</td><td>7661a34788eedc94f3a66c132c1e7ac6ace78be2</td><td>files-gen6/IMG_0019.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0021.JPG</td><td>SHA-1</td><td>a87c594b86ca41c88547e128335ec3919bc27d87</td><td>files-gen6/IMG_0021.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0022.JPG</td><td>SHA-1</td><td>00ef4d79b36d32ba42c6cc808421439f0fbcb662</td><td>files-gen6/IMG_0022.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0023.JPG</td><td>SHA-1</td><td>9e81a566e8c7a4d49cb1cb834cb621023b3729a5</td><td>files-gen6/IMG_0023.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0024.JPG</td><td>SHA-1</td><td>12d2e78fa5b118a0f3144bda4e8e331c8a34ccbc</td><td>files-gen6/IMG_0024.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0026.JPG</td><td>SHA-1</td><td>0745141aefe2ede7c788f9d80c3a3897134b0353</td><td>files-gen6/IMG_0026.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0027.JPG</td><td>SHA-1</td><td>e5721ef38a1bc7bb92895ad3df23786cffa84bb8</td><td>files-gen6/IMG_0027.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0028.JPG</td><td>SHA-1</td><td>04d3290232dad550d7bccf45f768793d0512da9a</td><td>files-gen6/IMG_0028.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0029.JPG</td><td>SHA-1</td><td>ce7068a8b8eec06f1bf269da519de462e72f6ee8</td><td>files-gen6/IMG_0029.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0031.JPG</td><td>SHA-1</td><td>16495400c6b982c69c3e12ad80b900a6d2ab3d8f</td><td>files-gen6/IMG_0031.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0032.JPG</td><td>SHA-1</td><td>3e4be3780f41df5f4cc24d5466219bf67556af5e</td><td>files-gen6/IMG_0032.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0033.JPG</td><td>SHA-1</td><td>b11a5f20be9c60910f1f13d2a2742f069064145c</td><td>files-gen6/IMG_0033.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0034.JPG</td><td>SHA-1</td><td>81b6f65e803d6fba9a61e21c6f4b579b911f1b22</td><td>files-gen6/IMG_0034.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>DCIM/100CANON/IMG_0036.JPG</td><td>SHA-1</td><td>4f08862b159807f22e7fb568bbc750abfcba8ace</td><td>files-gen6/IMG_0036.JPG</td><td>일치</td><td>파일명 일치</td></tr>
+<tr><td>nps-2009-canon2-gen1.raw</td><td>SHA-1</td><td>67364b0894a0465d6ada8c4966b6bbcaf7039082</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>nps-2009-canon2-gen2.raw</td><td>SHA-1</td><td>0e3cdef3b1a7d3762f9704bfd4349033fe808eda</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>nps-2009-canon2-gen3.raw</td><td>SHA-1</td><td>7dc8be7f3993c37f101c0ed0fec4274abccacf3c</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>nps-2009-canon2-gen4.raw</td><td>SHA-1</td><td>ed1c7dea94096ad309b32037cb6d43a291952d8d</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>nps-2009-canon2-gen5.raw</td><td>SHA-1</td><td>63e7f9daf8dbcd1744579e579f3f0fddebe2ee90</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/CANONMSC/M0100.CTG</td><td>SHA-1</td><td>8ce272c91a2289a610eeecdc4f2228553313353c</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/100CANON/IMG_0020.JPG</td><td>SHA-1</td><td>825c04774ea2b9171c267e682abbecb82baa4e29</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/100CANON/IMG_0025.JPG</td><td>SHA-1</td><td>a6cfff9c614dc3aeb3470185bcf63e5a7eeaf33a</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/100CANON/IMG_0030.JPG</td><td>SHA-1</td><td>49bf2c6db487177abc32decdba727c813af1d122</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/100CANON/IMG_0035.JPG</td><td>SHA-1</td><td>211b050e56c049e9e4349a23d77a6900770ac913</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+<tr><td>DCIM/CANONMSC/M0100.CTG</td><td>SHA-1</td><td>69b30c352ee802f49b1ea25325af9fa05c3ffca1</td><td>-</td><td>증거에 없음</td><td>-</td></tr>
+</tbody></table>
+<h2>4. 획득 및 분석 환경</h2>
+<h3>가. 획득 환경</h3>
+<table><thead><tr><th>이미지</th><th>획득 도구 버전(기록값)</th><th>획득 OS(기록값)</th><th>획득 일시(기록값)</th></tr></thead><tbody>
+<tr><td>nps-2009-canon2-gen6.E01</td><td>20090927</td><td>Darwin</td><td>2010-08-06 00:06:08 UTC</td></tr>
+</tbody></table>
+<ul>
+<li>획득 장비·쓰기 방지 장치·획득 장소: 미확인 (이미지에 기록되지 않음)</li>
+</ul>
+<h3>나. 분석 환경</h3>
+<table><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>
+<tr><td>분석 일시 (KST)</td><td>2026-11-21 17:10:46 ~ 2026-11-21 17:10:47</td></tr>
+<tr><td>분석 도구</td><td>LazyForensic 1.1.0 (report_draft.py)</td></tr>
+<tr><td>운영체제</td><td>Darwin 27.2.0 (arm64)</td></tr>
+<tr><td>Python</td><td>3.12.12</td></tr>
+<tr><td>선택 도구</td><td>Pillow 있음, ffmpeg 있음, ffprobe 있음, fpcalc 있음</td></tr>
+</tbody></table>
+<h2>5. 분석 방법</h2>
+<ol>
+<li>증거 폴더의 모든 파일을 읽기 전용으로 열어 MD5·SHA-1·SHA-256을 계산했다.</li>
+<li>E01 이미지는 파일 구조를 직접 해석해 획득 기록값을 읽고, 압축을 풀어 미디어 전체 해시를 다시 계산해 이미지에 저장된 해시와 대조했다.</li>
+<li>제공된 참조 해시 목록의 항목을 파일 경로·파일명으로 증거와 짝지어 같은 알고리즘의 해시를 대조했다. 원시 이미지(.raw/.dd 등) 항목은 이름이 같은 E01의 미디어 해시와 대조했다.</li>
+<li>확장자와 파일 시그니처 대조, 정확 중복, 이미지 EXIF·유사도, 압축 파일 내부, PDF 구조, SQLite 구조, 개인정보 패턴, 영상·오디오 상태를 자동 점검했다(도구가 없는 항목은 미수행으로 표시).</li>
+<li>파일 수정 시각·EXIF 촬영 시각·이미지 획득 기록을 모아 타임라인을 만들었다.</li>
+<li>분석을 마친 뒤 모든 파일을 다시 해시해 분석 전 값과 대조했다.</li>
+<li>이 초안을 <code>verify_report.py</code>로 검사해 근거 없는 해시와 과단정 표현이 없는지 확인했다.</li>
+</ol>
+<h2>6. 분석 결과</h2>
+<h3>가. 자동 점검 결과</h3>
+<table><thead><tr><th>점검 항목</th><th>결과</th><th>비고</th></tr></thead><tbody>
+<tr><td>확장자-시그니처 대조</td><td>불일치 0개 / 일치 37개 (전체 38개)</td><td>불일치는 확장자 변경 또는 시그니처 없는 형식일 수 있어 수동 확인 대상</td></tr>
+<tr><td>정확 중복 파일 (SHA-256 동일)</td><td>1개 그룹</td><td>같은 내용의 사본</td></tr>
+<tr><td>이미지 EXIF</td><td>이미지 37개 중 EXIF 있음 37개, 편집 SW 기록 0개, GPS 기록 0개, 판독 실패 0개</td><td>EXIF는 편집 가능한 기록값</td></tr>
+<tr><td>유사 이미지</td><td>411쌍 (이미지 37개)</td><td>지각 해시 근접 쌍</td></tr>
+<tr><td>압축 파일 내부</td><td>압축 파일 0개, 주의 표시 멤버 0개</td><td>zip/tar만 (압축 해제 없이)</td></tr>
+<tr><td>PDF 구조</td><td>PDF 0개, 암호화·능동 콘텐츠 표시 0개</td><td>표면 검사</td></tr>
+<tr><td>SQLite 데이터베이스</td><td>DB 0개, 무결성 이상 0개</td><td>읽기 전용 구조 조사</td></tr>
+<tr><td>개인정보 패턴</td><td>0건 (텍스트 파일 0개 검사)</td><td>외부 전달 전 마스킹 검토 대상. 정규식 기반</td></tr>
+<tr><td>오디오</td><td>0개</td><td>발화 구간 후보만 (전사 아님)</td></tr>
+<tr><td>영상 무결성</td><td>영상 0개, 이상 0개</td><td>디코드 오류·잘림 진단</td></tr>
+</tbody></table>
+<h3>나. 세부 관찰</h3>
+<p>내용이 같은 파일 그룹:</p>
+<ul>
+<li><code>files-gen6/IMG_0029.JPG</code>, <code>files-gen6/IMG_0039.JPG</code></li>
+</ul>
+<p>EXIF에 기록된 촬영 기기 (기록값):</p>
+<ul>
+<li>Canon PowerShot SD800 IS: 37개</li>
+</ul>
+<h3>다. 타임라인</h3>
+<p>시각 정보 76건. 출처별로 나눠 싣는다. 전체 시간순 보기는 <code>타임라인.html</code>.</p>
+<p><strong>1) 촬영 시각 (EXIF 기록값, 시간대 미기록 — 카메라 시계 기준)</strong></p>
+<table><thead><tr><th>시각</th><th>파일</th></tr></thead><tbody>
+<tr><td>2008-12-23 14:12:52</td><td>files-gen6/IMG_0003.JPG</td></tr>
+<tr><td>2008-12-23 14:13:12</td><td>files-gen6/IMG_0007.JPG</td></tr>
+<tr><td>2008-12-23 14:13:22</td><td>files-gen6/IMG_0009.JPG</td></tr>
+<tr><td>2008-12-23 14:13:31</td><td>files-gen6/IMG_0011.JPG</td></tr>
+<tr><td>2008-12-23 14:13:41</td><td>files-gen6/IMG_0013.JPG</td></tr>
+<tr><td>2008-12-23 14:13:45</td><td>files-gen6/IMG_0014.JPG</td></tr>
+<tr><td>2008-12-23 14:13:56</td><td>files-gen6/IMG_0016.JPG</td></tr>
+<tr><td>2008-12-23 14:14:01</td><td>files-gen6/IMG_0017.JPG</td></tr>
+<tr><td>2008-12-23 14:14:06</td><td>files-gen6/IMG_0018.JPG</td></tr>
+<tr><td>2008-12-23 14:14:10</td><td>files-gen6/IMG_0019.JPG</td></tr>
+<tr><td>2008-12-23 14:14:21</td><td>files-gen6/IMG_0021.JPG</td></tr>
+<tr><td>2008-12-23 14:14:26</td><td>files-gen6/IMG_0022.JPG</td></tr>
+<tr><td>2008-12-23 14:14:31</td><td>files-gen6/IMG_0023.JPG</td></tr>
+<tr><td>2008-12-23 14:14:36</td><td>files-gen6/IMG_0024.JPG</td></tr>
+<tr><td>2008-12-23 14:14:46</td><td>files-gen6/IMG_0026.JPG</td></tr>
+<tr><td>2008-12-23 14:14:50</td><td>files-gen6/IMG_0027.JPG</td></tr>
+<tr><td>2008-12-23 14:14:54</td><td>files-gen6/IMG_0028.JPG</td></tr>
+<tr><td>2008-12-23 14:14:58</td><td>files-gen6/IMG_0029.JPG</td></tr>
+<tr><td>2008-12-23 14:14:58</td><td>files-gen6/IMG_0039.JPG</td></tr>
+<tr><td>2008-12-23 14:15:08</td><td>files-gen6/IMG_0031.JPG</td></tr>
+<tr><td>2008-12-23 14:15:14</td><td>files-gen6/IMG_0032.JPG</td></tr>
+<tr><td>2008-12-23 14:15:18</td><td>files-gen6/IMG_0033.JPG</td></tr>
+<tr><td>2008-12-23 14:15:23</td><td>files-gen6/IMG_0034.JPG</td></tr>
+<tr><td>2008-12-23 14:15:36</td><td>files-gen6/IMG_0036.JPG</td></tr>
+<tr><td>2008-12-23 14:22:46</td><td>files-gen6/IMG_0038.JPG</td></tr>
+<tr><td>2008-12-23 14:23:01</td><td>files-gen6/IMG_0040.JPG</td></tr>
+<tr><td>2008-12-23 14:26:13</td><td>files-gen6/IMG_0041.JPG</td></tr>
+<tr><td>2008-12-23 14:28:08</td><td>files-gen6/IMG_0042.JPG</td></tr>
+<tr><td>2008-12-23 14:30:39</td><td>files-gen6/IMG_0043.JPG</td></tr>
+<tr><td>2008-12-24 20:21:45</td><td>files-gen6/IMG_0044.JPG</td></tr>
+<tr><td>2008-12-24 20:21:57</td><td>files-gen6/IMG_0045.JPG</td></tr>
+<tr><td>2008-12-24 20:22:10</td><td>files-gen6/IMG_0046.JPG</td></tr>
+<tr><td>2008-12-24 20:22:16</td><td>files-gen6/IMG_0047.JPG</td></tr>
+<tr><td>2008-12-24 20:22:22</td><td>files-gen6/IMG_0048.JPG</td></tr>
+<tr><td>2008-12-24 20:22:28</td><td>files-gen6/IMG_0049.JPG</td></tr>
+<tr><td>2008-12-24 20:22:36</td><td>files-gen6/IMG_0050.JPG</td></tr>
+<tr><td>2008-12-24 20:22:42</td><td>files-gen6/IMG_0051.JPG</td></tr>
+</tbody></table>
+<p><strong>2) 파일 수정 시각 (파일시스템 기록값, KST 환산)</strong></p>
+<table><thead><tr><th>시각</th><th>파일</th></tr></thead><tbody>
+<tr><td>2010-01-31 12:17:56</td><td>files-gen6/IMG_0003.JPG</td></tr>
+<tr><td>2010-01-31 12:17:56</td><td>files-gen6/IMG_0042.JPG</td></tr>
+<tr><td>2010-01-31 12:17:56</td><td>files-gen6/IMG_0044.JPG</td></tr>
+<tr><td>2010-01-31 12:17:59</td><td>files-gen6/IMG_0043.JPG</td></tr>
+<tr><td>2010-01-31 12:18:00</td><td>files-gen6/IMG_0007.JPG</td></tr>
+<tr><td>2010-01-31 12:18:00</td><td>files-gen6/IMG_0045.JPG</td></tr>
+<tr><td>2010-01-31 12:18:00</td><td>files-gen6/IMG_0046.JPG</td></tr>
+<tr><td>2010-01-31 12:18:01</td><td>files-gen6/IMG_0009.JPG</td></tr>
+<tr><td>2010-01-31 12:18:01</td><td>files-gen6/IMG_0047.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0011.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0013.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0038.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0048.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0049.JPG</td></tr>
+<tr><td>2010-01-31 12:18:02</td><td>files-gen6/IMG_0050.JPG</td></tr>
+<tr><td>2010-01-31 12:18:03</td><td>files-gen6/IMG_0016.JPG</td></tr>
+<tr><td>2010-01-31 12:18:03</td><td>files-gen6/IMG_0017.JPG</td></tr>
+<tr><td>2010-01-31 12:18:03</td><td>files-gen6/IMG_0018.JPG</td></tr>
+<tr><td>2010-01-31 12:18:03</td><td>files-gen6/IMG_0019.JPG</td></tr>
+<tr><td>2010-01-31 12:18:04</td><td>files-gen6/IMG_0021.JPG</td></tr>
+<tr><td>2010-01-31 12:18:04</td><td>files-gen6/IMG_0022.JPG</td></tr>
+<tr><td>2010-01-31 12:18:04</td><td>files-gen6/IMG_0051.JPG</td></tr>
+<tr><td>2010-01-31 12:18:05</td><td>files-gen6/IMG_0023.JPG</td></tr>
+<tr><td>2010-01-31 12:18:05</td><td>files-gen6/IMG_0024.JPG</td></tr>
+<tr><td>2010-01-31 12:18:05</td><td>files-gen6/IMG_0026.JPG</td></tr>
+<tr><td>2010-01-31 12:18:05</td><td>files-gen6/IMG_0027.JPG</td></tr>
+<tr><td>2010-01-31 12:18:05</td><td>files-gen6/IMG_0028.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0014.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0029.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0031.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0032.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0033.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0034.JPG</td></tr>
+<tr><td>2010-01-31 12:18:06</td><td>files-gen6/IMG_0036.JPG</td></tr>
+<tr><td>2012-08-29 21:39:30</td><td>files-gen6/IMG_0039.JPG</td></tr>
+<tr><td>2012-08-29 21:39:31</td><td>files-gen6/IMG_0041.JPG</td></tr>
+<tr><td>2012-08-29 21:41:58</td><td>files-gen6/IMG_0040.JPG</td></tr>
+<tr><td>2026-11-21 16:57:03</td><td>nps-2009-canon2-gen6.E01</td></tr>
+</tbody></table>
+<p><strong>3) 이미지 획득 시각 (E01 기록값, UTC)</strong></p>
+<table><thead><tr><th>시각</th><th>파일</th></tr></thead><tbody>
+<tr><td>2010-08-06 00:06:08 UTC</td><td>nps-2009-canon2-gen6.E01</td></tr>
+</tbody></table>
+<p>EXIF 시각에는 시간대가 기록되지 않는다. <code>타임라인.html</code>에서는 정렬을 위해서만 KST로 가정했다.</p>
+<h2>7. 종합</h2>
+<h3>가. 자동 집계된 사실</h3>
+<ul>
+<li>증거 폴더 <code>evidence</code>의 파일 38개 중 38개의 해시를 계산했다.</li>
+<li>분석 전후 재해시 결과가 모두 같아, 이 도구의 분석 과정에서 증거가 바뀌지 않았다.</li>
+<li>E01 <code>nps-2009-canon2-gen6.E01</code>: 일치 (저장 해시 = 재계산 해시).</li>
+<li>참조 해시 46건 중 일치 35건, 불일치 0건, 증거에 없음 11건.</li>
+<li>확장자와 시그니처가 다른 파일 0개.</li>
+<li>내용이 같은 파일 그룹 1개.</li>
+</ul>
+<h3>나. 분석관 의견</h3>
+<p>미확인 — 분석관이 위 결과를 원자료와 대조한 뒤 직접 작성한다. 이 도구는 의견과 결론을 쓰지 않는다.</p>
+<h2>8. 한계 및 유의사항</h2>
+<ul>
+<li>이 보고서는 자동 생성 초안이다. 법원·수사기관 제출 적격을 보증하지 않으며, 분석관 검토 없이 쓰지 않는다.</li>
+<li>파일 수정 시각은 운영체제가 기록한 값이다. 복사·내보내기·압축 해제 과정에서 바뀔 수 있고, $MFT·$SI/$FN 수준의 시각 검증은 하지 않았다.</li>
+<li>EXIF 값은 편집할 수 있는 기록값이며, 시간대가 기록되지 않는다. EXIF가 없다고 해서 변조를 뜻하지는 않는다.</li>
+<li>삭제 파일 복구·카빙·파일시스템 해석(NTFS/FAT 등)·메모리·레지스트리·메신저 DB 분석은 하지 않았다. E01은 해시 대조와 기록값 판독까지만 한다.</li>
+<li>참조 해시 대조는 파일 경로·파일명으로 짝을 짓는다. 이름이 같은 파일이 여러 개면 대조를 보류한다.</li>
+<li>개인정보 패턴·시그니처·중복·유사 이미지 결과는 검토 대상을 고르는 선별 결과이지 판정이 아니다.</li>
+</ul>
+<h2>부록. 산출물</h2>
+<table><thead><tr><th>파일</th><th>내용</th></tr></thead><tbody>
+<tr><td>보고서초안.md / 보고서초안.html</td><td>이 보고서 (HTML은 브라우저로 열어 인쇄·복사)</td></tr>
+<tr><td>파일해시목록.csv</td><td>전체 파일의 경로·크기·수정 시각·MD5·SHA-1·SHA-256 (엑셀에서 열림)</td></tr>
+<tr><td>무결성검증.json</td><td>분석 전 해시, 분석 후 재해시 대조, E01 판독, 참조 해시 대조 원자료</td></tr>
+<tr><td>타임라인.html / events.json</td><td>전체 타임라인 (브라우저로 열기)</td></tr>
+<tr><td>선조사.json</td><td>자동 점검 원자료</td></tr>
+<tr><td>초안검증.json</td><td>이 초안에 대한 verify_report.py 결과</td></tr>
+</tbody></table>
+<ul>
+<li>작성일: 2026-11-21</li>
+<li>작성 기관: 미확인</li>
+<li>작성자: 미확인</li>
+</ul>
+</body></html>

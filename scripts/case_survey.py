@@ -79,7 +79,9 @@ def _run_step(name: str, fn) -> dict:
         return {"status": "failed", "error": f"{type(e).__name__}: {e}"}
 
 
-def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidence_id=None) -> dict:
+def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidence_id=None,
+           manifest: dict | None = None) -> dict:
+    """manifest: 호출자가 이미 계산한 evidence_manifest 형식 dict (같은 파일을 두 번 해시하지 않도록)."""
     started = utc_now_iso()
     root = root.resolve(strict=True)
     report: dict = {
@@ -90,9 +92,10 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
     }
 
     def step_manifest():
+        if manifest is not None:
+            return manifest
         mod = _load("evidence_manifest")
-        m = mod.build_manifest(root)
-        return m
+        return mod.build_manifest(root)
     report["steps"]["manifest"] = _run_step("manifest", step_manifest)
 
     # 단계별 rglob 반복을 피하기 위해 파일 목록을 한 번만 열거한다.
