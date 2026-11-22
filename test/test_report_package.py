@@ -21,6 +21,7 @@ def test_writer_and_verifier_reject_unsafe_package_members(tmp_path, suffix, cas
     name = {"parent": "../sample.txt", "windows": "notes\\sample.txt",
             "symlink": "sample.txt", "dtd": "sample.xml", "deep_xml": "sample.xml"}[case]
     info = ZipInfo(name)
+    info.filename = name  # ZipInfo() rewrites os.sep to "/" on Windows; keep the literal member name.
     content = b"sample"
     if case == "symlink":
         info.create_system = 3
