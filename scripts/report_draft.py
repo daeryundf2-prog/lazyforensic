@@ -135,13 +135,25 @@ def _load_module(name: str):
 
 # ---------------------------------------------------------------- 입력
 
+class CaseInfoError(ValueError):
+    """The supplied case metadata could not be read."""
+
+
 def load_case_info(path: Path | None) -> dict:
     info = {k: "" for k, _, _ in CASE_FIELDS}
     if path is None:
         return info
-    text = path.read_text(encoding="utf-8-sig")
+    try:
+        data = path.read_bytes()
+        encoding = "utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+        text = data.decode(encoding)
+        if path.suffix.lower() == ".json":
+            raw = json.loads(text)
+            if not isinstance(raw, dict):
+                raise ValueError("JSON 객체가 필요합니다")
+    except (OSError, ValueError) as exc:
+        raise CaseInfoError(f"사건 정보 파일을 읽을 수 없습니다 ({path.name}): {exc}") from exc
     if path.suffix.lower() == ".json":
-        raw = json.loads(text)
         pairs = {str(k).strip(): str(v).strip() for k, v in raw.items() if v is not None}
     else:
         pairs = {}
@@ -1000,6 +1012,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
              skip_image_verify: bool, log=print, *, docx: bool = True) -> dict:
     started = now_kst()
     root = root.resolve()
+    case = load_case_info(case_info)
     out.mkdir(parents=True, exist_ok=True)
     env = environment(started)
 
@@ -1036,7 +1049,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     post = post_check(root, inventory)
     env["finished"] = fmt_dt(now_kst())
 
-    ctx = {"docx": docx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": load_case_info(case_info),
+    ctx = {"docx": docx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": case,
            "images": images, "references": references, "reference_sources": sources, "post": post,
            "survey": survey, "events": events, "environment": env, "skip_image_verify": skip_image_verify}
 
@@ -1132,7 +1145,11 @@ def main(argv: list[str] | None = None) -> int:
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else []
 
     print(f"LazyForensic {tool_version()} — 보고서 초안 생성 (로컬 전용, 증거 폴더는 읽기만 함)")
-    res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify, docx=args.docx)
+    try:
+        res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify, docx=args.docx)
+    except CaseInfoError as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     print("")
     print(f"완료: {res['paths']['html']}")
