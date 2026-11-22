@@ -336,7 +336,17 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
             for wli in range(max(0, li - 2), min(len(lines), li + 3)):
                 for fm in file_token_re.finditer(lines[wli]):
                     window_files.add(_normalize_file_token(fm.group(1)))
+            # 생성기가 쓰는 불일치 상세 행은 알고리즘 앞까지가 파일 경로다.
+            detail = re.match(r"^- (.+) (?:MD5|SHA-1|SHA-256) 실제 [a-fA-F0-9]+ / 참조 [a-fA-F0-9]+$", line)
+            if detail:
+                window_files.add(_normalize_file_token(detail[1]))
             owners_norm = [_normalize_file_token(o) for o in owners]
+            # 표에서 공백이 있는 파일명은 토큰으로 나누지 않고 셀 전체로 확인한다.
+            if "|" in line:
+                cell_names = {_normalize_file_token(c.replace(r"\|", "|"))
+                              for c in re.split(r"(?<!\\)\|", line)}
+                if cell_names.intersection(owners_norm):
+                    continue
             if not window_files:
                 if h in tagged_hashes:
                     continue  # 태그 귀속 해시는 파일명 동행 불필요

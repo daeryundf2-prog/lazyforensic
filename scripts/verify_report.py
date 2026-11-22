@@ -20,8 +20,11 @@ import argparse
 import json
 import re
 import sys
+import zlib
 from datetime import datetime
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
+from zipfile import BadZipFile
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -98,9 +101,13 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
     )
 
 
+import report_docx
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Report hallucination guard — hard grounding verifier")
-    parser.add_argument("report", nargs="?", default=None, help="Report draft path (.md/.html)")
+    parser.add_argument("report", nargs="?", default=None, help="Report draft path (.md/.html/.docx)")
+    parser.add_argument("--markdown", help="DOCX와 대조할 Markdown 초안")
     parser.add_argument("--health-check", action="store_true", help="Run Section 5.1 & 7-8 forensic factuality health check suite")
     parser.add_argument("--evidence", nargs="*", default=[], help="Evidence files (audit json, audit_trail.jsonl, timeline json, etc.) for hash grounding")
     parser.add_argument("--timeline", help="Timeline events.json for timestamp grounding (optional)")
@@ -132,9 +139,24 @@ def main(argv=None):
         print(f"[-] Report not found: {report_path}", file=sys.stderr)
         return 2
 
-    text, encoding_used, lossy = read_text_smart(report_path)
-
     errors = []
+    if report_path.suffix.lower() == ".docx":
+        encoding_used, lossy = "WordprocessingML", False
+        try:
+            text = report_docx.read_docx(report_path)
+            companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
+            if args.markdown or companion.exists():
+                md = companion.read_text(encoding="utf-8-sig")
+                if text != report_docx.draft_text(md):
+                    errors.append("DOCX 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
+        except (OSError, BadZipFile, KeyError, ParseError, ValueError, RuntimeError, zlib.error) as exc:
+            text = ""
+            errors.append(f"DOCX 검증 입력을 읽을 수 없음: {exc}")
+    elif args.markdown:
+        parser.error("--markdown은 DOCX 초안 검증에 사용합니다.")
+    else:
+        text, encoding_used, lossy = read_text_smart(report_path)
+
     warnings = []
     if lossy:
         warnings.append(f"보고서 인코딩 판별 실패({encoding_used}) — 치환 문자가 있어 검증 누락 가능")
