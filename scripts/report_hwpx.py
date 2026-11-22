@@ -197,6 +197,28 @@ def write_hwpx(path: Path, md: str) -> None:
             package.writestr(entry, data, compress_type=ZIP_STORED if name == "mimetype" else ZIP_DEFLATED)
 
 
+def preview_names(package):
+    container = package.getinfo("META-INF/container.xml")
+    if container.file_size > 32 * 1024 * 1024:
+        raise ValueError("HWPX container XML 크기 제한 초과")
+    root = ET.fromstring(package.read(container))
+    names = {entry.attrib["full-path"] for entry in root.findall(
+        "c:rootfiles/c:rootfile[@media-type='text/plain']", {"c": CONTAINER})}
+    if "Preview/PrvText.txt" in package.namelist():
+        names.add("Preview/PrvText.txt")
+    for name in sorted(names):
+        if not name.lower().endswith(".txt") or name not in package.namelist():
+            raise ValueError("HWPX 텍스트 미리보기 경로 오류")
+        yield name
+
+
+def check_preview(package, text, errors):
+    for name in preview_names(package):
+        saved = package.read(name).decode("utf-8-sig").replace("\r\n", "\n")
+        if saved != text:
+            errors.append("HWPX 텍스트 미리보기와 본문이 다름")
+
+
 def read_hwpx(path: Path) -> str:
     """Read the generated single-section draft in spine order, preserving cell boundaries."""
     def read_xml(name):

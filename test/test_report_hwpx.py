@@ -152,3 +152,16 @@ def test_public_example_preserves_archived_acquisition_time():
     text = report_hwpx.read_hwpx(hwpx)
     assert f"| {utc} | {event['file']} |" in text
     assert DIGEST.findall(text) == DIGEST.findall(hwpx.with_suffix(".md").read_text(encoding="utf-8"))
+
+
+def test_generated_preview_and_unresolved_text_are_checked(tmp_path):
+    draft = tmp_path / "draft.hwpx"
+    report_hwpx.write_hwpx(draft, "Sample")
+    change_member(draft, "Preview/PrvText.txt", lambda _: b"other sample")
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_generated_hwpx_rejects_leftover_placeholders(tmp_path):
+    draft = tmp_path / "draft.hwpx"
+    report_hwpx.write_hwpx(draft, "Sample {{review}}")
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"

@@ -15,6 +15,7 @@ from zipfile import BadZipFile, ZipFile
 import zlib
 
 import report_docx
+import report_hwpx
 
 UNKNOWN = "미확인"
 OUTPUT_NAME = "양식초안.docx"
@@ -297,6 +298,7 @@ def check_form(path, reference, errors):
         if path.suffix.lower() == ".hwpx":
             import report_hwpx_forms
             digest, text = report_hwpx_forms.form_content(package)
+            report_hwpx.check_preview(package, text, errors)
         else:
             text = form_text(package)
             digest = text_digest(text)

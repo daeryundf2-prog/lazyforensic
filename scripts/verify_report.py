@@ -158,6 +158,8 @@ def main(argv=None):
                     text = report_templates.form_text(package)
             else:
                 text = read_document(report_path)
+                with ZipFile(report_path) as package:
+                    report_hwpx.check_preview(package, text, errors)
             companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
             if args.markdown or companion.exists():
                 md = companion.read_text(encoding="utf-8-sig")
@@ -168,7 +170,7 @@ def main(argv=None):
         except report_templates.PACKAGE_ERRORS as exc:
             text = ""
             errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
-        if (is_form or suffix == ".docx") and ("{{" in text or "}}" in text):
+        if "{{" in text or "}}" in text:
             errors.append("치환되지 않은 자리표시자가 있습니다")
     elif args.template_digest:
         parser.error("--template-digest는 DOCX·HWPX 양식 초안에 사용합니다.")

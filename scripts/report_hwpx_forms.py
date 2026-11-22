@@ -125,7 +125,7 @@ def span_text(span):
 
 def matrix(value, fields):
     match = forms.TOKEN.fullmatch(value.strip())
-    data = fields.get(match[1].strip()) if match else None
+    data = fields.get(match[1].strip()) if match and fields is not None else None
     return data if isinstance(data, list) else None
 
 
@@ -223,7 +223,7 @@ def project(node, fields, literals, seen):
                 cells = [[[text_paragraph(value)] for value in row] for row in rows]
                 content.append(["table", cells])
                 continue
-            if fields:
+            if fields is not None:
                 value, = forms.projected_lines(value, fields)
         elif isinstance(part, str):
             value = part
@@ -260,14 +260,19 @@ def form_content(package, fields=None):
             if (root.namespaceURI, root.localName) not in ((hw.NS["hs"], "sec"), (None, "masterPage"),
                                                            (hw.NS["hm"], "masterPage")):
                 raise ValueError("HWPX 본문 구성 오류")
+            if root.getElementsByTagNameNS(HP, "fieldBegin") or root.getElementsByTagNameNS(HP, "fieldEnd"):
+                raise ValueError("동적 HWPX 필드는 양식에서 검증할 수 없습니다")
             seen = set()
-            blocks = [project(p, fields or {}, {}, seen) for p in parts(root)
+            blocks = [project(p, fields, {}, seen) for p in parts(root)
                       if getattr(p, "nodeType", None) == Node.ELEMENT_NODE]
             for el in root.getElementsByTagNameNS(HP, "*"):
                 if el not in seen and (tag(el) in ("p", "tbl") or (tag(el) == "t" and forms.node_text(el))):
                     raise ValueError("HWPX 본문에서 판독되지 않은 문단·표·텍스트가 있습니다")
             if not blocks and root.localName == "sec":
                 raise ValueError("HWPX 본문 없음")
+            for comment in root.getElementsByTagNameNS(HP, "shapeComment"):
+                if value := forms.node_text(comment):
+                    blocks.append(text_paragraph(value))
             sections.append(blocks)
     reference = json.dumps(sections, ensure_ascii=False, separators=(",", ":"))
     text = "\n".join(line for section in sections for p in section for line in lines(p))
@@ -279,10 +284,19 @@ def clear_layout(p):
         p.removeChild(cache)
 
 
+def set_text(node, value):
+    # CDATA is only an XML serialization choice. Insert measured values as
+    # ordinary character data so the serializer can escape every legal string.
+    if node.nodeType == Node.CDATA_SECTION_NODE:
+        node.parentNode.replaceChild(node.ownerDocument.createTextNode(value), node)
+    else:
+        node.data = value
+
+
 def put_literal(p, value):
     nodes = [n for span in parts(p) if isinstance(span, list) for n in span]
     if nodes:
-        nodes[0].data = value
+        set_text(nodes[0], value)
         for node in nodes[1:]:
             node.data = ""
     else:
@@ -392,7 +406,7 @@ def fill_paragraph(p, fields, ids, width, border):
                 values = forms.replaced_texts([n.data for n in part], fields)
                 if values is not None:
                     for n, value in zip(part, values):
-                        n.data = value
+                        set_text(n, value)
                     changed = True
         elif not isinstance(part, str):
             fill = fill_table if tag(part) == "tbl" else fill_paragraph
@@ -486,8 +500,8 @@ def write_parts(blank, filled, fields):
         data = fill_story(original, fields, ids, border)
         if data != original:
             updated[name] = data
-    if updated and "Preview/PrvText.txt" in blank.namelist():
-        updated["Preview/PrvText.txt"] = preview.encode("utf-8")
+    for name in hw.preview_names(blank):
+        updated[name] = preview.encode("utf-8")
     for part in blank.infolist():
         data = updated.pop(part.filename, None)
         filled.writestr(part, blank.read(part) if data is None else data)
