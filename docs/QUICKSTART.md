@@ -56,6 +56,7 @@ lazyforensic report <증거 폴더>
 
 | 옵션 | 하는 일 |
 | :--- | :--- |
+| `--template 양식.hwpx` | 한글 또는 Word 기관 양식의 문단과 표를 채운다. [빈 양식과 작성 방법](REPORT_TEMPLATES.md) |
 | `--case-info 사건정보.txt` | 사건번호·사건명·의뢰인·분석 목적·분석 담당을 1장에 채운다. 빈 양식은 `lazyforensic report --case-template 사건정보.txt` |
 | `--hashes 해시목록.txt` | 획득 로그·의뢰인이 준 해시표·`sha256sum` 결과와 증거 해시를 대조한다. 여러 파일 가능 |
 | `--keywords 계좌,송금` | 텍스트 파일에서 키워드를 찾아 건수를 싣는다 |

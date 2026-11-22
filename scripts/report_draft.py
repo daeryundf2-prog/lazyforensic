@@ -1162,7 +1162,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
 
 def add_template(source: Path, result: dict):
     paths = result["paths"]
-    draft = paths["md"].with_name(report_templates.OUTPUT_NAME)
+    draft = paths["md"].with_name(report_templates.OUTPUT_NAME).with_suffix(source.suffix.lower())
     case = {label: result["case"].get(key) for key, label, _ in CASE_FIELDS}
     fields = report_templates.form_fields(case, result["inventory"],
                                           integrity_rows(result["post"], result["images"], result["references"]),
@@ -1195,7 +1195,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="증거 폴더 → 한국어 포렌식 보고서 초안 + 무결성 검증 (로컬 전용)")
     ap.add_argument("root", nargs="?", help="증거 폴더 (EWF 이미지나 내보낸 파일이 든 폴더)")
     ap.add_argument("-o", "--output", help="출력 폴더 (기본: 증거 폴더 옆 '<폴더명>_분석결과')")
-    ap.add_argument("--template", type=Path, help="자리표시자를 채울 보고서 양식 (.docx)")
+    ap.add_argument("--template", type=Path, help="자리표시자를 채울 보고서 양식 (.docx/.hwpx)")
     ap.add_argument("--case-info", help="사건 정보 파일 (templates/case_info_example.txt 형식 또는 JSON)")
     ap.add_argument("--hashes", nargs="+", action="extend", default=[],
                     help="참조 해시 목록 (획득 로그·해시표·sha256sum 출력 등). 여러 개 가능")
@@ -1231,10 +1231,10 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     if args.template:
-        if args.template.suffix.lower() != ".docx" or not args.template.is_file():
-            print("읽을 수 있는 DOCX 양식을 지정하세요 (--template)", file=sys.stderr)
+        if args.template.suffix.lower() not in (".docx", ".hwpx") or not args.template.is_file():
+            print("읽을 수 있는 DOCX 또는 HWPX 양식을 지정하세요 (--template)", file=sys.stderr)
             return 2
-        for name in ("보고서초안.docx", report_templates.OUTPUT_NAME):
+        for name in ("보고서초안.docx", "보고서초안.hwpx", report_templates.OUTPUT_NAME, "양식초안.hwpx"):
             dest = out_r / name
             if dest.exists() and dest.samefile(args.template):
                 print("빈 양식과 출력 파일의 경로가 겹칩니다. 다른 출력 폴더를 지정하세요.", file=sys.stderr)

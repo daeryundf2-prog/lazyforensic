@@ -55,12 +55,16 @@ def form_fields(case, inventory, integrity_rows, events, limit):
     return values
 
 
-def story_parts(package):
+def check_package_size(package):
     names = package.namelist()
     if len(names) != len(set(names)) or len(names) > 10000:
         raise ValueError("양식 패키지 항목이 중복되거나 너무 많습니다")
     if sum(entry.file_size for entry in package.infolist()) > 64 * 1024 * 1024:
         raise ValueError("압축 해제 기준 양식 크기 제한(64 MiB) 초과")
+
+
+def story_parts(package):
+    check_package_size(package)
     main, overrides = report_docx.document_parts(package)
     extra = sorted(name.lstrip("/") for name, mime in overrides.items() if mime in STORY_TYPES)
     return [main, *extra]
@@ -118,9 +122,8 @@ def node_text(node):
     return "".join(n.data for n in node.childNodes if n.nodeType in (n.TEXT_NODE, n.CDATA_SECTION_NODE))
 
 
-def replace_runs(nodes, fields):
+def replaced_texts(texts, fields):
     """Edit matches backwards so offsets and formatting outside each match survive."""
-    texts = [node_text(node) for node in nodes]
     ends = list(accumulate(map(len, texts)))
     starts = [0, *ends[:-1]]
     matches = list(TOKEN.finditer("".join(texts)))
@@ -134,7 +137,12 @@ def replace_runs(nodes, fields):
         suffix = texts[last][match.end() - starts[last]:]
         texts[first:last + 1] = [prefix + value, *([""] * (last - first))]
         texts[last] += suffix
-    if matches:
+    return texts if matches else None
+
+
+def replace_runs(nodes, fields):
+    texts = replaced_texts([node_text(node) for node in nodes], fields)
+    if texts is not None:
         for node, value in zip(nodes, texts):
             while node.firstChild:
                 node.removeChild(node.firstChild)
@@ -169,28 +177,44 @@ def fill_story(data, fields):
         return doc.toxml(encoding="utf-8")
 
 
+def digest_path(path):
+    if path.suffix.lower() == ".hwpx":
+        return path.with_name(path.name + DIGEST_SUFFIX)
+    return path.with_suffix(DIGEST_SUFFIX)
+
+
 def write_form(source, destination, fields):
     """Publish only complete packages. Derive the parity reference from the input form."""
     with ZipFile(source) as blank:
-        expected = form_text(blank, fields)
-        stories = set(story_parts(blank))
         with TemporaryDirectory(dir=destination.parent) as temp:
-            staged = Path(temp) / "draft.docx"
+            staged = Path(temp) / "draft"
             digest = Path(temp) / "expected"
             with ZipFile(staged, "w") as filled:
-                for part in blank.infolist():
-                    data = blank.read(part)
-                    if part.filename in stories:
-                        data = fill_story(data, fields)
-                    filled.writestr(part, data)
-            digest.write_text(text_digest(expected) + "\n", encoding="ascii")
-            digest.replace(destination.with_suffix(DIGEST_SUFFIX))
+                filled.comment = blank.comment
+                if source.suffix.lower() == ".hwpx":
+                    import report_hwpx_forms
+                    expected = report_hwpx_forms.write_parts(blank, filled, fields)
+                else:
+                    expected = text_digest(form_text(blank, fields))
+                    stories = set(story_parts(blank))
+                    for part in blank.infolist():
+                        data = blank.read(part)
+                        if part.filename in stories:
+                            data = fill_story(data, fields)
+                        filled.writestr(part, data)
+            digest.write_text(expected + "\n", encoding="ascii")
+            digest.replace(digest_path(destination))
             staged.replace(destination)
 
 
 def check_form(path, reference, errors):
     with ZipFile(path) as package:
-        text = form_text(package)
-    if reference.read_text(encoding="ascii").strip() != text_digest(text):
+        if path.suffix.lower() == ".hwpx":
+            import report_hwpx_forms
+            digest, text = report_hwpx_forms.form_content(package)
+        else:
+            text = form_text(package)
+            digest = text_digest(text)
+    if reference.read_text(encoding="ascii").strip() != digest:
         errors.append("양식 원본과 측정값으로 계산한 본문 SHA-256 불일치 (표·해시·본문 대조)")
     return text
