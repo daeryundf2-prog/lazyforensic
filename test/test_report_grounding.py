@@ -61,3 +61,35 @@ def test_truncated_report_cannot_be_certified(tmp_path, monkeypatch, capsys):
     code = verify_report.main([str(report), "--json"])
     result = json.loads(capsys.readouterr().out)
     assert (code, result["verdict"]) == (1, "FAIL")
+
+
+@pytest.mark.parametrize(("label", "key", "length"), [("SHA-256", "sha256", 64),
+                                                     ("SHA-1", "sha1", 40), ("MD5", "md5", 32)])
+def test_hash_table_checks_qualified_owner(tmp_path, label, key, length):
+    evidence = tmp_path / "integrity.json"
+    evidence.write_text(json.dumps({"files": [{"path": "first/item.bin", key: "a" * length},
+                                              {"path": "second/item.bin", key: "b" * length}]}))
+    report = tmp_path / "draft.md"
+    report.write_text(f"| first/item.bin | {label} {'b' * length} |\n")
+    assert verify(report, "--evidence", str(evidence))[0] == 1
+
+
+def test_digest_shaped_metadata_is_not_a_measurement(tmp_path):
+    evidence = tmp_path / "integrity.json"
+    evidence.write_text(json.dumps({"path": "disk.bin", "sha256": "b" * 64, "notes": "a" * 64}))
+    report = tmp_path / "draft.md"
+    report.write_text("| disk.bin | " + "a" * 64 + " |\n")
+    assert verify(report, "--evidence", str(evidence))[0] == 1
+
+
+def test_digest_filename_in_report_is_not_a_hash_claim(tmp_path):
+    root = tmp_path / "input"
+    root.mkdir()
+    name = "d" * 64 + ".bin"
+    (root / name).write_bytes(b"sample")
+    out = tmp_path / "out"
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "report_draft.py"), str(root), "-o", str(out)],
+                          capture_output=True)
+    assert proc.returncode == 0
+    result = json.loads((out / "초안검증.json").read_text(encoding="utf-8"))
+    assert result["verdict"] == result["docx"]["verdict"] == "PASS"

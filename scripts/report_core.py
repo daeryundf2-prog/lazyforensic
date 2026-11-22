@@ -76,11 +76,11 @@ def extract_hashes(text: str) -> list[str]:
     32hex 해시를 하나로 합쳐 환영 해시를 만들 수 있지만, 그 결과는 '근거 없는
     해시' 판정(실패폐쇄 방향)으로 귀결되므로 안전한 쪽의 오류다.
     """
-    found = re.findall(r"\b[a-fA-F0-9]{64}\b", text)
+    found = re.findall(r"\b[a-fA-F0-9]{64}\b(?!\.\w)", text)
     have = {h.lower() for h in found}
     for line in text.splitlines():
         if re.search(r"\bMD5\b|\bSHA-?1\b|md5_legacy", line, re.IGNORECASE):
-            for pat in (r"\b[a-fA-F0-9]{40}\b", r"\b[a-fA-F0-9]{32}\b"):
+            for pat in (r"\b[a-fA-F0-9]{40}\b(?!\.\w)", r"\b[a-fA-F0-9]{32}\b(?!\.\w)"):
                 for h in re.findall(pat, line):
                     if h.lower() not in have:
                         found.append(h)
@@ -88,7 +88,7 @@ def extract_hashes(text: str) -> list[str]:
     # 분할 해시: 개행/공백이 hex 문자 사이에 낀 경우만 결합해 다시 찾는다.
     compact = re.sub(r"(?<=[a-fA-F0-9])[ \t]*\r?\n[ \t]*(?=[a-fA-F0-9])", "", text)
     if compact != text:
-        for h in re.findall(r"\b[a-fA-F0-9]{64}\b", compact):
+        for h in re.findall(r"\b[a-fA-F0-9]{64}\b(?!\.\w)", compact):
             if h.lower() not in have and h not in text:
                 found.append(h)
                 have.add(h.lower())
@@ -174,33 +174,42 @@ def read_text_smart(path: Path, max_bytes: int = 8 * 1024 * 1024) -> tuple[str, 
 
 def load_evidence_hashes(evidence_paths: list[str]) -> set[str]:
     hashes: set[str] = set()
+
+    def collect(value, field=""):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                collect(item, key.lower().replace("-", ""))
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, field)
+        elif isinstance(value, str) and HASH_VALUE_RE.fullmatch(value):
+            algorithm = {32: "md5", 40: "sha1", 64: "sha256"}[len(value)]
+            if algorithm in field.split("_") or field in ("hash", "digest", "prev_hash", "entry_hash"):
+                hashes.add(value.lower())
+
     for p in evidence_paths:
-        path = Path(p)
-        if not path.exists():
-            continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+            text = Path(p).read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError):
             continue
-        hashes.update(h.lower() for h in extract_hashes(text))
-        # json / jsonl 구조 필드 (sha256, md5, sha1)
-        objs: list = []
         try:
             data = json.loads(text)
-            objs.append(data)
-        except Exception:
-            for line in text.splitlines():
+        except ValueError:
+            data = None
+        if isinstance(data, (dict, list)):
+            collect(data)
+            continue
+        if not text.lstrip().startswith(("{", "[")):
+            hashes.update(h.lower() for h in extract_hashes(text))
+            continue
+        for line in text.splitlines():
+            if line.lstrip().startswith(("{", "[")):
                 try:
-                    objs.append(json.loads(line))
-                except Exception:
+                    collect(json.loads(line))
+                except ValueError:
                     pass
-        for obj in objs:
-            items = obj if isinstance(obj, list) else [obj]
-            for item in items:
-                if isinstance(item, dict):
-                    for key, val in item.items():
-                        if isinstance(val, str) and HASH_VALUE_RE.match(val):
-                            hashes.add(val.lower())
+            else:
+                hashes.update(h.lower() for h in extract_hashes(line))
     return hashes
 
 
@@ -221,7 +230,7 @@ def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[s
 
     def _add(h: str, fname: str):
         h = h.strip().lower()
-        fname = _normalize_file_token(fname)
+        fname = fname.strip().replace("\\", "/")
         if not HASH_VALUE_RE.match(h) or not fname:
             return
         pairs.setdefault(h, [])
@@ -272,7 +281,7 @@ def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[s
         if not path.exists():
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            text = path.read_text(encoding="utf-8-sig")
         except Exception:
             continue
         try:
@@ -315,20 +324,6 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
     if not evidence_pairs:
         return violations
     lines = report_text.splitlines()
-    # <evidence> 태그 안의 해시는 태그 귀속으로 이미 그라운딩되므로
-    # 미결합 스키마 경고에서 제외한다 (태그 밖 서술만 검사).
-    tag_spans: list[tuple[int, int]] = [
-        (m.start(), m.end()) for m in EVIDENCE_TAG_RE.finditer(report_text)
-    ]
-    line_offsets: list[int] = []
-    _off = 0
-    for ln in lines:
-        line_offsets.append(_off)
-        _off += len(ln) + 1
-
-    def _in_evidence_tag(abs_pos: int) -> bool:
-        return any(s <= abs_pos < e for s, e in tag_spans)
-
     # 태그 귀속 해시 집합: 본문에 <evidence>H</evidence>로 한 번이라도
     # 인용된 해시는 파일명 동행 없이도 그라운딩된 것으로 본다 (재언급 오탐 방지).
     tagged_hashes: set[str] = set()
@@ -342,13 +337,12 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
         r"([^\s|]+\.[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]{0,7})(?:의|은|는|이|가|을|를|도|에|에서|와|과|로|으로|랑|이랑)?(?=[\s,.:;)\]|가-힣]|$)"
     )
     for li, line in enumerate(lines):
-        for m in re.finditer(r"\b([a-fA-F0-9]{64})\b", line):
-            h = m.group(1).lower()
+        row_hashes = extract_hashes(line) if "|" in line else re.findall(r"\b[a-fA-F0-9]{64}\b", line)
+        for value in row_hashes:
+            h = value.lower()
             owners = evidence_pairs.get(h)
             if not owners:
                 continue  # 미등록 해시는 기존 '근거 없는 해시' 검사가 처리
-            abs_pos = line_offsets[li] + m.start()
-            in_tag = _in_evidence_tag(abs_pos)
             # 해시와 파일명이 인접(같은 줄 또는 ±2줄)한 파일명 수집
             window_files: set[str] = set()
             for wli in range(max(0, li - 2), min(len(lines), li + 3)):
@@ -361,9 +355,16 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
             owners_norm = [_normalize_file_token(o) for o in owners]
             # 표에서 공백이 있는 파일명은 토큰으로 나누지 않고 셀 전체로 확인한다.
             if "|" in line:
-                cell_names = {_normalize_file_token(c.replace(r"\|", "|"))
-                              for c in re.split(r"(?<!\\)\|", line)}
-                if cell_names.intersection(owners_norm):
+                cells = [c.strip().replace(r"\|", "|").replace("\\", "/")
+                         for c in re.split(r"(?<!\\)\|", line)]
+                matching = [c for c in cells if _normalize_file_token(c) in owners_norm]
+                if matching:
+                    if any("/" not in c or "/" not in owner or c == owner
+                           or c.endswith("/" + owner) or owner.endswith("/" + c)
+                           for c in matching for owner in owners
+                           if _normalize_file_token(c) == _normalize_file_token(owner)):
+                        continue
+                    violations.append(f"해시-파일 결합 불일치(표 행): {matching} / 근거 경로 {owners}")
                     continue
             if not window_files:
                 if h in tagged_hashes:
