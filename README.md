@@ -1,4 +1,4 @@
-# LazyForensic (v1.1.0)
+# LazyForensic
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node 18+](https://img.shields.io/badge/Node-18%2B-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -35,7 +35,9 @@ lazyforensic report <증거 폴더> [--case-info 사건정보.txt] [--hashes 해
 ```
 
 증거 폴더(E01 이미지나 내보낸 파일)의 MD5·SHA-1·SHA-256 계산, E01 저장 해시 재계산 대조, 참조 해시 대조,
-분석 전후 재해시, 선조사·타임라인을 거쳐 `<폴더명>_분석결과/보고서초안.html`을 만든다. 확인하지 못한 값은 "미확인".
+분석 전후 재해시, 선조사·타임라인을 거쳐 증거 폴더 옆에 `<폴더명>_분석결과/보고서초안.docx`를 만든다.
+Word나 한글에서 초안을 열어 "미확인" 항목을 검토하고 다른 이름으로 저장한다. 같은 폴더에 Markdown·HTML 초안도 있다.
+DOCX는 기본으로 생성하며 `--no-docx`로 생략할 수 있다.
 공개 표본(Digital Corpora `nps-2009-canon2`)으로 돌린 실제 결과: [`examples/nps-2009-canon2`](examples/nps-2009-canon2/).
 
 ---

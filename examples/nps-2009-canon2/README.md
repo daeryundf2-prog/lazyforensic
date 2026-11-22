@@ -62,7 +62,7 @@ E01 nps-2009-canon2-gen6.E01: 일치 (저장 해시 = 재계산 해시)
 
 ## 결과 (`output/`)
 
-- [`보고서초안.md`](output/보고서초안.md) / [`보고서초안.html`](output/보고서초안.html) — 보고서 초안
+- [`보고서초안.docx`](output/보고서초안.docx) / [`보고서초안.md`](output/보고서초안.md) / [`보고서초안.html`](output/보고서초안.html) — 보고서 초안
 - [`무결성검증.json`](output/무결성검증.json), [`파일해시목록.csv`](output/파일해시목록.csv), [`타임라인.html`](output/타임라인.html),
   [`events.json`](output/events.json), [`선조사.json`](output/선조사.json), [`초안검증.json`](output/초안검증.json)
 
@@ -78,3 +78,13 @@ E01 nps-2009-canon2-gen6.E01: 일치 (저장 해시 = 재계산 해시)
   "G2-3" 사진으로 설명하므로, 공개 zip에 들어 있는 IMG_0039는 설명과 다른 내용일 수 있다 — 도구가 판단하지 않고
   검토 대상으로만 싣는다.
 - 분석 환경은 macOS(arm64), Python 3.12, Pillow 11.3. Pillow가 없으면 EXIF·유사 이미지 항목이 "미수행"으로 바뀐다.
+
+
+## 저장된 측정값으로 초안 다시 만들기
+
+저장소 루트에서 다음 명령을 실행하면 보관된 측정값과 당시 분석 환경을 사용해
+Markdown·HTML·DOCX 초안과 `초안검증.json`을 다시 만든다. 같은 입력에서는 DOCX 바이트도 같다.
+
+```sh
+python examples/nps-2009-canon2/render_drafts.py
+```
