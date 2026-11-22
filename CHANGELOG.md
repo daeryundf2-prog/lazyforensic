@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.5.0
 
 - `lazyforensic report --template 양식.docx`로 사건 정보와 증거·무결성·타임라인 표를 채운 양식 초안을 만든다. 검증기는 저장된 초안의 본문을 예상값과 대조하고 금지 문구, 근거 없는 해시, 남은 자리표시자를 검사한다. [자리표시자 목록과 빈 양식](docs/REPORT_TEMPLATES.md)
 
