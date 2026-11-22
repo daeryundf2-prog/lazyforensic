@@ -27,6 +27,8 @@ TOKEN = re.compile(r"\{\{([^{}\r\n\t]*)\}\}")
 WORD = report_docx.W[1:-1]
 STORY_MIME = {kind: f"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"
               for kind in ("header", "footer", "footnotes", "endnotes", "comments")}
+STORY_ROOTS = {mime: report_docx.W + {"header": "hdr", "footer": "ftr"}.get(kind, kind)
+               for kind, mime in STORY_MIME.items()}
 OFFICE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 PACKAGE_ERRORS = (OSError, BadZipFile, KeyError, ET.ParseError, ExpatError, ValueError, RuntimeError, zlib.error)
@@ -132,9 +134,10 @@ def check_styles(styles, used):
 def validate_story(root):
     w = report_docx.W
     unsupported = {w + name for name in ("altChunk", "subDoc", "object", "del", "moveFrom",
-                                          "delText", "dataBinding", "txbxContent")}
+                                          "delText", "ins", "moveTo", "sym", "dataBinding", "txbxContent")}
     unsupported.update({"{http://schemas.openxmlformats.org/drawingml/2006/main}t",
                         "{http://schemas.openxmlformats.org/drawingml/2006/chart}chart",
+                        "{urn:schemas-microsoft-com:vml}textpath",
                         "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent"})
     # Page numbering is layout metadata. Other fields can replace measured
     # values with a different result when the recipient opens the document.
@@ -231,6 +234,8 @@ def word_content(package, fields=None):
         root = report_docx.read_xml(package, part)
         if part == parts[0]:
             root = report_docx.body(root)
+        elif root.tag != STORY_ROOTS[types[part]]:
+            raise ValueError("DOCX 양식 본문 종류와 콘텐츠 형식이 다릅니다")
         validate_story(root)
         used_styles.update(n.get(report_docx.W + "val") for n in root.iter()
                           if n.tag in (report_docx.W + "rStyle", report_docx.W + "pStyle", report_docx.W + "tblStyle"))
@@ -243,6 +248,10 @@ def word_content(package, fields=None):
             check_styles(report_docx.read_xml(package, part), used_styles)
     encoded = json.dumps(structure, ensure_ascii=False, separators=(",", ":"))
     return text_digest("DOCX form v2\n" + encoded), "\n".join(lines), parts
+
+
+def form_text(package, fields=None):
+    return word_content(package, fields)[1]
 
 
 def text_digest(text):

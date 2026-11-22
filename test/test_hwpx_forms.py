@@ -347,3 +347,20 @@ def test_legacy_hwpx_receipt_can_still_check_static_text(tmp_path):
     legacy = hashlib.sha256(b'[[["p",["Sample"]]]]').hexdigest()
     forms.digest_path(draft).write_text(legacy + "\n", encoding="ascii")
     assert report_draft.run_verify(draft, [])["exit_code"] == 0
+
+
+@pytest.mark.parametrize("change", ["section_count", "char_reference", "ambiguous_href", "equation_text"])
+def test_form_rejects_inconsistent_hangul_package(tmp_path, change):
+    draft = tmp_path / "양식초안.hwpx"
+    forms.write_form(SAMPLE, draft, {"사건번호": "Sample"})
+    parts = members(draft)
+    if change == "section_count":
+        parts["Contents/header.xml"] = parts["Contents/header.xml"].replace(b'secCnt="1"', b'secCnt="2"')
+    elif change == "char_reference":
+        parts[SECTION] = parts[SECTION].replace(b'charPrIDRef="0"', b'charPrIDRef="99"', 1)
+    elif change == "ambiguous_href":
+        parts["Contents/Contents/section0.xml"] = hw.serialize(hw.section("Another section"))
+    else:
+        parts[SECTION] = parts[SECTION].replace(b"</hp:run>", b"<hp:equation><hp:script>sample</hp:script></hp:equation></hp:run>", 1)
+    write(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"

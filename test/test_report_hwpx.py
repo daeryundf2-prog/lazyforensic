@@ -174,3 +174,27 @@ def test_default_hwpx_preserves_filename_edge_spaces(tmp_path):
     with ZipFile(draft) as doc:
         root = ET.fromstring(doc.read(SECTION))
         assert [t.text for t in root.findall(".//hp:tc//hp:t", NS)] == ["Name", " sample.bin ", "sample.bin"]
+
+
+@pytest.mark.parametrize("change", ["section_count", "header_root", "style_reference", "equation_text"])
+def test_generated_hwpx_rejects_unreadable_layout_or_content(tmp_path, change):
+    draft = tmp_path / "draft.hwpx"
+    report_hwpx.write_hwpx(draft, "Sample")
+    if change == "section_count":
+        change_member(draft, "Contents/header.xml", lambda data: data.replace(b'secCnt="1"', b'secCnt="2"'))
+    elif change == "header_root":
+        change_member(draft, "Contents/header.xml", lambda _: b"<sample/>")
+    elif change == "style_reference":
+        change_member(draft, SECTION, lambda data: data.replace(b'styleIDRef="0"', b'styleIDRef="99"'))
+    else:
+        change_member(draft, SECTION, lambda data: data.replace(b"</hp:run>",
+                      b"<hp:equation><hp:script>sample</hp:script></hp:equation></hp:run>", 1))
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_generated_hwpx_does_not_ignore_a_picture_description(tmp_path):
+    draft = tmp_path / "draft.hwpx"
+    report_hwpx.write_hwpx(draft, "Sample")
+    change_member(draft, SECTION, lambda data: data.replace(b"</hp:run>",
+                  b"<hp:pic><hp:shapeComment>{{review}}</hp:shapeComment></hp:pic></hp:run>", 1))
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"

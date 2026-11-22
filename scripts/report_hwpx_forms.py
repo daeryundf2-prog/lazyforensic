@@ -38,30 +38,37 @@ def layout(package):
     items = {}
     for item in content.findall(f"{O}manifest/{O}item"):
         href = item.attrib["href"]
-        part = href if href in names else posixpath.normpath(posixpath.join(posixpath.dirname(path), href))
-        if item.attrib["id"] in items or part not in names:
+        relative = posixpath.normpath(posixpath.join(posixpath.dirname(path), href))
+        candidates = {href, relative} & names
+        if item.attrib["id"] in items or len(candidates) != 1:
             raise ValueError("HWPX manifest 항목 오류")
-        items[item.attrib["id"]] = part
+        items[item.attrib["id"]] = candidates.pop()
     spine = [items[ref.attrib["idref"]] for ref in content.findall(f"{O}spine/{O}itemref")]
     if content.tag != O + "package" or len(spine) != len(set(spine)):
         raise ValueError("HWPX spine 구성 오류")
     sections, masters = [], []
+    references = set()
     header = None
     for part in spine:
         root = ET.fromstring(xml_bytes(package, part))
         if root.tag == hw.HS + "sec":
             sections.append(part)
+            references.update(hw.story_refs(root))
         elif root.tag == "{" + hw.NS["hh"] + "}head" and header is None:
             header = root
         elif root.tag in ("masterPage", "{" + hw.NS["hm"] + "}masterPage"):
             masters.append(part)
+            references.update(hw.story_refs(root))
         else:
             raise ValueError("HWPX spine 본문 구성 오류")
     named_sections = {n for n in names if re.fullmatch(r"Contents/section\d+\.xml", n)}
     if not sections or named_sections.difference(sections) or header is None:
         raise ValueError("HWPX 섹션 또는 머리 정보 누락")
-    masters.extend(sorted(n for n in items.values() if re.fullmatch(r"Contents/masterpage\d*\.xml", n, re.I)
-                          and n not in masters))
+    for name in sorted(set(items.values()) - set(masters)):
+        if re.fullmatch(r"Contents/masterpage\d*\.xml", name, re.I):
+            masters.append(name)
+            references.update(hw.story_refs(ET.fromstring(xml_bytes(package, name))))
+    hw.check_header(header, len(sections), references)
     border = header.find(".//{" + hw.NS["hh"] + "}borderFill")
     return sections + masters, border.attrib["id"] if border is not None else None
 
@@ -262,8 +269,6 @@ def form_content(package, fields=None, *, legacy=False):
             if (root.namespaceURI, root.localName) not in ((hw.NS["hs"], "sec"), (None, "masterPage"),
                                                            (hw.NS["hm"], "masterPage")):
                 raise ValueError("HWPX 본문 구성 오류")
-            if root.getElementsByTagNameNS(HP, "fieldBegin") or root.getElementsByTagNameNS(HP, "fieldEnd"):
-                raise ValueError("동적 HWPX 필드는 양식에서 검증할 수 없습니다")
             seen = set()
             blocks = [project(p, fields, {}, seen, legacy) for p in parts(root)
                       if getattr(p, "nodeType", None) == Node.ELEMENT_NODE]

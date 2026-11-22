@@ -198,6 +198,28 @@ def write_hwpx(path: Path, md: str) -> None:
             package.writestr(entry, data, compress_type=ZIP_STORED if name == "mimetype" else ZIP_DEFLATED)
 
 
+STYLE_REFS = {"styleIDRef": "style", "paraPrIDRef": "paraPr", "charPrIDRef": "charPr"}
+
+
+def story_refs(root):
+    for node in root.iter():
+        if node.tag in (HP + "equation", HP + "fieldBegin", HP + "fieldEnd"):
+            raise ValueError("수식·동적 필드 본문은 HWPX 검증에서 지원하지 않습니다")
+        for attr in STYLE_REFS:
+            if attr in node.attrib:
+                yield attr, node.attrib[attr]
+
+
+def check_header(header, section_count, references):
+    hh = "{" + NS["hh"] + "}"
+    if header.tag != hh + "head" or int(header.attrib["secCnt"]) != section_count:
+        raise ValueError("HWPX 머리 정보와 실제 섹션 수가 다릅니다")
+    definitions = {attr: {el.attrib["id"] for el in header.iter(hh + kind)} for attr, kind in STYLE_REFS.items()}
+    for attr, value in references:
+        if value not in definitions[attr]:
+            raise ValueError(f"HWPX 서식 참조 누락: {attr}={value}")
+
+
 def preview_names(package):
     container = package.getinfo("META-INF/container.xml")
     if container.file_size > 32 * 1024 * 1024:
@@ -248,6 +270,7 @@ def read_hwpx(path: Path) -> str:
                 or any(n.startswith("Contents/section") and n != spine[1] for n in names)):
             raise ValueError("단일 섹션 HWPX 초안의 본문 구성이 다름")
         sec = read_xml(spine[1])
+        check_header(read_xml(spine[0]), 1, story_refs(sec))
     if sec.tag != HS + "sec" or not len(sec):
         raise ValueError("HWPX 본문 없음")
 
@@ -284,6 +307,9 @@ def read_hwpx(path: Path) -> str:
             lines.append(row_text(values))
         if any("".join(t.itertext()) for t in para.iter(HP + "t") if t not in cells):
             raise ValueError("HWPX 표 밖에 추가 본문이 있음")
+    for comment in sec.iter(HP + "shapeComment"):
+        if value := "".join(comment.itertext()):
+            lines.append(value)
     return "\n".join(lines)
 
 

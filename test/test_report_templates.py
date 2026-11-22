@@ -469,3 +469,28 @@ def test_form_file_labels_keep_control_characters_distinct():
     labels = [r[0] for r in fields["증거목록표"][1:]]
     assert len(set(labels)) == len(paths)
     assert all(not any(c in value for c in "\x00\n\x0b") for value in labels)
+
+
+@pytest.mark.parametrize("feature", ["symbol", "textpath", "tracked_insert", "wrong_story_root"])
+def test_word_gate_rejects_unreadable_story_content(tmp_path, feature):
+    draft = make_form(tmp_path / "draft.docx", "Sample")
+    parts = package(draft)
+    doc = ET.fromstring(parts["word/document.xml"])
+    run = doc.find(".//" + W + "r")
+    if feature == "symbol":
+        report_docx.word(run, "sym", font="Symbol", char="F061")
+    elif feature == "textpath":
+        shape = ET.SubElement(report_docx.word(run, "pict"), "{urn:schemas-microsoft-com:vml}shape")
+        ET.SubElement(shape, "{urn:schemas-microsoft-com:vml}textpath", string="{{review}}")
+    elif feature == "tracked_insert":
+        p = doc.find(".//" + W + "p")
+        p.remove(run)
+        report_docx.word(p, "ins", id="1").append(run)
+    else:
+        parts["word/header1.xml"] = b"<sample/>"
+        parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace(
+            b"</Types>", b'<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-'
+            b'officedocument.wordprocessingml.header+xml"/></Types>')
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"

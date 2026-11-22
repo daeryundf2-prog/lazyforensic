@@ -159,7 +159,7 @@ def main(argv=None):
                 text = report_templates.check_form(report_path, reference, errors, warnings)
             elif suffix == ".docx":
                 with ZipFile(report_path) as package:
-                    _, text, _ = report_templates.word_content(package)
+                    text = report_templates.form_text(package)
             else:
                 text = read_document(report_path)
                 with ZipFile(report_path) as package:
