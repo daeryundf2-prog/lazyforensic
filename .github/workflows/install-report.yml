@@ -1,0 +1,34 @@
+name: Installed report verification
+
+on:
+  push:
+    branches: [main, master, ci/windows-e2e]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-report:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install from checkout, report in a fresh shell, and verify receipts
+        run: python .github/e2e/install_report.py
+      - name: Check the checkout for leftover files or edits
+        if: always()
+        shell: bash
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [[ -n "$changes" ]]; then echo "$changes"; exit 1; fi

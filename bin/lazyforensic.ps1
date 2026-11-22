@@ -5,6 +5,8 @@
 # 인코딩: UTF-8 BOM 필수 — Windows PowerShell 5.1은 BOM 없는 UTF-8을 ANSI(cp949)로 읽어 한글이 깨진다.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+# 출력이 파이프·파일로 갈 때 ANSI 코드페이지에 없는 문자(예: cp1252의 한글)로 죽지 않게 한다. 인코딩은 그대로 두고 오류 처리만 바꾼다.
+if (-not $env:PYTHONIOENCODING) { $env:PYTHONIOENCODING = ":replace" }
 
 # 우선순위: $LF_PYTHON > setup_forensic_env.ps1이 만든 %USERPROFILE%\.lfenv > python > py
 if ($env:LF_PYTHON) {
