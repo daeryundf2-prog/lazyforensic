@@ -119,6 +119,12 @@ def parse_text(text: str, source: str = "") -> list[dict]:
         hashes = HEX_RE.findall(line)
         if len(hashes) != 1:
             continue
+        # sha256sum uses one space plus a mode character (space or "*").
+        # Everything after it is one path, including embedded spaces.
+        checksum = re.fullmatch(r"([0-9a-fA-F]+) [ *](.+)", line)
+        if checksum and checksum[1] == hashes[0]:
+            out.append(_entry(checksum[2], ALGO_BY_LEN[len(hashes[0])], hashes[0], source, n))
+            continue
         rest = HEX_RE.sub(" ", line)
         tokens = [t.lstrip("*") for t in rest.split() if NAME_TOKEN_RE.match(t.lstrip("*"))]
         if len(tokens) != 1:
