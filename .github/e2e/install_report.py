@@ -211,7 +211,16 @@ def exercise(work):
                 rc = profile / name
                 assert rc.read_text().strip() == '# LazyForensic PATH\nexport PATH="$HOME/.local/bin:$PATH"'
                 rc.unlink()
-        assert not list(profile.iterdir()), list(profile.iterdir())
+        if WINDOWS:
+            # Only Windows PowerShell's own startup cache may remain under %USERPROFILE%\AppData
+            # (lazyforensic.cmd starts powershell.exe); any other file is reported as a leftover.
+            ps_cache = profile / "AppData/Local/Microsoft/Windows/PowerShell"
+            files = [p for p in profile.rglob("*") if p.is_file()]
+            foreign = [p for p in files if ps_cache not in p.parents]
+            assert not foreign, [str(p.relative_to(profile)) for p in foreign]
+            if (profile / "AppData").exists():
+                shutil.rmtree(profile / "AppData")
+        assert not list(profile.iterdir()), [str(p.relative_to(profile)) for p in profile.rglob("*")]
         assert not list(temp.iterdir()), list(temp.iterdir())
         expected = {profile, temp, tool_cache, evidence, log, export, survey, work / (evidence.name + "_분석결과"),
                     work / "docx 결과", work / "hwpx 결과"}
