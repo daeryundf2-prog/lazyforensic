@@ -116,7 +116,7 @@ def category(path: str) -> str:
 
 def md_cell(value) -> str:
     s = UNK if value is None or value == "" else str(value)
-    return s.replace("|", "\\|").replace("\n", " ")
+    return re.sub(r"[\r]\n|[\r\n\v\f\x1c-\x1e\x85\u2028\u2029]", " ", s.replace("|", "\\|"))
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:

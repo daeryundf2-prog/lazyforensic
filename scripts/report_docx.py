@@ -143,12 +143,29 @@ def write_docx(path: Path, md: str) -> None:
 def read_docx(path: Path) -> str:
     """Keep runs contiguous, table cells delimited, and each table row on one line."""
     with ZipFile(path) as package:
-        for required in ("[Content_Types].xml", "_rels/.rels"):
-            package.getinfo(required)
-        part = package.getinfo("word/document.xml")
-        if part.file_size > 32 * 1024 * 1024:
-            raise ValueError("DOCX 본문 크기 제한 초과")
-        doc = ET.fromstring(package.read(part))
+        def read_xml(name):
+            part = package.getinfo(name)
+            if part.file_size > 32 * 1024 * 1024:
+                raise ValueError("DOCX XML 크기 제한 초과")
+            return ET.fromstring(package.read(part))
+
+        rel_ns = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+        type_ns = "{http://schemas.openxmlformats.org/package/2006/content-types}"
+        office_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+        rels = read_xml("_rels/.rels")
+        types = read_xml("[Content_Types].xml")
+        if rels.tag != rel_ns + "Relationships" or types.tag != type_ns + "Types":
+            raise ValueError("DOCX 패키지 메타데이터 오류")
+        main = [r for r in rels.findall(rel_ns + "Relationship") if r.get("Type") == office_rel]
+        if len(main) != 1 or main[0].get("TargetMode", "Internal") != "Internal":
+            raise ValueError("DOCX 본문 관계 오류")
+        target = main[0].attrib["Target"].removeprefix("/")
+        overrides = {t.get("PartName"): t.get("ContentType") for t in types.findall(type_ns + "Override")}
+        defaults = {t.get("Extension", "").lower(): t.get("ContentType") for t in types.findall(type_ns + "Default")}
+        mime = overrides.get("/" + target, defaults.get(Path(target).suffix[1:].lower()))
+        if mime != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":
+            raise ValueError("DOCX 본문 콘텐츠 형식 오류")
+        doc = read_xml(target)
     body = doc.find(W + "body")
     if doc.tag != W + "document" or body is None:
         raise ValueError("DOCX 본문 없음")
