@@ -486,7 +486,8 @@ def render_report(ctx: dict) -> str:
                         result = "대조 대상 없음(참고값)"
                     else:
                         result = {"match": "일치", "mismatch": "불일치"}.get(cmp_.get(algo), UNK)
-                    rows.append([img["file"], label, stored.get(algo) or "기록 없음",
+                    conflicts = img.get("conflicting_stored_hashes", {}).get(algo, [])
+                    rows.append([img["file"], label, " / ".join(conflicts) or stored.get(algo) or "기록 없음",
                                  comp.get(algo) or UNK, result])
             if comp.get("sha256"):
                 rows.append([img["file"], "SHA-256", "기록 없음", comp["sha256"], "대조 대상 없음(참고값)"])
@@ -1069,7 +1070,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     elif post["status"] != "match":
         problems.append("분석 전후 해시 불일치")
     problems += [f"E01 {i['file']}: {IMAGE_STATUS_KO[i['status']]}" for i in images
-                 if i["status"] in ("mismatch", "read_error")]
+                 if i["status"] in ("mismatch", "read_error", "unsupported")]
     if references and any(r["result"] == "mismatch" for r in references):
         problems.append("참조 해시 불일치")
     if verify.get("verdict") in ("FAIL", "ERROR"):
