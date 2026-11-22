@@ -189,3 +189,31 @@ def test_catalogue_and_sample_cover_every_field(tmp_path):
     text = report_docx.read_docx(draft)
     assert all(value in text for value in case.values())
     assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize("unresolved", ["not_found", "not_verified", "ambiguous"])
+def test_form_integrity_result_accounts_for_every_reference(unresolved):
+    rows = report_draft.integrity_rows({"status": "match", "checked": 1}, [],
+                                       [{"result": "match"}, {"result": unresolved}])
+    fields = forms.form_fields({}, [], rows, [], 100)
+    reference, = [r for r in fields["무결성검증표"] if r[0] == "참조 해시 대조"]
+    assert reference[1] == "일부 일치·나머지 미확인"
+    assert "참조 2건: 일치 1" in reference[2]
+
+
+def test_integrity_describes_only_the_two_measurements(tmp_path):
+    ev = tmp_path / "evidence"
+    ev.mkdir()
+    (ev / "sample.bin").write_bytes(b"test")
+    out = tmp_path / "out"
+    assert report_draft.main([str(ev), "-o", str(out), "--template", str(ROOT / "templates/report_form.docx")]) == 0
+    for path in (out / "보고서초안.docx", out / forms.OUTPUT_NAME):
+        text = report_docx.read_docx(path)
+        assert "분석 전후 SHA-256 1개" in text
+        assert "증거가 바뀌지 않았다" not in text
+
+
+def test_empty_summary_has_no_rehash_match():
+    ctx = {"inventory": [], "images": [], "references": None, "survey": {}, "root_name": "empty",
+           "post": {"status": "match", "checked": 0}}
+    assert any("대조할 파일이 없음" in fact for fact in report_draft.summary_facts(ctx))

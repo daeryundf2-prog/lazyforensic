@@ -352,7 +352,7 @@ def integrity_rows(post, images, refs):
     if post["status"] == "match" and not post["checked"]:
         rows.append(["분석 전후 재해시", UNK, "대조할 파일이 없음"])
     elif post["status"] == "match":
-        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음. 분석 중 증거가 바뀌지 않았다."])
+        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음."])
     else:
         detail = []
         if post["changed"]:
@@ -376,7 +376,12 @@ def integrity_rows(post, images, refs):
         rows.append(["참조 해시 대조", UNK, "참조 해시 목록이 제공되지 않음 (--hashes)"])
     else:
         c = Counter(r["result"] for r in refs)
-        rows.append(["참조 해시 대조", "불일치 있음" if c.get("mismatch") else ("일치" if c.get("match") else UNK),
+        result = UNK
+        if c["mismatch"]:
+            result = "불일치 있음"
+        elif c["match"]:
+            result = "일치" if c["match"] == len(refs) else "일부 일치·나머지 미확인"
+        rows.append(["참조 해시 대조", result,
                      f"참조 {len(refs)}건: 일치 {c.get('match', 0)}, 불일치 {c.get('mismatch', 0)}, "
                      f"증거에 없음 {c.get('not_found', 0)}, 이름 중복으로 대조 보류 {c.get('ambiguous', 0)}, "
                      f"재계산 불가 {c.get('not_verified', 0)}"])
@@ -847,8 +852,10 @@ def summary_facts(ctx: dict) -> list[str]:
     inv, images, refs, post = ctx["inventory"], ctx["images"], ctx["references"], ctx["post"]
     ok = [f for f in inv if "sha256" in f]
     facts = [f"증거 폴더 `{ctx['root_name']}`의 파일 {len(inv)}개 중 {len(ok)}개의 해시를 계산했다."]
-    if post["status"] == "match":
-        facts.append("분석 전후 재해시 결과가 모두 같아, 이 도구의 분석 과정에서 증거가 바뀌지 않았다.")
+    if post["status"] == "match" and not post["checked"]:
+        facts.append("분석 전후 재해시 미확인 (대조할 파일이 없음).")
+    elif post["status"] == "match":
+        facts.append("대조한 파일의 분석 전·후 SHA-256 값이 모두 같았다.")
     elif post["status"] == "incomplete":
         facts.append("열기 실패로 일부 파일의 분석 전후 무결성은 미확인이다.")
     else:
