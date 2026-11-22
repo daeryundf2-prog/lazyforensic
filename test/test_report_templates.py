@@ -494,3 +494,38 @@ def test_word_gate_rejects_unreadable_story_content(tmp_path, feature):
     parts["word/document.xml"] = ET.tostring(doc)
     write_parts(draft, parts)
     assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("feature", ["simple_page", "complex_page", "nonbreaking_hyphen"])
+def test_scalar_marker_cannot_cross_a_word_control(tmp_path, feature):
+    source = make_form(tmp_path / "blank.docx", "{{사건")
+    parts = package(source)
+    doc = ET.fromstring(parts["word/document.xml"])
+    p = doc.find(".//" + W + "p")
+    if feature == "simple_page":
+        report_docx.word(p, "fldSimple", instr=" PAGE ")
+    elif feature == "complex_page":
+        for kind in ("begin", "separate", "end"):
+            report_docx.word(report_docx.word(p, "r"), "fldChar", fldCharType=kind)
+            if kind == "begin":
+                report_docx.word(report_docx.word(p, "r"), "instrText").text = " PAGE "
+    else:
+        report_docx.word(report_docx.word(p, "r"), "noBreakHyphen")
+    report_docx.word(report_docx.word(p, "r"), "t").text = "번호}}"
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(source, parts)
+    with pytest.raises(ValueError):
+        forms.write_form(source, tmp_path / forms.OUTPUT_NAME, {"사건번호": "A-01"})
+
+
+def test_word_nonbreaking_hyphen_is_part_of_verified_text(tmp_path):
+    source = make_form(tmp_path / "blank.docx", "A")
+    parts = package(source)
+    doc = ET.fromstring(parts["word/document.xml"])
+    r = doc.find(".//" + W + "r")
+    report_docx.word(r, "noBreakHyphen")
+    report_docx.word(r, "t").text = "01"
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(source, parts)
+    with ZipFile(source) as template:
+        assert forms.form_text(template) == "A\u201101"

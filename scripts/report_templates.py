@@ -31,6 +31,7 @@ STORY_ROOTS = {mime: report_docx.W + {"header": "hdr", "footer": "ftr"}.get(kind
                for kind, mime in STORY_MIME.items()}
 OFFICE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+TOKEN_BOUNDARIES = set(report_docx.RUN_CONTROLS) | {"fldSimple", "fldChar", "drawing", "pict"}
 PACKAGE_ERRORS = (OSError, BadZipFile, KeyError, ET.ParseError, ExpatError, ValueError, RuntimeError, zlib.error)
 
 
@@ -290,6 +291,27 @@ def replace_runs(nodes, fields):
             node.setAttribute("xml:space", "preserve")
 
 
+def editable_runs(elements):
+    nodes, texts, boundaries = [], [], []
+    offset = 0
+    for el in elements:
+        if el.namespaceURI != WORD:
+            continue
+        if el.localName == "t":
+            value = node_text(el)
+            nodes.append(el)
+            texts.append(value)
+            offset += len(value)
+        elif el.localName in TOKEN_BOUNDARIES:
+            boundaries.append(offset)
+    value = "".join(texts)
+    for match in TOKEN.finditer(value):
+        index = bisect_right(boundaries, match.start())
+        if index < len(boundaries) and boundaries[index] < match.end():
+            raise ValueError("자리표시자 중간에 필드·탭·줄바꿈·도형을 넣을 수 없습니다")
+    return nodes, value
+
+
 def fill_story(data, fields):
     # DOM preserves the prefix declarations referenced by mc:Ignorable and the
     # unedited layout/relationship attributes in office-authored forms.
@@ -298,8 +320,7 @@ def fill_story(data, fields):
             elements = p.getElementsByTagName("*")
             if any(el.namespaceURI == WORD and el.localName == "p" for el in elements):
                 raise ValueError("텍스트 상자 안의 중첩 문단은 지원하지 않습니다")
-            nodes = [el for el in elements if el.namespaceURI == WORD and el.localName == "t"]
-            value = "".join(map(node_text, nodes))
+            nodes, value = editable_runs(elements)
             match = TOKEN.fullmatch(value.strip())
             if match and isinstance(rows := fields.get(match[1].strip()), list):
                 if p.parentNode.namespaceURI != WORD or p.parentNode.localName != "body":

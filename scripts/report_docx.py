@@ -12,6 +12,9 @@ import report_package
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 ET.register_namespace("w", W[1:-1])
+RUN_CONTROLS = {"tab": "\t", "ptab": "\t", "br": "\n", "cr": "\n",
+                "noBreakHyphen": "\u2011", "softHyphen": "\u00ad"}
+CONTROL_TEXT = {W + name: value for name, value in RUN_CONTROLS.items()}
 CONTENT_TYPES = b'''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
@@ -200,8 +203,7 @@ def row_cells(row):
 def lines(node, expand=None):
     """Keep runs contiguous, table cells delimited, and each table row on one line."""
     if node.tag == W + "p":
-        tokens = {W + "tab": "\t", W + "br": "\n", W + "cr": "\n"}
-        value = "".join((n.text or "") if n.tag == W + "t" else tokens.get(n.tag, "")
+        value = "".join((n.text or "") if n.tag == W + "t" else CONTROL_TEXT.get(n.tag, "")
                         for n in node.iter())
         if expand is None:
             yield value
