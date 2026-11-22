@@ -7,6 +7,8 @@ from itertools import groupby
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
+import report_package
+
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 ET.register_namespace("w", W[1:-1])
 CONTENT_TYPES = b'''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -141,10 +143,7 @@ def write_docx(path: Path, md: str) -> None:
 
 
 def read_xml(package, name):
-    part = package.getinfo(name)
-    if part.file_size > 32 * 1024 * 1024:
-        raise ValueError("DOCX XML 크기 제한 초과")
-    return ET.fromstring(package.read(part))
+    return ET.fromstring(report_package.xml_bytes(package, name))
 
 
 def document_parts(package):
@@ -206,5 +205,6 @@ def lines(node, expand=None):
 
 def read_docx(path: Path) -> str:
     with ZipFile(path) as package:
+        report_package.check_package_size(package)
         target, _ = document_parts(package)
         return "\n".join(lines(body(read_xml(package, target))))

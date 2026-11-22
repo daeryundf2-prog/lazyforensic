@@ -13,18 +13,13 @@ from zipfile import ZIP_STORED
 import report_hwpx as hw
 import report_templates as forms
 from report_docx import row_text
+from report_package import xml_bytes
 
 HP = hw.NS["hp"]
 O = "{" + hw.OPF + "}"
 C = "{" + hw.CONTAINER + "}"
 TEXT_MARKS = {"markpenBegin", "markpenEnd", "titleMark"}
 BREAKS = {"tab": "\t", "lineBreak": "\n", "hyphen": "-", "nbSpace": "\u00a0", "fwSpace": "\u3000"}
-
-
-def xml_data(package, name):
-    if package.getinfo(name).file_size > 32 * 1024 * 1024:
-        raise ValueError("HWPX XML 크기 제한 초과")
-    return package.read(name)
 
 
 def layout(package):
@@ -34,12 +29,12 @@ def layout(package):
     if (package.infolist()[0] != mime or mime.header_offset or mime.compress_type != ZIP_STORED
             or package.read(mime) != hw.MIME):
         raise ValueError("HWPX mimetype 오류")
-    container = ET.fromstring(xml_data(package, "META-INF/container.xml"))
+    container = ET.fromstring(xml_bytes(package, "META-INF/container.xml"))
     roots = container.findall(f"{C}rootfiles/{C}rootfile[@media-type='application/hwpml-package+xml']")
     if container.tag != C + "container" or len(roots) != 1:
         raise ValueError("HWPX 패키지 경로 오류")
     path = roots[0].attrib["full-path"]
-    content = ET.fromstring(xml_data(package, path))
+    content = ET.fromstring(xml_bytes(package, path))
     items = {}
     for item in content.findall(f"{O}manifest/{O}item"):
         href = item.attrib["href"]
@@ -53,7 +48,7 @@ def layout(package):
     sections, masters = [], []
     header = None
     for part in spine:
-        root = ET.fromstring(xml_data(package, part))
+        root = ET.fromstring(xml_bytes(package, part))
         if root.tag == hw.HS + "sec":
             sections.append(part)
         elif root.tag == "{" + hw.NS["hh"] + "}head" and header is None:
@@ -255,7 +250,7 @@ def form_content(package, fields=None):
     stories, _ = layout(package)
     sections = []
     for name in stories:
-        with minidom.parseString(xml_data(package, name)) as doc:
+        with minidom.parseString(xml_bytes(package, name)) as doc:
             root = doc.documentElement
             if (root.namespaceURI, root.localName) not in ((hw.NS["hs"], "sec"), (None, "masterPage"),
                                                            (hw.NS["hm"], "masterPage")):
@@ -488,7 +483,7 @@ def write_parts(blank, filled, fields):
     stories, border = layout(blank)
     used = set()
     for name in stories:
-        for el in ET.fromstring(xml_data(blank, name)).iter():
+        for el in ET.fromstring(xml_bytes(blank, name)).iter():
             for attr in ("id", "instid"):
                 value = el.get(attr, "")
                 if value.isascii() and value.isdigit():
@@ -496,7 +491,7 @@ def write_parts(blank, filled, fields):
     ids = (i for i in count(1) if i not in used)
     updated = {}
     for name in stories:
-        original = xml_data(blank, name)
+        original = xml_bytes(blank, name)
         data = fill_story(original, fields, ids, border)
         if data != original:
             updated[name] = data

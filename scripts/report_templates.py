@@ -16,6 +16,7 @@ import zlib
 
 import report_docx
 import report_hwpx
+from report_package import check_package_size
 
 UNKNOWN = "미확인"
 OUTPUT_NAME = "양식초안.docx"
@@ -57,14 +58,6 @@ def form_fields(case, inventory, integrity_rows, events, limit):
     timeline = [[cell(ev.get(k)) for k in ("timestamp", "source", "file", "description")] for ev in events[:limit]]
     values["타임라인표"] = limited_table(["시각(기록값)", "출처", "파일", "설명"], timeline, len(events), "events.json")
     return values
-
-
-def check_package_size(package):
-    names = package.namelist()
-    if len(names) != len(set(names)) or len(names) > 10000:
-        raise ValueError("양식 패키지 항목이 중복되거나 너무 많습니다")
-    if sum(entry.file_size for entry in package.infolist()) > 64 * 1024 * 1024:
-        raise ValueError("압축 해제 기준 양식 크기 제한(64 MiB) 초과")
 
 
 def story_parts(package):

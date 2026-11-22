@@ -6,6 +6,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
+import report_package
 from report_docx import blocks, display_text, draft_text, row_text, xml_text
 
 HWP = "http://www.hancom.co.kr/hwpml/"
@@ -222,12 +223,10 @@ def check_preview(package, text, errors):
 def read_hwpx(path: Path) -> str:
     """Read the generated single-section draft in spine order, preserving cell boundaries."""
     def read_xml(name):
-        part = package.getinfo(name)
-        if part.file_size > 32 * 1024 * 1024:
-            raise ValueError("HWPX XML 크기 제한 초과")
-        return ET.fromstring(package.read(part))
+        return ET.fromstring(report_package.xml_bytes(package, name))
 
     with ZipFile(path) as package:
+        report_package.check_package_size(package)
         names = package.namelist()
         if not names or len(set(names)) != len(names) or names[0] != "mimetype":
             raise ValueError("HWPX 패키지 구성 오류")
