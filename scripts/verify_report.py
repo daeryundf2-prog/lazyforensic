@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from zipfile import ZipFile
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -140,6 +141,7 @@ def main(argv=None):
         return 2
 
     errors = []
+    warnings = []
     readers = {".docx": ("WordprocessingML", report_docx.read_docx), ".hwpx": ("OWPML", report_hwpx.read_hwpx)}
     suffix = report_path.suffix.lower()
     if suffix in readers:
@@ -150,19 +152,29 @@ def main(argv=None):
         is_form = (args.template_digest is not None or reference.exists()
                    or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
         try:
-            text = (report_templates.check_form(report_path, reference, errors) if is_form
-                    else read_document(report_path))
+            if not is_form:
+                with ZipFile(report_path) as package:
+                    is_form = package.comment.endswith(report_templates.FORM_MARKER)
+            if is_form:
+                text = report_templates.check_form(report_path, reference, errors, warnings)
+            elif suffix == ".docx":
+                with ZipFile(report_path) as package:
+                    text = report_templates.form_text(package)
+            else:
+                text = read_document(report_path)
+                with ZipFile(report_path) as package:
+                    report_hwpx.check_preview(package, text, errors)
             companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
             if args.markdown or companion.exists():
                 md = companion.read_text(encoding="utf-8-sig")
                 # DOCX Markdown companions describe the main body only, excluding header stories.
-                body = read_document(report_path) if is_form and suffix == ".docx" else text
+                body = read_document(report_path) if suffix == ".docx" else text
                 if body != report_docx.draft_text(md):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
         except report_templates.PACKAGE_ERRORS as exc:
             text = ""
             errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
-        if (is_form or suffix == ".docx") and ("{{" in text or "}}" in text):
+        if "{{" in text or "}}" in text:
             errors.append("치환되지 않은 자리표시자가 있습니다")
     elif args.template_digest:
         parser.error("--template-digest는 DOCX·HWPX 양식 초안에 사용합니다.")
@@ -175,7 +187,6 @@ def main(argv=None):
             text, encoding_used, lossy = "", "unknown", False
             errors.append(f"보고서를 읽을 수 없음: {exc}")
 
-    warnings = []
     if lossy:
         errors.append(f"보고서 전체를 판독할 수 없음 ({encoding_used})")
         text = ""
@@ -217,7 +228,7 @@ def main(argv=None):
     #      위에서 1회 계산한 것을 재사용한다.
     if report_hashes and args.evidence:
         evidence_pairs = load_evidence_hash_file_pairs(args.evidence)
-        for v in check_hash_file_binding(text, evidence_pairs):
+        for v in check_hash_file_binding(text, evidence_pairs, display_name=report_docx.display_value):
             if v.startswith("[SCHEMA-WARN]"):
                 warnings.append(v[len("[SCHEMA-WARN] "):])
             else:

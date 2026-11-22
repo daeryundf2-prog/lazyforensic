@@ -1,14 +1,20 @@
 """Deterministic WordprocessingML for the Markdown subset emitted by report_draft."""
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from itertools import groupby
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
+import report_package
+
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 ET.register_namespace("w", W[1:-1])
+RUN_CONTROLS = {"tab": "\t", "ptab": "\t", "br": "\n", "cr": "\n",
+                "noBreakHyphen": "\u2011", "softHyphen": "\u00ad"}
+CONTROL_TEXT = {W + name: value for name, value in RUN_CONTROLS.items()}
 CONTENT_TYPES = b'''<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
@@ -19,7 +25,7 @@ RELATIONSHIPS = b'''<Relationships xmlns="http://schemas.openxmlformats.org/pack
 
 
 def cells(line: str) -> list[str]:
-    return [c.strip().replace(r"\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+    return [c.removeprefix(" ").removesuffix(" ").replace(r"\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
 
 
 def blocks(md: str):
@@ -45,10 +51,20 @@ def display_text(s: str) -> str:
     return re.sub(r"`([^`]+)`|\*\*([^*]+)\*\*", lambda m: m[1] or m[2], s)
 
 
+# XML-illegal code points and explicit bidirectional formatting controls.
+ESCAPED = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff"
+                     r"\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
 def xml_text(s: str) -> str:
-    # XML 1.0 cannot represent these characters. Keep their code points visible.
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]",
-                  lambda m: f"\\u{ord(m[0]):04x}", s)
+    return ESCAPED.sub(lambda m: f"\\u{ord(m[0]):04x}", s)
+
+
+def display_value(s: str) -> str:
+    """Quote exceptional measured strings using reversible JSON string notation."""
+    if s.startswith('"') or ESCAPED.search(s) or re.search(r"[\t\r\n\x7f-\x9f\u2028\u2029]", s):
+        return json.dumps(s, ensure_ascii=True)
+    return s
 
 
 def row_text(row):
@@ -141,10 +157,7 @@ def write_docx(path: Path, md: str) -> None:
 
 
 def read_xml(package, name):
-    part = package.getinfo(name)
-    if part.file_size > 32 * 1024 * 1024:
-        raise ValueError("DOCX XML 크기 제한 초과")
-    return ET.fromstring(package.read(part))
+    return ET.fromstring(report_package.xml_bytes(package, name))
 
 
 def document_parts(package):
@@ -159,12 +172,17 @@ def document_parts(package):
     if len(main) != 1 or main[0].get("TargetMode", "Internal") != "Internal":
         raise ValueError("DOCX 본문 관계 오류")
     target = main[0].attrib["Target"].removeprefix("/")
-    overrides = {t.get("PartName"): t.get("ContentType") for t in types.findall(type_ns + "Override")}
-    defaults = {t.get("Extension", "").lower(): t.get("ContentType") for t in types.findall(type_ns + "Default")}
+    overrides = {t.attrib["PartName"]: t.attrib["ContentType"] for t in types.findall(type_ns + "Override")}
+    defaults = {t.attrib["Extension"].lower(): t.attrib["ContentType"] for t in types.findall(type_ns + "Default")}
     mime = overrides.get("/" + target, defaults.get(Path(target).suffix[1:].lower()))
     if mime != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":
         raise ValueError("DOCX 본문 콘텐츠 형식 오류")
-    return target, overrides
+    types_by_part = {name: overrides.get("/" + name, defaults.get(Path(name).suffix[1:].lower()))
+                     for name in package.namelist()}
+    # Keep explicitly declared parts even if the member is missing, so callers
+    # can fail closed when they try to read a declared story.
+    types_by_part.update((name.lstrip("/"), mime) for name, mime in overrides.items())
+    return target, types_by_part
 
 
 def body(part):
@@ -174,18 +192,25 @@ def body(part):
     return result
 
 
+def row_cells(row):
+    for child in row:
+        if child.tag == W + "tc":
+            yield child
+        elif child.tag != W + "tr":
+            yield from row_cells(child)
+
+
 def lines(node, expand=None):
     """Keep runs contiguous, table cells delimited, and each table row on one line."""
     if node.tag == W + "p":
-        tokens = {W + "tab": "\t", W + "br": "\n", W + "cr": "\n"}
-        value = "".join((n.text or "") if n.tag == W + "t" else tokens.get(n.tag, "")
+        value = "".join((n.text or "") if n.tag == W + "t" else CONTROL_TEXT.get(n.tag, "")
                         for n in node.iter())
         if expand is None:
             yield value
         else:
             yield from expand(value)
     elif node.tag == W + "tr":
-        yield row_text([" ".join(lines(tc, expand)) for tc in node.findall(W + "tc")])
+        yield row_text([" ".join(lines(tc, expand)) for tc in row_cells(node)])
     else:
         for child in node:
             yield from lines(child, expand)
@@ -193,5 +218,6 @@ def lines(node, expand=None):
 
 def read_docx(path: Path) -> str:
     with ZipFile(path) as package:
+        report_package.check_package_size(package)
         target, _ = document_parts(package)
         return "\n".join(lines(body(read_xml(package, target))))

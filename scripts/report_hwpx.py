@@ -6,6 +6,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
+import report_package
 from report_docx import blocks, display_text, draft_text, row_text, xml_text
 
 HWP = "http://www.hancom.co.kr/hwpml/"
@@ -172,7 +173,7 @@ def content_package():
 def write_hwpx(path: Path, md: str) -> None:
     version = ET.Element("hv:HCFVersion", {"xmlns:hv": HWP + "2011/version", "tagetApplication": "WORDPROCESSOR",
                          "major": "5", "minor": "1", "micro": "1", "buildNumber": "0", "os": "1",
-                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.6.0"})
+                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.6.1"})
     container = ET.Element("container", xmlns=CONTAINER)
     roots = add(container, "rootfiles")
     for name, mime in (("Contents/content.hpf", "application/hwpml-package+xml"), ("Preview/PrvText.txt", "text/plain")):
@@ -197,15 +198,57 @@ def write_hwpx(path: Path, md: str) -> None:
             package.writestr(entry, data, compress_type=ZIP_STORED if name == "mimetype" else ZIP_DEFLATED)
 
 
+STYLE_REFS = {"styleIDRef": "style", "paraPrIDRef": "paraPr", "charPrIDRef": "charPr"}
+
+
+def story_refs(root):
+    for node in root.iter():
+        if node.tag in (HP + "equation", HP + "fieldBegin", HP + "fieldEnd"):
+            raise ValueError("수식·동적 필드 본문은 HWPX 검증에서 지원하지 않습니다")
+        for attr in STYLE_REFS:
+            if attr in node.attrib:
+                yield attr, node.attrib[attr]
+
+
+def check_header(header, section_count, references):
+    hh = "{" + NS["hh"] + "}"
+    if header.tag != hh + "head" or int(header.attrib["secCnt"]) != section_count:
+        raise ValueError("HWPX 머리 정보와 실제 섹션 수가 다릅니다")
+    definitions = {attr: {el.attrib["id"] for el in header.iter(hh + kind)} for attr, kind in STYLE_REFS.items()}
+    for attr, value in references:
+        if value not in definitions[attr]:
+            raise ValueError(f"HWPX 서식 참조 누락: {attr}={value}")
+
+
+def preview_names(package):
+    container = package.getinfo("META-INF/container.xml")
+    if container.file_size > 32 * 1024 * 1024:
+        raise ValueError("HWPX container XML 크기 제한 초과")
+    root = ET.fromstring(package.read(container))
+    names = {entry.attrib["full-path"] for entry in root.findall(
+        "c:rootfiles/c:rootfile[@media-type='text/plain']", {"c": CONTAINER})}
+    if "Preview/PrvText.txt" in package.namelist():
+        names.add("Preview/PrvText.txt")
+    for name in sorted(names):
+        if not name.lower().endswith(".txt") or name not in package.namelist():
+            raise ValueError("HWPX 텍스트 미리보기 경로 오류")
+        yield name
+
+
+def check_preview(package, text, errors):
+    for name in preview_names(package):
+        saved = package.read(name).decode("utf-8-sig").replace("\r\n", "\n")
+        if saved != text:
+            errors.append("HWPX 텍스트 미리보기와 본문이 다름")
+
+
 def read_hwpx(path: Path) -> str:
     """Read the generated single-section draft in spine order, preserving cell boundaries."""
     def read_xml(name):
-        part = package.getinfo(name)
-        if part.file_size > 32 * 1024 * 1024:
-            raise ValueError("HWPX XML 크기 제한 초과")
-        return ET.fromstring(package.read(part))
+        return ET.fromstring(report_package.xml_bytes(package, name))
 
     with ZipFile(path) as package:
+        report_package.check_package_size(package)
         names = package.namelist()
         if not names or len(set(names)) != len(names) or names[0] != "mimetype":
             raise ValueError("HWPX 패키지 구성 오류")
@@ -227,6 +270,7 @@ def read_hwpx(path: Path) -> str:
                 or any(n.startswith("Contents/section") and n != spine[1] for n in names)):
             raise ValueError("단일 섹션 HWPX 초안의 본문 구성이 다름")
         sec = read_xml(spine[1])
+        check_header(read_xml(spine[0]), 1, story_refs(sec))
     if sec.tag != HS + "sec" or not len(sec):
         raise ValueError("HWPX 본문 없음")
 
@@ -263,6 +307,9 @@ def read_hwpx(path: Path) -> str:
             lines.append(row_text(values))
         if any("".join(t.itertext()) for t in para.iter(HP + "t") if t not in cells):
             raise ValueError("HWPX 표 밖에 추가 본문이 있음")
+    for comment in sec.iter(HP + "shapeComment"):
+        if value := "".join(comment.itertext()):
+            lines.append(value)
     return "\n".join(lines)
 
 

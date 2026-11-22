@@ -352,7 +352,7 @@ def integrity_rows(post, images, refs):
     if post["status"] == "match" and not post["checked"]:
         rows.append(["분석 전후 재해시", UNK, "대조할 파일이 없음"])
     elif post["status"] == "match":
-        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음. 분석 중 증거가 바뀌지 않았다."])
+        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음."])
     else:
         detail = []
         if post["changed"]:
@@ -376,7 +376,12 @@ def integrity_rows(post, images, refs):
         rows.append(["참조 해시 대조", UNK, "참조 해시 목록이 제공되지 않음 (--hashes)"])
     else:
         c = Counter(r["result"] for r in refs)
-        rows.append(["참조 해시 대조", "불일치 있음" if c.get("mismatch") else ("일치" if c.get("match") else UNK),
+        result = UNK
+        if c["mismatch"]:
+            result = "불일치 있음"
+        elif c["match"]:
+            result = "일치" if c["match"] == len(refs) else "일부 일치·나머지 미확인"
+        rows.append(["참조 해시 대조", result,
                      f"참조 {len(refs)}건: 일치 {c.get('match', 0)}, 불일치 {c.get('mismatch', 0)}, "
                      f"증거에 없음 {c.get('not_found', 0)}, 이름 중복으로 대조 보류 {c.get('ambiguous', 0)}, "
                      f"재계산 불가 {c.get('not_verified', 0)}"])
@@ -488,7 +493,7 @@ def render_report(ctx: dict) -> str:
     rows = []
     for i, f in enumerate(ok_files[:TABLE_LIMIT], 1):
         digest = f"MD5 {f['md5']} / SHA-1 {f['sha1']} / SHA-256 {f['sha256']}" if combined_hashes else f["sha256"]
-        rows.append([i, f["path"], fmt_size(f["size"]), digest])
+        rows.append([i, report_docx.display_value(f["path"]), fmt_size(f["size"]), digest])
         if hwpx_only:
             rows[-1].append(f"MD5 {f['md5']} / SHA-1 {f['sha1']}")
     L += table(columns, rows)
@@ -675,7 +680,7 @@ def render_report(ctx: dict) -> str:
     a(f"- 작성 기관: {case.get('organization') or UNK}")
     a(f"- 작성자: {case.get('analyst') or UNK}")
     a("")
-    return "\n".join(L)
+    return report_docx.xml_text("\n".join(L))
 
 
 IMAGE_STATUS_KO = {
@@ -828,7 +833,7 @@ def timeline_section(ctx: dict) -> list[str]:
                 return fmt_dt(dt)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         if len(evs) <= TIMELINE_FULL_LIMIT:
-            L += table(["시각", "파일"], [[show(e), e["file"]] for e in evs])
+            L += table(["시각", "파일"], [[show(e), report_docx.display_value(e["file"])] for e in evs])
         else:
             days = Counter(show(e)[:10] for e in evs)
             L.append(f"{len(evs)}건 — 가장 이른 시각 {show(evs[0])} (`{evs[0]['file']}`), "
@@ -847,8 +852,10 @@ def summary_facts(ctx: dict) -> list[str]:
     inv, images, refs, post = ctx["inventory"], ctx["images"], ctx["references"], ctx["post"]
     ok = [f for f in inv if "sha256" in f]
     facts = [f"증거 폴더 `{ctx['root_name']}`의 파일 {len(inv)}개 중 {len(ok)}개의 해시를 계산했다."]
-    if post["status"] == "match":
-        facts.append("분석 전후 재해시 결과가 모두 같아, 이 도구의 분석 과정에서 증거가 바뀌지 않았다.")
+    if post["status"] == "match" and not post["checked"]:
+        facts.append("분석 전후 재해시 미확인 (대조할 파일이 없음).")
+    elif post["status"] == "match":
+        facts.append("대조한 파일의 분석 전·후 SHA-256 값이 모두 같았다.")
     elif post["status"] == "incomplete":
         facts.append("열기 실패로 일부 파일의 분석 전후 무결성은 미확인이다.")
     else:

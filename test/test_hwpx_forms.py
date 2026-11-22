@@ -248,3 +248,119 @@ def test_native_master_page_and_unreadable_table_text(tmp_path):
     filled[SECTION] = filled[SECTION].replace(b"</hp:tc>", b"<hp:t>extra</hp:t></hp:tc>", 1)
     write(draft, filled)
     assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("has_marker", [True, False])
+def test_fill_always_refreshes_existing_preview(tmp_path, has_marker):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    parts = members(SAMPLE)
+    parts[SECTION] = hw.serialize(hw.section("{{사건번호}}" if has_marker else "Sample"))
+    parts[PREVIEW] = b"obsolete sample"
+    write(source, parts)
+    forms.write_form(source, draft, {"사건번호": "Sample"})
+    assert members(draft)[PREVIEW] == b"Sample"
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+    changed = members(draft)
+    changed[PREVIEW] = b"obsolete sample"
+    write(draft, changed)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("marker", ["{{사건번호}}", "{{증거목록표}}"])
+def test_hwpx_cdata_accepts_literal_cdata_terminator(tmp_path, marker):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    parts = members(SAMPLE)
+    if marker == "{{사건번호}}":
+        sec = hw.section(marker)
+    else:
+        sec = hw.section("| A | B | C |\n| --- | --- | --- |\n| {{증거목록표}} |  |  |")
+    value = "sample <&]]>" + "가" * 8192
+    parts[SECTION] = hw.serialize(sec).replace(marker.encode(), f"<![CDATA[{marker}]]>".encode())
+    write(source, parts)
+    fields = {"사건번호": value, "증거목록표": [["A", "B", "C"], [value, "0", "미확인"]]}
+    forms.write_form(source, draft, fields)
+    assert value in members(draft)[PREVIEW].decode()
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize("element", ["shapeComment", "fieldBegin"])
+def test_hwpx_unprojected_control_text_fails_verification(tmp_path, element):
+    draft = tmp_path / "양식초안.hwpx"
+    forms.write_form(SAMPLE, draft, {"사건번호": "Sample"})
+    parts = members(draft)
+    sec = ET.fromstring(parts[SECTION])
+    run = sec.find(".//" + HP + "run")
+    if element == "shapeComment":
+        ET.SubElement(ET.SubElement(run, HP + "pic"), HP + element).text = "{{review}}"
+    else:
+        ET.SubElement(ET.SubElement(run, HP + "ctrl"), HP + element, type="DATE")
+    parts[SECTION] = ET.tostring(sec, encoding="utf-8")
+    write(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_preview_at_declared_path_is_refreshed(tmp_path):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    parts = members(SAMPLE)
+    other = "Preview/sample.txt"
+    parts[other] = parts.pop(PREVIEW)
+    for part in ("META-INF/container.xml", "META-INF/manifest.xml"):
+        parts[part] = parts[part].replace(PREVIEW.encode(), other.encode())
+    write(source, parts)
+    forms.write_form(source, draft, {"사건번호": "A-01"})
+    with ZipFile(draft) as z:
+        assert z.read(other).decode() == report_hwpx_forms.form_content(z)[1]
+
+
+def test_unregistered_marker_without_case_data_has_matching_reference(tmp_path):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    hw.write_hwpx(source, "{{unknown}}")
+    forms.write_form(source, draft, {})
+    assert members(draft)[PREVIEW].decode() == forms.UNKNOWN
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+
+
+def test_verification_binds_values_to_logical_merged_columns(tmp_path):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    parts = members(SAMPLE)
+    sec = hw.section("| A | B |\n| --- | --- |\n| left | right |\n|  | result |")
+    table = next(sec.iter("hp:tbl"))
+    start, end = table.findall("hp:tr")[1:]
+    start[0].find("hp:cellSpan").set("rowSpan", "2")
+    end.remove(end[0])
+    parts[SECTION] = hw.serialize(sec)
+    write(source, parts)
+    forms.write_form(source, draft, {})
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+    start[0].find("hp:cellSpan").set("rowSpan", "1")
+    start[1].find("hp:cellSpan").set("rowSpan", "2")
+    end[0].find("hp:cellAddr").set("colAddr", "0")
+    changed = members(draft)
+    changed[SECTION] = hw.serialize(sec)
+    write(draft, changed)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_legacy_hwpx_receipt_can_still_check_static_text(tmp_path):
+    draft = tmp_path / "양식초안.hwpx"
+    hw.write_hwpx(draft, "Sample")
+    legacy = hashlib.sha256(b'[[["p",["Sample"]]]]').hexdigest()
+    forms.digest_path(draft).write_text(legacy + "\n", encoding="ascii")
+    assert report_draft.run_verify(draft, [])["exit_code"] == 0
+
+
+@pytest.mark.parametrize("change", ["section_count", "char_reference", "ambiguous_href", "equation_text"])
+def test_form_rejects_inconsistent_hangul_package(tmp_path, change):
+    draft = tmp_path / "양식초안.hwpx"
+    forms.write_form(SAMPLE, draft, {"사건번호": "Sample"})
+    parts = members(draft)
+    if change == "section_count":
+        parts["Contents/header.xml"] = parts["Contents/header.xml"].replace(b'secCnt="1"', b'secCnt="2"')
+    elif change == "char_reference":
+        parts[SECTION] = parts[SECTION].replace(b'charPrIDRef="0"', b'charPrIDRef="99"', 1)
+    elif change == "ambiguous_href":
+        parts["Contents/Contents/section0.xml"] = hw.serialize(hw.section("Another section"))
+    else:
+        parts[SECTION] = parts[SECTION].replace(b"</hp:run>", b"<hp:equation><hp:script>sample</hp:script></hp:equation></hp:run>", 1)
+    write(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"

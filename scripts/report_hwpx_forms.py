@@ -13,18 +13,13 @@ from zipfile import ZIP_STORED
 import report_hwpx as hw
 import report_templates as forms
 from report_docx import row_text
+from report_package import xml_bytes
 
 HP = hw.NS["hp"]
 O = "{" + hw.OPF + "}"
 C = "{" + hw.CONTAINER + "}"
 TEXT_MARKS = {"markpenBegin", "markpenEnd", "titleMark"}
 BREAKS = {"tab": "\t", "lineBreak": "\n", "hyphen": "-", "nbSpace": "\u00a0", "fwSpace": "\u3000"}
-
-
-def xml_data(package, name):
-    if package.getinfo(name).file_size > 32 * 1024 * 1024:
-        raise ValueError("HWPX XML 크기 제한 초과")
-    return package.read(name)
 
 
 def layout(package):
@@ -34,39 +29,46 @@ def layout(package):
     if (package.infolist()[0] != mime or mime.header_offset or mime.compress_type != ZIP_STORED
             or package.read(mime) != hw.MIME):
         raise ValueError("HWPX mimetype 오류")
-    container = ET.fromstring(xml_data(package, "META-INF/container.xml"))
+    container = ET.fromstring(xml_bytes(package, "META-INF/container.xml"))
     roots = container.findall(f"{C}rootfiles/{C}rootfile[@media-type='application/hwpml-package+xml']")
     if container.tag != C + "container" or len(roots) != 1:
         raise ValueError("HWPX 패키지 경로 오류")
     path = roots[0].attrib["full-path"]
-    content = ET.fromstring(xml_data(package, path))
+    content = ET.fromstring(xml_bytes(package, path))
     items = {}
     for item in content.findall(f"{O}manifest/{O}item"):
         href = item.attrib["href"]
-        part = href if href in names else posixpath.normpath(posixpath.join(posixpath.dirname(path), href))
-        if item.attrib["id"] in items or part not in names:
+        relative = posixpath.normpath(posixpath.join(posixpath.dirname(path), href))
+        candidates = {href, relative} & names
+        if item.attrib["id"] in items or len(candidates) != 1:
             raise ValueError("HWPX manifest 항목 오류")
-        items[item.attrib["id"]] = part
+        items[item.attrib["id"]] = candidates.pop()
     spine = [items[ref.attrib["idref"]] for ref in content.findall(f"{O}spine/{O}itemref")]
     if content.tag != O + "package" or len(spine) != len(set(spine)):
         raise ValueError("HWPX spine 구성 오류")
     sections, masters = [], []
+    references = set()
     header = None
     for part in spine:
-        root = ET.fromstring(xml_data(package, part))
+        root = ET.fromstring(xml_bytes(package, part))
         if root.tag == hw.HS + "sec":
             sections.append(part)
+            references.update(hw.story_refs(root))
         elif root.tag == "{" + hw.NS["hh"] + "}head" and header is None:
             header = root
         elif root.tag in ("masterPage", "{" + hw.NS["hm"] + "}masterPage"):
             masters.append(part)
+            references.update(hw.story_refs(root))
         else:
             raise ValueError("HWPX spine 본문 구성 오류")
     named_sections = {n for n in names if re.fullmatch(r"Contents/section\d+\.xml", n)}
     if not sections or named_sections.difference(sections) or header is None:
         raise ValueError("HWPX 섹션 또는 머리 정보 누락")
-    masters.extend(sorted(n for n in items.values() if re.fullmatch(r"Contents/masterpage\d*\.xml", n, re.I)
-                          and n not in masters))
+    for name in sorted(set(items.values()) - set(masters)):
+        if re.fullmatch(r"Contents/masterpage\d*\.xml", name, re.I):
+            masters.append(name)
+            references.update(hw.story_refs(ET.fromstring(xml_bytes(package, name))))
+    hw.check_header(header, len(sections), references)
     border = header.find(".//{" + hw.NS["hh"] + "}borderFill")
     return sections + masters, border.attrib["id"] if border is not None else None
 
@@ -125,7 +127,7 @@ def span_text(span):
 
 def matrix(value, fields):
     match = forms.TOKEN.fullmatch(value.strip())
-    data = fields.get(match[1].strip()) if match else None
+    data = fields.get(match[1].strip()) if match and fields is not None else None
     return data if isinstance(data, list) else None
 
 
@@ -189,24 +191,31 @@ def text_paragraph(value):
     return ["p", [value] if value else []]
 
 
-def project(node, fields, literals, seen):
+def project(node, fields, literals, seen, legacy):
     """Compute a content tree from the blank and measured values, or read the saved tree."""
     seen.add(node)
     if tag(node) == "tbl":
         rows = []
+        positions = []
         for row in grid(node):
             slots, values = row_plan(row, fields) if fields else ([], [])
             for item in values or [()]:
                 replacements = dict(zip(slots, item))
                 cells = []
-                for tc in children(row, "tc"):
-                    cells.append([project(p, fields, replacements, seen) for p in cell_paras(tc)])
+                for index, tc in enumerate(children(row, "tc")):
+                    column = int(only(tc, "cellAddr").getAttribute("colAddr"))
+                    span = int(only(tc, "cellSpan").getAttribute("colSpan"))
+                    if not legacy and (column != index or span != 1):
+                        positions.append([len(rows), index, column, span])
+                    cells.append([project(p, fields, replacements, seen, legacy) for p in cell_paras(tc)])
                 rows.append(cells)
         table = ["table", rows]
+        if positions:
+            table.append(positions)
         captions = children(node, "caption")
         if captions:
             caption = only(node, "caption")
-            label = project(caption, fields, {}, seen)
+            label = project(caption, fields, {}, seen, legacy)
             below = caption.getAttribute("side") in ("BOTTOM", "RIGHT")
             return ["captioned", [table, label] if below else [label, table]]
         return table
@@ -223,12 +232,12 @@ def project(node, fields, literals, seen):
                 cells = [[[text_paragraph(value)] for value in row] for row in rows]
                 content.append(["table", cells])
                 continue
-            if fields:
+            if fields is not None:
                 value, = forms.projected_lines(value, fields)
         elif isinstance(part, str):
             value = part
         else:
-            content.append(project(part, fields, literals, seen))
+            content.append(project(part, fields, literals, seen, legacy))
             continue
         if value:
             if content and isinstance(content[-1], str):
@@ -239,7 +248,7 @@ def project(node, fields, literals, seen):
 
 
 def lines(block):
-    kind, content = block
+    kind, content = block[:2]
     if kind == "table":
         for row in content:
             yield row_text([" ".join(line for p in cell for line in lines(p)) for cell in row])
@@ -251,27 +260,30 @@ def lines(block):
                 yield from lines(item)
 
 
-def form_content(package, fields=None):
+def form_content(package, fields=None, *, legacy=False):
     stories, _ = layout(package)
     sections = []
     for name in stories:
-        with minidom.parseString(xml_data(package, name)) as doc:
+        with minidom.parseString(xml_bytes(package, name)) as doc:
             root = doc.documentElement
             if (root.namespaceURI, root.localName) not in ((hw.NS["hs"], "sec"), (None, "masterPage"),
                                                            (hw.NS["hm"], "masterPage")):
                 raise ValueError("HWPX 본문 구성 오류")
             seen = set()
-            blocks = [project(p, fields or {}, {}, seen) for p in parts(root)
+            blocks = [project(p, fields, {}, seen, legacy) for p in parts(root)
                       if getattr(p, "nodeType", None) == Node.ELEMENT_NODE]
             for el in root.getElementsByTagNameNS(HP, "*"):
                 if el not in seen and (tag(el) in ("p", "tbl") or (tag(el) == "t" and forms.node_text(el))):
                     raise ValueError("HWPX 본문에서 판독되지 않은 문단·표·텍스트가 있습니다")
             if not blocks and root.localName == "sec":
                 raise ValueError("HWPX 본문 없음")
+            for comment in root.getElementsByTagNameNS(HP, "shapeComment"):
+                if value := forms.node_text(comment):
+                    blocks.append(text_paragraph(value))
             sections.append(blocks)
     reference = json.dumps(sections, ensure_ascii=False, separators=(",", ":"))
     text = "\n".join(line for section in sections for p in section for line in lines(p))
-    return forms.text_digest(reference), text
+    return forms.text_digest(reference if legacy else "HWPX form v2\n" + reference), text
 
 
 def clear_layout(p):
@@ -279,10 +291,19 @@ def clear_layout(p):
         p.removeChild(cache)
 
 
+def set_text(node, value):
+    # CDATA is only an XML serialization choice. Insert measured values as
+    # ordinary character data so the serializer can escape every legal string.
+    if node.nodeType == Node.CDATA_SECTION_NODE:
+        node.parentNode.replaceChild(node.ownerDocument.createTextNode(value), node)
+    else:
+        node.data = value
+
+
 def put_literal(p, value):
     nodes = [n for span in parts(p) if isinstance(span, list) for n in span]
     if nodes:
-        nodes[0].data = value
+        set_text(nodes[0], value)
         for node in nodes[1:]:
             node.data = ""
     else:
@@ -392,7 +413,7 @@ def fill_paragraph(p, fields, ids, width, border):
                 values = forms.replaced_texts([n.data for n in part], fields)
                 if values is not None:
                     for n, value in zip(part, values):
-                        n.data = value
+                        set_text(n, value)
                     changed = True
         elif not isinstance(part, str):
             fill = fill_table if tag(part) == "tbl" else fill_paragraph
@@ -474,7 +495,7 @@ def write_parts(blank, filled, fields):
     stories, border = layout(blank)
     used = set()
     for name in stories:
-        for el in ET.fromstring(xml_data(blank, name)).iter():
+        for el in ET.fromstring(xml_bytes(blank, name)).iter():
             for attr in ("id", "instid"):
                 value = el.get(attr, "")
                 if value.isascii() and value.isdigit():
@@ -482,12 +503,12 @@ def write_parts(blank, filled, fields):
     ids = (i for i in count(1) if i not in used)
     updated = {}
     for name in stories:
-        original = xml_data(blank, name)
+        original = xml_bytes(blank, name)
         data = fill_story(original, fields, ids, border)
         if data != original:
             updated[name] = data
-    if updated and "Preview/PrvText.txt" in blank.namelist():
-        updated["Preview/PrvText.txt"] = preview.encode("utf-8")
+    for name in hw.preview_names(blank):
+        updated[name] = preview.encode("utf-8")
     for part in blank.infolist():
         data = updated.pop(part.filename, None)
         filled.writestr(part, blank.read(part) if data is None else data)
