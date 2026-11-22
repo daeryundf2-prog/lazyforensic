@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from bisect import bisect_right
@@ -20,8 +21,10 @@ OUTPUT_NAME = "양식초안.docx"
 DIGEST_SUFFIX = ".본문.sha256"
 TOKEN = re.compile(r"\{\{([^{}\r\n\t]*)\}\}")
 WORD = report_docx.W[1:-1]
-STORY_TYPES = {"application/vnd.openxmlformats-officedocument.wordprocessingml." + kind + "+xml"
-               for kind in ("header", "footer", "footnotes", "endnotes", "comments")}
+STORY_MIME = {kind: f"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"
+              for kind in ("header", "footer", "footnotes", "endnotes", "comments")}
+OFFICE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 PACKAGE_ERRORS = (OSError, BadZipFile, KeyError, ET.ParseError, ExpatError, ValueError, RuntimeError, zlib.error)
 
 
@@ -65,9 +68,26 @@ def check_package_size(package):
 
 def story_parts(package):
     check_package_size(package)
-    main, overrides = report_docx.document_parts(package)
-    extra = sorted(name.lstrip("/") for name, mime in overrides.items() if mime in STORY_TYPES)
-    return [main, *extra]
+    main, types = report_docx.document_parts(package)
+    directory, filename = posixpath.split(main)
+    rel_path = posixpath.join(directory, "_rels", filename + ".rels")
+    linked = {}
+    if rel_path in types:
+        rels = report_docx.read_xml(package, rel_path)
+        for rel in rels.findall(PACKAGE_REL + "Relationship"):
+            kind = rel.get("Type", "").removeprefix(OFFICE_REL + "/")
+            if kind in STORY_MIME:
+                target = posixpath.normpath(posixpath.join(directory, rel.attrib["Target"])).lstrip("/")
+                if rel.get("TargetMode", "Internal") != "Internal" or types.get(target) != STORY_MIME[kind]:
+                    raise ValueError("DOCX 양식 본문 관계의 경로 또는 콘텐츠 형식 오류")
+                linked[rel.attrib["Id"]] = kind
+    for node in report_docx.read_xml(package, main).iter():
+        if node.tag in (report_docx.W + "headerReference", report_docx.W + "footerReference"):
+            kind = node.tag.removeprefix(report_docx.W).removesuffix("Reference")
+            if linked.get(node.get("{" + OFFICE_REL + "}id")) != kind:
+                raise ValueError("DOCX 머리말·꼬리말 관계 누락")
+    extra = sorted(name for name, mime in types.items() if mime in STORY_MIME.values())
+    return [main, *extra], types
 
 
 def projected_lines(value, fields):
@@ -87,22 +107,81 @@ def projected_lines(value, fields):
     yield TOKEN.sub(scalar, value)
 
 
+def has_hidden_format(node):
+    w = report_docx.W
+    return node.tag in (w + "vanish", w + "webHidden", w + "specVanish") and node.get(w + "val") not in ("0", "false", "off")
+
+
+def check_styles(styles, used):
+    w = report_docx.W
+    defaults = styles.find(w + "docDefaults")
+    if defaults is not None and any(map(has_hidden_format, defaults.iter())):
+        raise ValueError("기본 숨김 텍스트 서식은 지원하지 않습니다")
+    definitions = {style.attrib[w + "styleId"]: style for style in styles.findall(w + "style")}
+    pending = used | {name for name, style in definitions.items() if style.get(w + "default") in ("1", "true", "on")}
+    checked = set()
+    while pending:
+        name = pending.pop()
+        style = definitions.get(name)
+        if style is None or name in checked:
+            continue
+        checked.add(name)
+        if any(map(has_hidden_format, style.iter())):
+            raise ValueError("사용 중인 스타일에 숨김 텍스트 서식이 있습니다")
+        base = style.find(w + "basedOn")
+        if base is not None:
+            pending.add(base.get(w + "val"))
+
+
 def validate_story(root):
-    # These Word features obtain their visible text outside ordinary w:t runs.
-    # Page-number fields commonly occur in headers and have a cached w:t result.
+    w = report_docx.W
+    unsupported = {w + name for name in ("altChunk", "subDoc", "object", "del", "moveFrom",
+                                          "delText", "dataBinding", "txbxContent")}
+    unsupported.update({"{http://schemas.openxmlformats.org/drawingml/2006/main}t",
+                        "{http://schemas.openxmlformats.org/drawingml/2006/chart}chart",
+                        "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent"})
+    # Page numbering is layout metadata. Other fields can replace measured
+    # values with a different result when the recipient opens the document.
+    page_field = re.compile(r"(?:PAGE|NUMPAGES)(?:\s+\\\*\s+(?:MERGEFORMAT|Arabic))*", re.I)
+    field = None
     for node in root.iter():
-        if node.tag in {report_docx.W + "altChunk", report_docx.W + "subDoc", report_docx.W + "object",
-                        "{http://schemas.openxmlformats.org/drawingml/2006/main}t",
-                        "{http://schemas.openxmlformats.org/drawingml/2006/chart}chart"}:
-            raise ValueError("외부 본문·포함 개체·도형 텍스트는 양식 검증에서 지원하지 않습니다")
-    instructions = "".join(n.text or "" for n in root.iter(report_docx.W + "instrText"))
-    instructions += "".join(n.get(report_docx.W + "instr", "") for n in root.iter(report_docx.W + "fldSimple"))
-    if "{{" in instructions or "}}" in instructions:
-        raise ValueError("필드 코드에 치환되지 않은 자리표시자가 있습니다")
+        if node.tag in unsupported:
+            raise ValueError("도형·변경 내용·외부 또는 동적 본문을 검증할 수 없습니다")
+        if has_hidden_format(node):
+            raise ValueError("숨김 텍스트 서식은 양식에서 지원하지 않습니다")
+        if node.tag == w + "fldSimple":
+            if not page_field.fullmatch(node.get(w + "instr", "").strip()):
+                raise ValueError("쪽 번호 외의 동적 필드는 검증할 수 없습니다")
+        elif node.tag == w + "instrText":
+            if field is None:
+                raise ValueError("DOCX 필드 시작 누락")
+            field.append(node.text or "")
+        elif node.tag == w + "fldChar":
+            kind = node.get(w + "fldCharType")
+            if kind == "begin" and field is None:
+                field = []
+            elif kind in ("separate", "end") and field is not None:
+                if not page_field.fullmatch("".join(field).strip()):
+                    raise ValueError("쪽 번호 외의 동적 필드는 검증할 수 없습니다")
+                if kind == "end":
+                    field = None
+            else:
+                raise ValueError("DOCX 필드 구성 오류")
+    if field is not None:
+        raise ValueError("DOCX 필드 끝 누락")
+
+
+def alternative_text(root):
+    for node in root.iter():
+        if node.tag.rsplit("}", 1)[-1] in ("docPr", "cNvPr", "shape", "imagedata"):
+            for key, value in node.attrib.items():
+                if key.rsplit("}", 1)[-1] in ("descr", "title", "alt") and value:
+                    yield value
 
 
 def form_text(package, fields=None):
-    parts = story_parts(package)
+    parts, types = story_parts(package)
+    used_styles = set()
     expand = None if fields is None else lambda value: projected_lines(value, fields)
     lines = []
     for part in parts:
@@ -110,7 +189,13 @@ def form_text(package, fields=None):
         if part == parts[0]:
             root = report_docx.body(root)
         validate_story(root)
+        used_styles.update(n.get(report_docx.W + "val") for n in root.iter()
+                          if n.tag in (report_docx.W + "rStyle", report_docx.W + "pStyle", report_docx.W + "tblStyle"))
         lines.extend(report_docx.lines(root, expand))
+        lines.extend(alternative_text(root))
+    for part, mime in types.items():
+        if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml":
+            check_styles(report_docx.read_xml(package, part), used_styles)
     return "\n".join(lines)
 
 
@@ -196,7 +281,7 @@ def write_form(source, destination, fields):
                     expected = report_hwpx_forms.write_parts(blank, filled, fields)
                 else:
                     expected = text_digest(form_text(blank, fields))
-                    stories = set(story_parts(blank))
+                    stories = set(story_parts(blank)[0])
                     for part in blank.infolist():
                         data = blank.read(part)
                         if part.filename in stories:

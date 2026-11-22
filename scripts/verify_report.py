@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from zipfile import ZipFile
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -150,13 +151,18 @@ def main(argv=None):
         is_form = (args.template_digest is not None or reference.exists()
                    or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
         try:
-            text = (report_templates.check_form(report_path, reference, errors) if is_form
-                    else read_document(report_path))
+            if is_form:
+                text = report_templates.check_form(report_path, reference, errors)
+            elif suffix == ".docx":
+                with ZipFile(report_path) as package:
+                    text = report_templates.form_text(package)
+            else:
+                text = read_document(report_path)
             companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
             if args.markdown or companion.exists():
                 md = companion.read_text(encoding="utf-8-sig")
                 # DOCX Markdown companions describe the main body only, excluding header stories.
-                body = read_document(report_path) if is_form and suffix == ".docx" else text
+                body = read_document(report_path) if suffix == ".docx" else text
                 if body != report_docx.draft_text(md):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
         except report_templates.PACKAGE_ERRORS as exc:

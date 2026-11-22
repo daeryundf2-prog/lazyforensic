@@ -159,12 +159,17 @@ def document_parts(package):
     if len(main) != 1 or main[0].get("TargetMode", "Internal") != "Internal":
         raise ValueError("DOCX 본문 관계 오류")
     target = main[0].attrib["Target"].removeprefix("/")
-    overrides = {t.get("PartName"): t.get("ContentType") for t in types.findall(type_ns + "Override")}
-    defaults = {t.get("Extension", "").lower(): t.get("ContentType") for t in types.findall(type_ns + "Default")}
+    overrides = {t.attrib["PartName"]: t.attrib["ContentType"] for t in types.findall(type_ns + "Override")}
+    defaults = {t.attrib["Extension"].lower(): t.attrib["ContentType"] for t in types.findall(type_ns + "Default")}
     mime = overrides.get("/" + target, defaults.get(Path(target).suffix[1:].lower()))
     if mime != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":
         raise ValueError("DOCX 본문 콘텐츠 형식 오류")
-    return target, overrides
+    types_by_part = {name: overrides.get("/" + name, defaults.get(Path(name).suffix[1:].lower()))
+                     for name in package.namelist()}
+    # Keep explicitly declared parts even if the member is missing, so callers
+    # can fail closed when they try to read a declared story.
+    types_by_part.update((name.lstrip("/"), mime) for name, mime in overrides.items())
+    return target, types_by_part
 
 
 def body(part):
@@ -172,6 +177,14 @@ def body(part):
     if part.tag != W + "document" or result is None:
         raise ValueError("DOCX 본문 없음")
     return result
+
+
+def row_cells(row):
+    for child in row:
+        if child.tag == W + "tc":
+            yield child
+        elif child.tag != W + "tr":
+            yield from row_cells(child)
 
 
 def lines(node, expand=None):
@@ -185,7 +198,7 @@ def lines(node, expand=None):
         else:
             yield from expand(value)
     elif node.tag == W + "tr":
-        yield row_text([" ".join(lines(tc, expand)) for tc in node.findall(W + "tc")])
+        yield row_text([" ".join(lines(tc, expand)) for tc in row_cells(node)])
     else:
         for child in node:
             yield from lines(child, expand)
