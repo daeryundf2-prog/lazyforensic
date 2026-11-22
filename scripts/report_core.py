@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -21,6 +22,7 @@ try:
         ISO_DATE_RE,
         ISO_DT_RE,
         KOR_DT_RE,
+        KST,
         NEGATION_RE,
     )
 except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
@@ -33,6 +35,7 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
         ISO_DATE_RE,
         ISO_DT_RE,
         KOR_DT_RE,
+        KST,
         NEGATION_RE,
     )
 
@@ -107,9 +110,23 @@ def _h12_to_24(ampm: str | None, hour: int | None) -> int | None:
 def extract_timestamps(text: str) -> list[str]:
     """정규형 집합: 'YYYY-MM-DD HH:MM(:SS)' 와 'YYYY-MM-DD'."""
     out: set[str] = set()
+    zoned_starts = set()
     for m in ISO_DT_RE.finditer(text):
-        y, mo, d, h, mi, s = m.groups()
-        out.add(f"{int(y):04d}-{int(mo):02d}-{int(d):02d} {int(h):02d}:{mi}:{int(s) if s else 0:02d}")
+        y, mo, d, h, mi, sec, fraction, zone = m.groups()
+        stamp = f"{y}-{int(mo):02d}-{int(d):02d} {int(h):02d}:{mi}:{sec or '00'}"
+        if zone:
+            zoned_starts.add(m.start())
+            offset = {"Z": "+00:00", " UTC": "+00:00", " KST": "+09:00"}.get(zone, zone)
+            if ":" not in offset:
+                offset = offset[:3] + ":" + offset[3:]
+            try:
+                dt = datetime.fromisoformat(stamp + offset).astimezone(KST)
+            except (ValueError, OverflowError):
+                # Preserve invalid input for the verifier's calendar/clock check.
+                out.add(stamp + offset)
+                continue
+            stamp = dt.replace(tzinfo=None).isoformat(sep=" ")
+        out.add(stamp + (fraction or "").rstrip("0").rstrip("."))
     for m in KOR_DT_RE.finditer(text):
         date = f"{int(m.group('y')):04d}-{int(m.group('mo')):02d}-{int(m.group('d')):02d}"
         if m.group("hkor"):
@@ -122,11 +139,13 @@ def extract_timestamps(text: str) -> list[str]:
             out.add(date)
             continue
         hour = _h12_to_24(m.group("ampm"), hour)
-        out.add(f"{date} {hour:02d}:{minute:02d}:{0:02d}")
+        out.add(f"{date} {hour:02d}:{minute:02d}:{m.group('seiso') or '00'}")
     for m in DOT_DATE_RE.finditer(text):
         y, mo, d = m.groups()
         out.add(f"{int(y):04d}-{int(mo):02d}-{int(d):02d}")
     for m in ISO_DATE_RE.finditer(text):
+        if m.start() in zoned_starts:
+            continue
         y, mo, d = m.groups()
         out.add(f"{int(y):04d}-{int(mo):02d}-{int(d):02d}")
     return sorted(out)
@@ -140,13 +159,12 @@ def read_text_smart(path: Path, max_bytes: int = 8 * 1024 * 1024) -> tuple[str, 
     대용량 파일은 앞 max_bytes까지만 읽고 lossy=True로 표시한다 (Lazy Read:
     전체 로딩 OOM 방지, 잘림은 호출자가 경고한다).
     """
-    size = path.stat().st_size if path.exists() else 0
-    truncated = size > max_bytes
-    with open(path, "rb") as f:
-        raw = f.read(max_bytes + 1 if truncated else max_bytes)
-    if truncated:
-        raw = raw[:max_bytes]
-    for enc in ("utf-8-sig", "utf-16", "cp949"):
+    with path.open("rb") as f:
+        raw = f.read(max_bytes + 1)
+    truncated = len(raw) > max_bytes
+    raw = raw[:max_bytes]
+    encodings = ("utf-16",) if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else ("utf-8-sig", "cp949")
+    for enc in encodings:
         try:
             return raw.decode(enc), enc + ("(truncated)" if truncated else ""), truncated
         except (UnicodeDecodeError, UnicodeError):

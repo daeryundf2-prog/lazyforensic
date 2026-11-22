@@ -155,11 +155,16 @@ def main(argv=None):
     elif args.markdown:
         parser.error("--markdown은 DOCX 초안 검증에 사용합니다.")
     else:
-        text, encoding_used, lossy = read_text_smart(report_path)
+        try:
+            text, encoding_used, lossy = read_text_smart(report_path)
+        except OSError as exc:
+            text, encoding_used, lossy = "", "unknown", False
+            errors.append(f"보고서를 읽을 수 없음: {exc}")
 
     warnings = []
     if lossy:
-        warnings.append(f"보고서 인코딩 판별 실패({encoding_used}) — 치환 문자가 있어 검증 누락 가능")
+        errors.append(f"보고서 전체를 판독할 수 없음 ({encoding_used})")
+        text = ""
 
     # 1) 금지 문구 (직후 부정 문맥은 제외)
     forbidden = scan_forbidden(text)
@@ -217,9 +222,8 @@ def main(argv=None):
     future_hits: set[str] = set()
     for line in text.splitlines():
         for ts in extract_timestamps(line):
-            ts_date = ts.split(" ")[0]
             try:
-                is_future = datetime.strptime(ts_date, "%Y-%m-%d").replace(tzinfo=KST) > now
+                is_future = datetime.fromisoformat(ts).replace(tzinfo=KST) > now
             except ValueError:
                 # 월/일 오기(예: 2024-13-45)도 정합성 오류로 본다
                 if ts not in future_hits:
@@ -243,7 +247,9 @@ def main(argv=None):
     #    미확인/미측정 표기가 '있는 줄'의 시각은 건너뛴다 (전역 치환 아닌 per-item 판정).
     if args.timeline:
         try:
-            tl_text, _, _ = read_text_smart(Path(args.timeline))
+            tl_text, enc, partial = read_text_smart(Path(args.timeline))
+            if partial:
+                raise ValueError(f"타임라인 전체를 판독할 수 없음 ({enc})")
             tl_times = set(extract_timestamps(tl_text))
             for line in text.splitlines():
                 if "미확인" in line or "미측정" in line:
@@ -251,8 +257,8 @@ def main(argv=None):
                 orphan_times = [t for t in extract_timestamps(line) if t not in tl_times]
                 if orphan_times:
                     warnings.append(f"타임라인에 없는 시각 {orphan_times[:3]} — 근거 시각만 사용해야 함")
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            errors.append(f"타임라인을 읽을 수 없음: {exc}")
 
     # 5) 법령 환각: 조문 인용이 있으면 korean_law MCP 출처 표기 요구 (자동 대조 불가 → WARN)
     citations = sorted(set(LAW_CITATION_RE.findall(text)))
