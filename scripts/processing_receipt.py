@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-TOOL_VERSION = "1.6.1"
+TOOL_VERSION = "1.6.2"
 RECEIPT_SCHEMA_VERSION = "1.0"
 STATUSES = ("complete", "partial", "failed", "not_measured")
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")

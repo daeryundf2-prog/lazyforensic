@@ -134,8 +134,10 @@ if ($LASTEXITCODE -ne 0) {
 
 # 4. Command on PATH
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-$shim = "@echo off`r`ncall `"$AppDir\bin\lazyforensic.cmd`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-[System.IO.File]::WriteAllText((Join-Path $BinDir "lazyforensic.cmd"), $shim, (New-Object System.Text.UTF8Encoding($false)))
+# cmd.exe decodes batch files using the active code page. Keep the shim ASCII
+# and expand its Unicode location at runtime.
+$shim = "@echo off`r`n`"%~dp0..\app\bin\lazyforensic.cmd`" %*`r`n"
+[System.IO.File]::WriteAllText((Join-Path $BinDir "lazyforensic.cmd"), $shim, [System.Text.Encoding]::ASCII)
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (-not $userPath) { $userPath = "" }
 if (($userPath -split ";") -notcontains $BinDir) {

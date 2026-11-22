@@ -37,7 +37,18 @@ curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/i
 - Windows: `powershell -ExecutionPolicy Bypass -File install.ps1`
 - macOS: `sh install.sh`
 
+다른 위치에서 설치 스크립트를 실행할 때는 `LAZYFORENSIC_SOURCE`에 압축을 푼 폴더의 경로를 지정할 수 있다.
+Windows에서는 `$env:LAZYFORENSIC_SOURCE = 'D:\도구 모음\lazyforensic'`, macOS·Linux에서는
+`LAZYFORENSIC_SOURCE="/경로/도구 모음/lazyforensic" sh install.sh`를 사용한다.
+
 오프라인이면 Pillow 설치가 건너뛰어져 사진 EXIF 점검만 "미수행"으로 나오고, 나머지는 그대로 동작한다.
+
+### Windows에서 실행 파일을 찾지 못할 때
+
+새 PowerShell에서 `Get-Command lazyforensic`을 실행한다. 설치가 끝났으면
+`%LOCALAPPDATA%\LazyForensic\bin\lazyforensic.cmd`가 표시된다.
+이 경로가 표시되는데도 한글 사용자 폴더에서 실행 경로가 깨지면 v1.6.2 이상으로 다시 설치해 실행 파일을 갱신한다.
+`lazyforensic --help`로 확인한 뒤, 공백이 있는 경로는 `lazyforensic report "D:\증거 폴더"`처럼 따옴표로 묶는다.
 
 ## 2. 실행
 
