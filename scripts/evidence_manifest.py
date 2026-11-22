@@ -27,12 +27,13 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 KST = timezone(timedelta(hours=9))
-TOOL_VERSION = "1.2.0"
+TOOL_VERSION = "1.2.1"
 
 
 def sha256_file(path: Path) -> str:
@@ -46,11 +47,11 @@ def sha256_file(path: Path) -> str:
 def build_manifest(root: Path) -> dict:
     files = []
     for f in sorted(root.rglob("*")):
-        if not f.is_file() or "__pycache__" in f.parts:
+        if not f.is_file():
             continue
         st = f.stat()
         files.append({
-            "path": str(f.relative_to(root)),
+            "path": f.relative_to(root).as_posix(),
             "sha256": sha256_file(f),
             "size": st.st_size,
             "mtime": datetime.fromtimestamp(st.st_mtime, KST).isoformat(),
@@ -68,15 +69,33 @@ def build_manifest(root: Path) -> dict:
 
 def verify_manifest(root: Path, manifest: dict) -> list[str]:
     problems = []
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
+        return ["INVALID: files 목록 없음"]
+    entries = manifest["files"]
+    if manifest.get("file_count", len(entries)) != len(entries):
+        return ["INVALID: file_count 불일치"]
     recorded_root = manifest.get("root")
+    if recorded_root is not None and not isinstance(recorded_root, str):
+        return ["INVALID: root 경로 오류"]
     if recorded_root and str(Path(recorded_root)) != str(root.resolve()):
         # 불일치로 세지 않고 경고만 — 다른 경로로 옮긴 사본을 대조하는 정상 사용도 있다.
         print(f"경고: 매니페스트 기록 루트({recorded_root})가 검증 대상({root.resolve()})과 "
               "다릅니다 — 다른 위치로 옮겨졌거나 다른 디렉터리의 매니페스트일 수 있습니다",
               file=sys.stderr)
-    recorded = {e["path"]: e for e in manifest.get("files", [])}
-    current = {str(f.relative_to(root)): f for f in root.rglob("*")
-               if f.is_file() and "__pycache__" not in f.parts}
+    windows_paths = bool(recorded_root and PureWindowsPath(recorded_root).drive)
+    recorded = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return ["INVALID: 파일 항목 오류"]
+        path, digest = entry.get("path"), entry.get("sha256")
+        if not isinstance(path, str) or not path or not isinstance(digest, str) or not re.fullmatch("[a-fA-F0-9]{64}", digest):
+            return ["INVALID: 파일 경로 또는 SHA-256 오류"]
+        if windows_paths:
+            path = path.replace("\\", "/")
+        if path in recorded:
+            return [f"DUPLICATE: {path}"]
+        recorded[path] = digest.lower()
+    current = {f.relative_to(root).as_posix(): f for f in root.rglob("*") if f.is_file()}
 
     for path in sorted(set(recorded) - set(current)):
         problems.append(f"MISSING: {path}")
@@ -84,7 +103,7 @@ def verify_manifest(root: Path, manifest: dict) -> list[str]:
         problems.append(f"NEW: {path}")
     for path in sorted(set(recorded) & set(current)):
         digest = sha256_file(current[path])
-        if digest != recorded[path]["sha256"]:
+        if digest != recorded[path]:
             problems.append(f"CHANGED: {path}")
     return problems
 
@@ -104,11 +123,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.verify:
         try:
-            manifest = json.loads(Path(args.verify).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
+            manifest = json.loads(Path(args.verify).read_text(encoding="utf-8-sig"))
+            problems = verify_manifest(root, manifest)
+        except (OSError, ValueError) as e:
             print(f"매니페스트를 읽을 수 없습니다: {e}", file=sys.stderr)
             return 2
-        problems = verify_manifest(root, manifest)
         if problems:
             print(f"불일치 {len(problems)}건:")
             for p in problems:

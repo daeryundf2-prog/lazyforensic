@@ -34,7 +34,7 @@ import re
 import struct
 import sys
 import zlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 EVF_SIGNATURE = b"EVF\x09\x0d\x0a\xff\x00"
@@ -90,7 +90,7 @@ def segment_paths(first: Path) -> list[Path]:
     return paths
 
 
-def _read_sections(f, path: Path):
+def _read_sections(f, path: Path, number: int):
     """세그먼트 파일의 섹션 목록 [(type, offset, size)]."""
     f.seek(0)
     head = f.read(13)
@@ -100,6 +100,8 @@ def _read_sections(f, path: Path):
         if head[:8] == b"LVF\x09\x0d\x0a\xff\x00":
             raise EwfError(f"{path.name}: 논리 증거(L01) 형식은 미지원")
         raise EwfError(f"{path.name}: EWF 서명이 아님")
+    if len(head) != 13 or struct.unpack_from("<H", head, 9)[0] != number:
+        raise EwfError(f"{path.name}: 세그먼트 번호 불일치 ({number})")
     file_size = path.stat().st_size
     sections = []
     offset = 13
@@ -116,8 +118,10 @@ def _read_sections(f, path: Path):
         if zlib.adler32(desc[:72]) != stored_ck:
             raise EwfError(f"{path.name}: 섹션 기술자 체크섬 불일치 ({stype} @ {offset})")
         sections.append((stype, offset, size))
-        if stype in ("done", "next") or next_off == offset:
+        if stype in ("done", "next"):
             break
+        if size < SECTION_DESCRIPTOR_SIZE or offset + size > min(file_size, next_off):
+            raise EwfError(f"{path.name}: 섹션 범위 오류 ({stype} @ {offset})")
         offset = next_off
     return sections
 
@@ -138,8 +142,12 @@ def _format_header_date(raw: str) -> str:
     raw = raw.strip()
     if not raw:
         return ""
-    if raw.isdigit():
-        return datetime.fromtimestamp(int(raw), timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    if re.fullmatch(r"-?[0-9]+", raw):
+        try:
+            dt = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(raw))
+        except (ValueError, OverflowError):
+            return raw
+        return dt.isoformat(sep=" ", timespec="seconds")[:-6] + " UTC"
     parts = raw.split()
     if len(parts) >= 6 and all(p.isdigit() for p in parts[:6]):
         y, mo, d, h, mi, s = (int(p) for p in parts[:6])
@@ -156,18 +164,27 @@ class EwfImage:
         self.segments = segment_paths(self.first)
         self.header: dict = {}
         self.media: dict = {}
-        self.stored_md5: str | None = None
-        self.stored_sha1: str | None = None
+        self.stored: dict[str, list[str]] = {"md5": [], "sha1": []}
         self.chunks: list[tuple[int, int, int, bool]] = []  # (segment idx, offset, size, compressed)
         self.format_note = ""
         self._parse()
 
+    @property
+    def stored_md5(self):
+        return self.stored["md5"][-1] if self.stored["md5"] else None
+
+    @property
+    def stored_sha1(self):
+        return self.stored["sha1"][-1] if self.stored["sha1"] else None
+
     def _parse(self):
         header2_seen = False
-        last_done = False
         for seg_idx, path in enumerate(self.segments):
             with path.open("rb") as f:
-                sections = _read_sections(f, path)
+                sections = _read_sections(f, path, seg_idx + 1)
+                expected = "done" if seg_idx + 1 == len(self.segments) else "next"
+                if sections[-1][0] != expected:
+                    raise EwfError(f"{path.name}: 세그먼트 종료 섹션 불일치 ({expected} 필요)")
                 sectors_range = None
                 for stype, off, size in sections:
                     data_off = off + SECTION_DESCRIPTOR_SIZE
@@ -209,14 +226,18 @@ class EwfImage:
                             "media_size": sector_count * bps,
                         }
                     elif stype == "sectors":
-                        sectors_range = (off, off + size)
+                        sectors_range = (data_off, off + size)
                     elif stype == "table":
                         if sectors_range is None:
                             raise EwfError(f"{path.name}: 'sectors' 섹션 없는 레이아웃은 미지원")
                         f.seek(data_off)
+                        if data_len < 24:
+                            raise EwfError(f"{path.name}: table 헤더가 잘림")
                         hdr = f.read(24)
                         count = struct.unpack_from("<I", hdr, 0)[0]
                         base = struct.unpack_from("<Q", hdr, 8)[0]
+                        if count > (data_len - 24) // 4:
+                            raise EwfError(f"{path.name}: table 섹션이 잘림")
                         raw = f.read(count * 4)
                         if len(raw) < count * 4:
                             raise EwfError(f"{path.name}: table 섹션이 잘림")
@@ -228,25 +249,17 @@ class EwfImage:
                             if not (sectors_range[0] <= start < end <= sectors_range[1]):
                                 raise EwfError(f"{path.name}: 청크 오프셋이 sectors 범위를 벗어남")
                             self.chunks.append((seg_idx, start, end - start, bool(e & 0x80000000)))
-                    elif stype == "hash":
+                    elif stype in ("hash", "digest"):
+                        required = 16 if stype == "hash" else 36
+                        if data_len < required:
+                            raise EwfError(f"{path.name}: {stype} 섹션이 잘림")
                         f.seek(data_off)
-                        raw = f.read(16)
-                        if len(raw) == 16 and raw != b"\x00" * 16:
-                            self.stored_md5 = raw.hex()
-                    elif stype == "digest":
-                        f.seek(data_off)
-                        raw = f.read(36)
-                        if len(raw) == 36:
-                            if raw[:16] != b"\x00" * 16:
-                                self.stored_md5 = raw[:16].hex()
-                            if raw[16:36] != b"\x00" * 20:
-                                self.stored_sha1 = raw[16:36].hex()
-                    elif stype == "done":
-                        last_done = True
+                        raw = f.read(required)
+                        for algo, value in (("md5", raw[:16]), ("sha1", raw[16:])):
+                            if any(value) and value.hex() not in self.stored[algo]:
+                                self.stored[algo].append(value.hex())
         if not self.media:
             raise EwfError("volume/disk 섹션 없음 — 미디어 크기를 알 수 없음")
-        if not last_done:
-            raise EwfError("마지막 세그먼트에 'done' 섹션 없음 — 세그먼트 누락 또는 잘림")
         if self.media["chunk_count"] and len(self.chunks) != self.media["chunk_count"]:
             raise EwfError(f"청크 수 불일치: volume {self.media['chunk_count']} / table {len(self.chunks)}")
 
@@ -274,24 +287,32 @@ class EwfImage:
         try:
             for seg_idx, off, size, compressed in self.chunks:
                 if remaining <= 0:
-                    break
+                    raise EwfError("미디어 크기를 초과한 청크")
                 fh = handles.get(seg_idx)
                 if fh is None:
                     fh = handles[seg_idx] = self.segments[seg_idx].open("rb")
                 fh.seek(off)
                 raw = fh.read(size)
+                want = min(chunk_size, remaining)
+                if len(raw) != size:
+                    raise EwfError(f"청크가 잘림 (offset {off})")
                 if compressed:
                     try:
-                        data = zlib.decompress(raw)
+                        stream = zlib.decompressobj()
+                        data = stream.decompress(raw, min(chunk_size + 1, sys.maxsize))
                     except zlib.error as e:
                         raise EwfError(f"청크 압축 해제 실패 (offset {off}): {e}") from e
-                else:
-                    want = min(chunk_size, remaining)
-                    data = raw[:want]
-                    tail = raw[want:want + 4]
-                    if len(tail) == 4 and zlib.adler32(data) != struct.unpack("<I", tail)[0]:
+                    if not stream.eof or len(data) not in (want, chunk_size):
+                        raise EwfError(f"압축 청크 크기 오류 (offset {off})")
+                elif size - 4 in (want, chunk_size):
+                    data = raw[:-4]
+                    if zlib.adler32(data) != struct.unpack_from("<I", raw, size - 4)[0]:
                         raise EwfError(f"비압축 청크 체크섬 불일치 (offset {off})")
-                data = data[:remaining]
+                elif size in (want, chunk_size):
+                    data = raw  # checksum-free chunk
+                else:
+                    raise EwfError(f"비압축 청크 크기 오류 (offset {off})")
+                data = data[:want]
                 remaining -= len(data)
                 yield data
         finally:
@@ -320,6 +341,9 @@ def examine(path: str | Path, verify: bool = True) -> dict:
     except (EwfError, OSError, struct.error) as e:
         return {"image": path.name, "status": "unsupported", "error": str(e)}
     result = img.metadata()
+    conflicts = {k: v for k, v in img.stored.items() if len(v) > 1}
+    if conflicts:
+        result["conflicting_stored_hashes"] = conflicts
     if not verify:
         result["status"] = "not_verified"
         return result
@@ -333,7 +357,7 @@ def examine(path: str | Path, verify: bool = True) -> dict:
     for algo in ("md5", "sha1"):
         stored = result["stored_hashes"].get(algo)
         if stored:
-            compared[algo] = "match" if stored == computed[algo] else "mismatch"
+            compared[algo] = "match" if stored == computed[algo] and algo not in conflicts else "mismatch"
     result["comparison"] = compared
     if not compared:
         result["status"] = "no_stored_hash"

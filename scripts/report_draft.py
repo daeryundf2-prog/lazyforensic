@@ -116,7 +116,7 @@ def category(path: str) -> str:
 
 def md_cell(value) -> str:
     s = UNK if value is None or value == "" else str(value)
-    return s.replace("|", "\\|").replace("\n", " ")
+    return re.sub(r"[\r]\n|[\r\n\v\f\x1c-\x1e\x85\u2028\u2029]", " ", s.replace("|", "\\|"))
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
@@ -135,13 +135,25 @@ def _load_module(name: str):
 
 # ---------------------------------------------------------------- 입력
 
+class CaseInfoError(ValueError):
+    """The supplied case metadata could not be read."""
+
+
 def load_case_info(path: Path | None) -> dict:
     info = {k: "" for k, _, _ in CASE_FIELDS}
     if path is None:
         return info
-    text = path.read_text(encoding="utf-8-sig")
+    try:
+        data = path.read_bytes()
+        encoding = "utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+        text = data.decode(encoding)
+        if path.suffix.lower() == ".json":
+            raw = json.loads(text)
+            if not isinstance(raw, dict):
+                raise ValueError("JSON 객체가 필요합니다")
+    except (OSError, ValueError) as exc:
+        raise CaseInfoError(f"사건 정보 파일을 읽을 수 없습니다 ({path.name}): {exc}") from exc
     if path.suffix.lower() == ".json":
-        raw = json.loads(text)
         pairs = {str(k).strip(): str(v).strip() for k, v in raw.items() if v is not None}
     else:
         pairs = {}
@@ -224,28 +236,23 @@ def post_check(root: Path, before: list[dict]) -> dict:
 
 
 def compare_references(entries: list[dict], inventory: list[dict], images: list[dict]) -> list[dict]:
-    image_by_stem = {}
-    for img in images:
-        stem = Path(img["file"]).name
-        stem = re.sub(r"\.[Ee]01$", "", stem).lower()
-        image_by_stem[stem] = img
-    generic, results = [], []
-    for e in entries:
-        p = Path(e["name"])
-        img = image_by_stem.get(p.stem.lower()) if p.suffix.lower() in RAW_IMAGE_EXTS else None
-        if img is None:
-            generic.append(e)
+    results = hash_reference.match_reference(entries, inventory)
+    media_files = [{"path": img["file"], **(img.get("computed_hashes") or {})} for img in images]
+    for i, (entry, result) in enumerate(zip(entries, results)):
+        name = Path(entry["name"])
+        if result["result"] != "not_found" or result["file"] or name.suffix.lower() not in RAW_IMAGE_EXTS:
             continue
-        computed = img.get("computed_hashes") or {}
-        actual = computed.get(e["algorithm"])
-        if not actual:
-            results.append({**e, "result": "not_verified", "file": img["file"],
-                            "note": "이미지 미디어 해시를 재계산하지 못함"})
-        else:
-            results.append({**e, "result": "match" if actual == e["hash"] else "mismatch",
-                            "file": img["file"], "matched_by": "image_media", "actual": actual})
-    ok_files = [f for f in inventory if "sha256" in f]
-    return results + hash_reference.match_reference(generic, ok_files)
+        # A raw-media reference can name the acquisition source of an E01.
+        # Keep the directory when mapping that name to the container.
+        media_entry = {**entry, "name": name.with_suffix(".E01").as_posix()}
+        media, = hash_reference.match_reference([media_entry], media_files)
+        if media["file"]:
+            if media["result"] == "not_found":
+                media.update(result="not_verified", note="이미지 미디어 해시를 재계산하지 못함")
+            else:
+                media["matched_by"] = "image_media"
+        results[i] = {**media, "name": entry["name"]}
+    return results
 
 
 # ---------------------------------------------------------------- 선조사·타임라인
@@ -491,7 +498,8 @@ def render_report(ctx: dict) -> str:
                         result = "대조 대상 없음(참고값)"
                     else:
                         result = {"match": "일치", "mismatch": "불일치"}.get(cmp_.get(algo), UNK)
-                    rows.append([img["file"], label, stored.get(algo) or "기록 없음",
+                    conflicts = img.get("conflicting_stored_hashes", {}).get(algo, [])
+                    rows.append([img["file"], label, " / ".join(conflicts) or stored.get(algo) or "기록 없음",
                                  comp.get(algo) or UNK, result])
             if comp.get("sha256"):
                 rows.append([img["file"], "SHA-256", "기록 없음", comp["sha256"], "대조 대상 없음(참고값)"])
@@ -1004,6 +1012,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
              skip_image_verify: bool, log=print, *, docx: bool = True) -> dict:
     started = now_kst()
     root = root.resolve()
+    case = load_case_info(case_info)
     out.mkdir(parents=True, exist_ok=True)
     env = environment(started)
 
@@ -1040,7 +1049,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     post = post_check(root, inventory)
     env["finished"] = fmt_dt(now_kst())
 
-    ctx = {"docx": docx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": load_case_info(case_info),
+    ctx = {"docx": docx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": case,
            "images": images, "references": references, "reference_sources": sources, "post": post,
            "survey": survey, "events": events, "environment": env, "skip_image_verify": skip_image_verify}
 
@@ -1074,7 +1083,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     elif post["status"] != "match":
         problems.append("분석 전후 해시 불일치")
     problems += [f"E01 {i['file']}: {IMAGE_STATUS_KO[i['status']]}" for i in images
-                 if i["status"] in ("mismatch", "read_error")]
+                 if i["status"] in ("mismatch", "read_error", "unsupported")]
     if references and any(r["result"] == "mismatch" for r in references):
         problems.append("참조 해시 불일치")
     if verify.get("verdict") in ("FAIL", "ERROR"):
@@ -1136,7 +1145,11 @@ def main(argv: list[str] | None = None) -> int:
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else []
 
     print(f"LazyForensic {tool_version()} — 보고서 초안 생성 (로컬 전용, 증거 폴더는 읽기만 함)")
-    res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify, docx=args.docx)
+    try:
+        res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify, docx=args.docx)
+    except CaseInfoError as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     print("")
     print(f"완료: {res['paths']['html']}")

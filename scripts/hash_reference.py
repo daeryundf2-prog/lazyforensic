@@ -104,7 +104,7 @@ def parse_text(text: str, source: str = "") -> list[dict]:
                 out.append(_entry(m.group(2), algo, m.group(3), source, n))
             continue
         m = FILENAME_LABEL_RE.match(line)
-        if m and not HEX_RE.search(m.group(1)):
+        if m:
             block_name = m.group(1)
             # 'Original Filename: X  in: image.raw' 같은 꼬리 정보 제거
             block_name = re.split(r"\s{2,}in:\s|\s+in:\s", block_name)[0].strip()
@@ -151,27 +151,25 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
 
     result: match | mismatch | not_found | ambiguous
     """
-    by_path = {f["path"].replace("\\", "/"): f for f in files}
-    by_base: dict[str, list[dict]] = {}
+    by_base: dict[str, list[tuple[str, dict]]] = {}
     for f in files:
-        by_base.setdefault(Path(f["path"]).name.lower(), []).append(f)
+        path = f["path"].replace("\\", "/")
+        by_base.setdefault(path.rsplit("/", 1)[-1].casefold(), []).append((path, f))
     results = []
     for e in entries:
-        name = e["name"]
-        target = by_path.get(name)
-        how = "path"
-        if target is None:
-            suffix = [f for p, f in by_path.items() if p.lower().endswith("/" + name.lower())]
-            if len(suffix) == 1:
-                target, how = suffix[0], "path_suffix"
-        if target is None:
-            cands = by_base.get(Path(name).name.lower(), [])
-            if len(cands) == 1:
-                target, how = cands[0], "basename"
-            elif len(cands) > 1:
-                results.append({**e, "result": "ambiguous", "file": None,
-                                "note": f"같은 이름 {len(cands)}개"})
-                continue
+        name = e["name"].replace("\\", "/")
+        folded = name.casefold()
+        candidates = by_base.get(folded.rsplit("/", 1)[-1], [])
+        exact = [f for p, f in candidates if p == name]
+        suffix = [f for p, f in candidates if p.casefold() == folded
+                  or p.casefold().endswith("/" + folded) or folded.endswith("/" + p.casefold())]
+        matches = exact or suffix or [f for _, f in candidates]
+        how = "path" if exact else ("path_suffix" if suffix else "basename")
+        if len(matches) > 1:
+            results.append({**e, "result": "ambiguous", "file": None,
+                            "note": f"같은 이름 {len(matches)}개"})
+            continue
+        target = matches[0] if matches else None
         if target is None:
             results.append({**e, "result": "not_found", "file": None})
             continue

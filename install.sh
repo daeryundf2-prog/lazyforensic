@@ -81,9 +81,12 @@ else
   SRC="$(dirname "$(dirname "$SRC")")"
 fi
 if [ "$SRC" != "$APP_DIR" ]; then
+  (cd "$SRC" && tar --exclude=.git -cf "$TMP/app.tar" .)
+  mkdir "$TMP/app"
+  (cd "$TMP/app" && tar -xf "$TMP/app.tar")
+  mkdir -p "$INSTALL_ROOT"
   rm -rf "$APP_DIR"
-  mkdir -p "$APP_DIR"
-  (cd "$SRC" && tar --exclude=.git -cf - .) | (cd "$APP_DIR" && tar -xf -)
+  mv "$TMP/app" "$APP_DIR"
 fi
 chmod +x "$APP_DIR/bin/lazyforensic"
 say "Installed to $APP_DIR"
@@ -103,8 +106,13 @@ ln -sf "$APP_DIR/bin/lazyforensic" "$LINK_DIR/lazyforensic"
 case ":$PATH:" in
   *":$LINK_DIR:"*) ;;
   *)
-    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
-      if [ -f "$rc" ] || [ "$rc" = "$HOME/.zshrc" -a "$(uname -s)" = "Darwin" ]; then
+    case "${SHELL:-}" in
+      */bash) active_rc="$HOME/.bashrc" ;;
+      */zsh) active_rc="$HOME/.zshrc" ;;
+      *) active_rc="$HOME/.profile" ;;
+    esac
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+      if [ -f "$rc" ] || [ "$rc" = "$active_rc" ] || [ "$rc" = "$HOME/.profile" ]; then
         if ! grep -qs 'LazyForensic PATH' "$rc"; then
           printf '\n# LazyForensic PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
           say "Added ~/.local/bin to PATH in $rc"
