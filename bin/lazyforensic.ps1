@@ -27,7 +27,7 @@ lazyforensic - 증거 선조사 CLI 래퍼 (로컬 전용, Windows)
   lazyforensic report <증거폴더> [-o 출력폴더] [--case-info 사건정보.txt] [--hashes 해시목록 ...]
                                      한국어 보고서 초안 + 무결성 검증 (주 명령)
   lazyforensic report --case-template 사건정보.txt   사건 정보 빈 양식 만들기
-  lazyforensic e01 <이미지.E01> [--json]  E01 획득 기록값 + 저장 해시 재계산 대조
+  lazyforensic ewf <이미지> [--json]  EWF 획득 정보·논리 파일·해시 검증 (별칭 e01)
   lazyforensic scan <폴더> [--keywords ...] [--stt] [-o out.json] [--markdown out.md]
   lazyforensic stt <오디오|폴더> [--keywords ...] [--verbatim]
   lazyforensic pii <파일|폴더> [--mask]
@@ -59,6 +59,7 @@ $rest = @($args | Select-Object -Skip 1)
 
 switch ($cmd) {
     "report"   { $script = "report_draft.py" }
+    "ewf"      { $script = "ewf_image.py" }
     "e01"      { $script = "ewf_image.py" }
     "scan"     { $script = "case_survey.py" }
     "stt"      { $script = "local_stt.py" }

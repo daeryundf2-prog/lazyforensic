@@ -8,7 +8,7 @@ report_draft.py — 증거 폴더 하나로 한국어 포렌식 분석 보고서
 
 하는 일 (모두 로컬, 표준 라이브러리만 필수):
   1. 증거 폴더 전체 파일의 MD5·SHA-1·SHA-256 계산 (분석 전)
-  2. E01 이미지: 획득 기록값 판독 + 저장 해시와 재계산 해시 대조 (scripts/ewf_image.py)
+  2. EWF 이미지: 획득 기록값 판독 + 저장 해시와 재계산 해시 대조 (scripts/ewf_image.py)
   3. 참조 해시 목록(--hashes)과 대조 (scripts/hash_reference.py)
   4. 선조사 (scripts/case_survey.py): 시그니처 위장·중복·EXIF·압축·PDF·SQLite·개인정보 패턴 등
   5. 타임라인: 파일 수정 시각(KST 환산), EXIF 촬영 시각(시간대 미기록), 이미지 획득 기록
@@ -64,7 +64,7 @@ CASE_FIELDS = [  # (키, 보고서 표기, 사건정보 파일에서 받는 이�
 ]
 
 CATEGORIES = [
-    ("디스크 이미지", {".e01", ".ex01", ".l01", ".s01", ".dd", ".raw", ".img", ".001", ".vmdk", ".vhd", ".vhdx", ".aff4"}),
+    ("디스크 이미지", {".e01", ".ex01", ".l01", ".lx01", ".s01", ".dd", ".raw", ".img", ".001", ".vmdk", ".vhd", ".vhdx", ".aff4"}),
     ("이미지(사진)", {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".heic", ".webp"}),
     ("영상", {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".3gp"}),
     ("오디오", {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".amr", ".wma"}),
@@ -106,7 +106,7 @@ def fmt_size(n: int) -> str:
 
 def category(path: str) -> str:
     ext = Path(path).suffix.lower()
-    if re.fullmatch(r"\.e\d\d", ext):
+    if re.fullmatch(r"\.[el]x?\d\d", ext):
         return "디스크 이미지"
     for name, exts in CATEGORIES:
         if ext in exts:
@@ -237,16 +237,18 @@ def post_check(root: Path, before: list[dict]) -> dict:
 
 def compare_references(entries: list[dict], inventory: list[dict], images: list[dict]) -> list[dict]:
     results = hash_reference.match_reference(entries, inventory)
-    media_files = [{"path": img["file"], **(img.get("computed_hashes") or {})} for img in images]
+    physical = [img for img in images if "entries" not in img and Path(img["file"]).suffix.lower() in (".e01", ".ex01")]
     for i, (entry, result) in enumerate(zip(entries, results)):
         name = Path(entry["name"])
         if result["result"] != "not_found" or result["file"] or name.suffix.lower() not in RAW_IMAGE_EXTS:
             continue
-        # A raw-media reference can name the acquisition source of an E01.
-        # Keep the directory when mapping that name to the container.
-        media_entry = {**entry, "name": name.with_suffix(".E01").as_posix()}
-        media, = hash_reference.match_reference([media_entry], media_files)
+        # Resolve the source name across both physical formats, retaining path ambiguity.
+        media_files = [{"path": Path(img["file"]).with_suffix(name.suffix).as_posix(),
+                        **(img.get("computed_hashes") or {})} for img in physical]
+        media, = hash_reference.match_reference([entry], media_files)
         if media["file"]:
+            media["file"] = next(img["file"] for img, candidate in zip(physical, media_files)
+                                 if candidate["path"] == media["file"])
             if media["result"] == "not_found":
                 media.update(result="not_verified", note="이미지 미디어 해시를 재계산하지 못함")
             else:
@@ -329,7 +331,7 @@ def build_events(root: Path, inventory: list[dict], survey: dict, images: list[d
         m = re.match(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC$", acq)
         if m:
             events.append({"timestamp": f"{m.group(1)}T{m.group(2)}+00:00", "category": "system",
-                           "source": "E01 헤더", "description": f"이미지 획득 시각(이미지 기록값): {img['file']}",
+                           "source": "EWF 헤더", "description": f"이미지 획득 시각(이미지 기록값): {img['file']}",
                            "file": img["file"]})
 
     def key(ev):
@@ -393,7 +395,7 @@ def render_report(ctx: dict) -> str:
                [[c, n, UNK if c in incomplete_categories else fmt_size(sizes[c])] for c, n in cats.most_common()])
     a("")
     if images:
-        a("### 나. 디스크 이미지 (E01)")
+        a("### 나. EWF 이미지")
         a("")
         a("아래 획득 정보는 이미지 파일 안에 획득 도구가 기록한 값이다. 이 도구가 획득 과정을 확인한 것은 아니다.")
         a("")
@@ -406,7 +408,7 @@ def render_report(ctx: dict) -> str:
                 ["세그먼트 파일", ", ".join(img.get("segments") or []) or UNK],
                 ["형식", img.get("format") or UNK],
                 ["미디어 유형", media.get("media_type") or UNK],
-                ["미디어 크기", f"{fmt_size(media['media_size'])} ({media['media_size']:,} 바이트, "
+                ["미디어 크기", f"{media['media_size']:,} 바이트 (논리 스트림)" if "entries" in img else f"{fmt_size(media['media_size'])} ({media['media_size']:,} 바이트, "
                               f"{media['sector_count']:,} 섹터 × {media['bytes_per_sector']} 바이트)"
                  if media else UNK],
                 ["사건번호(기록값)", acq.get("case_number") or UNK],
@@ -420,6 +422,14 @@ def render_report(ctx: dict) -> str:
                 rows.append(["오류", img["error"]])
             L += table(["항목", "내용"], rows)
             a("")
+            if "entries" in img:
+                entries = img["entries"]
+                a(f"논리 항목 {len(entries)}개. 전체 경로·시각·해시는 무결성검증.json에 기록했다.")
+                a("")
+                L += table(["ID", "경로", "바이트", "저장 해시 대조"],
+                           [[e["id"], e["path"], e["size"], IMAGE_STATUS_KO.get(e["status"], UNK)]
+                            for e in entries[:TABLE_LIMIT]])
+                a("")
     sec = "다" if images else "나"
     a(f"### {sec}. 증거 파일 목록과 해시 (분석 전 계산)")
     a("")
@@ -466,7 +476,10 @@ def render_report(ctx: dict) -> str:
         cmp_ = img.get("comparison") or {}
         verdict = IMAGE_STATUS_KO.get(img["status"], img["status"])
         algos = ", ".join(k.upper() for k in cmp_) or "-"
-        rows.append([f"E01 저장 해시 대조 ({img['file']})", verdict, f"대조 알고리즘: {algos}"])
+        if "entries" in img:
+            entry_results = Counter(e["status"] for e in img["entries"] if e["type"] == "file" or e["size"] or e["stored_hashes"])
+            algos = ", ".join(f"{IMAGE_STATUS_KO[k]} {n}건" for k, n in entry_results.items()) or "-"
+        rows.append([f"EWF 저장 해시 대조 ({img['file']})", verdict, algos])
     if refs is None:
         rows.append(["참조 해시 대조", UNK, "참조 해시 목록이 제공되지 않음 (--hashes)"])
     else:
@@ -485,7 +498,7 @@ def render_report(ctx: dict) -> str:
                 a(f"- {label}: `{p}`")
         a("")
     if images:
-        a("### 가. E01 저장 해시와 재계산 해시")
+        a("### 가. EWF 저장 해시와 재계산 해시")
         a("")
         rows = []
         for img in images:
@@ -548,7 +561,7 @@ def render_report(ctx: dict) -> str:
         a("")
         a("- 획득 장비·쓰기 방지 장치·획득 장소: 미확인 (이미지에 기록되지 않음)")
     else:
-        a("- 획득 도구·일시·장비: 미확인 (E01 이미지가 없고 획득 기록이 제공되지 않음)")
+        a("- 획득 도구·일시·장비: 미확인 (EWF 이미지가 없고 획득 기록이 제공되지 않음)")
     a("")
     a("### 나. 분석 환경")
     a("")
@@ -570,13 +583,15 @@ def render_report(ctx: dict) -> str:
     if err_files:
         steps[0] = "열 수 있는 증거 파일의 MD5·SHA-1·SHA-256을 계산했다. 열기 실패한 파일은 2장에 기록했다."
     if images:
-        steps.append("E01 이미지는 파일 구조를 직접 해석해 획득 기록값을 읽고, 압축을 풀어 미디어 전체 해시를 "
-                     "다시 계산해 이미지에 저장된 해시와 대조했다."
+        steps.append("EWF 이미지는 파일 구조를 직접 해석해 획득 기록값을 읽고, 압축을 풀어 미디어 전체 해시를 "
+                     "다시 계산해 저장된 해시와 대조했다."
                      if not ctx["skip_image_verify"] else
-                     "E01 이미지는 획득 기록값과 저장 해시만 읽었다(미디어 해시 재계산은 생략).")
+                     "EWF 이미지는 획득 기록값과 저장 해시만 읽었다(미디어 해시 재계산은 생략).")
+    if any("entry_verification" in img for img in images):
+        steps.append("논리 증거는 항목별 바이트에서 계산한 해시를 각 항목의 저장값과 대조했다.")
     if refs is not None:
         steps.append("제공된 참조 해시 목록의 항목을 파일 경로·파일명으로 증거와 짝지어 같은 알고리즘의 해시를 대조했다. "
-                     "원시 이미지(.raw/.dd 등) 항목은 이름이 같은 E01의 미디어 해시와 대조했다.")
+                     "원시 이미지(.raw/.dd 등) 항목은 이름이 같은 EWF의 미디어 해시와 대조했다.")
     steps.append("확장자와 파일 시그니처 대조, 정확 중복, 이미지 EXIF·유사도, 압축 파일 내부, PDF 구조, "
                  "SQLite 구조, 개인정보 패턴, 영상·오디오 상태를 자동 점검했다(도구가 없는 항목은 미수행으로 표시).")
     steps.append("파일 수정 시각·EXIF 촬영 시각·이미지 획득 기록을 모아 타임라인을 만들었다.")
@@ -632,7 +647,7 @@ def render_report(ctx: dict) -> str:
     L += table(["파일", "내용"], [
         ["보고서초안.md / 보고서초안.html" + (" / 보고서초안.docx" if full_hashes else ""), "이 보고서 (HTML은 브라우저로 열어 인쇄·복사)"],
         ["파일해시목록.csv", "전체 파일의 경로·크기·수정 시각·MD5·SHA-1·SHA-256 (엑셀에서 열림)"],
-        ["무결성검증.json", "분석 전 해시, 분석 후 재해시 대조, E01 판독, 참조 해시 대조 원자료"],
+        ["무결성검증.json", "분석 전 해시, 분석 후 재해시 대조, EWF 판독, 참조 해시 대조 원자료"],
         ["타임라인.html / events.json", "전체 타임라인 (브라우저로 열기)"],
         ["선조사.json", "자동 점검 원자료"],
         ["초안검증.json", "이 초안에 대한 verify_report.py 결과"],
@@ -648,6 +663,7 @@ def render_report(ctx: dict) -> str:
 IMAGE_STATUS_KO = {
     "verified": "일치 (저장 해시 = 재계산 해시)",
     "mismatch": "불일치 (저장 해시 ≠ 재계산 해시)",
+    "partial": "일부 일치 (저장 해시가 없는 항목 있음)",
     "no_stored_hash": "미확인 (이미지에 저장된 해시 없음)",
     "not_verified": "미확인 (재계산 생략)",
     "read_error": "판독 오류 (이미지 손상 가능 — 미확인)",
@@ -778,7 +794,7 @@ def timeline_section(ctx: dict) -> list[str]:
     labels = {
         "파일시스템(mtime)": "파일 수정 시각 (파일시스템 기록값, KST 환산)",
         "EXIF": "촬영 시각 (EXIF 기록값, 시간대 미기록 — 카메라 시계 기준)",
-        "E01 헤더": "이미지 획득 시각 (E01 기록값, UTC)",
+        "EWF 헤더": "이미지 획득 시각 (EWF 기록값, UTC)",
     }
     for i, (src, evs) in enumerate(by_src.items()):
         L.append(f"**{chr(ord('1') + i)}) {labels.get(src, src)}**")
@@ -787,9 +803,9 @@ def timeline_section(ctx: dict) -> list[str]:
         def show(e):
             ts = e["timestamp"]
             dt = datetime.fromisoformat(ts)
-            if dt.tzinfo is not None and src != "E01 헤더":
+            if dt.tzinfo is not None and src != "EWF 헤더":
                 return fmt_dt(dt)
-            if src == "E01 헤더":
+            if src == "EWF 헤더":
                 return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         if len(evs) <= TIMELINE_FULL_LIMIT:
@@ -819,7 +835,7 @@ def summary_facts(ctx: dict) -> list[str]:
     else:
         facts.append("분석 전후 재해시 결과가 다르다 — 3장의 목록을 확인해야 한다.")
     for img in images:
-        facts.append(f"E01 `{img['file']}`: {IMAGE_STATUS_KO.get(img['status'], img['status'])}.")
+        facts.append(f"EWF `{img['file']}`: {IMAGE_STATUS_KO.get(img['status'], img['status'])}.")
     if refs is not None:
         c = Counter(r["result"] for r in refs)
         facts.append(f"참조 해시 {len(refs)}건 중 일치 {c.get('match', 0)}건, 불일치 {c.get('mismatch', 0)}건, "
@@ -840,7 +856,7 @@ def limitations(ctx: dict) -> list[str]:
         "$MFT·$SI/$FN 수준의 시각 검증은 하지 않았다.",
         "EXIF 값은 편집할 수 있는 기록값이며, 시간대가 기록되지 않는다. EXIF가 없다고 해서 변조를 뜻하지는 않는다.",
         "삭제 파일 복구·카빙·파일시스템 해석(NTFS/FAT 등)·메모리·레지스트리·메신저 DB 분석은 하지 않았다. "
-        "E01은 해시 대조와 기록값 판독까지만 한다.",
+        "EWF 판독 범위는 획득 기록, 미디어·논리 파일 해시 대조다.",
         "참조 해시 대조는 파일 경로·파일명으로 짝을 짓는다. 이름이 같은 파일이 여러 개면 대조를 보류한다.",
         "개인정보 패턴·시그니처·중복·유사 이미지 결과는 검토 대상을 고르는 선별 결과이지 판정이 아니다.",
     ]
@@ -976,7 +992,7 @@ def write_timeline_html(events: list[dict], out_json: Path, out_html: Path, root
            "--input", str(out_json), "--output", str(out_html),
            "--title", f"타임라인 — {root_name}", "--target", root_name,
            "--max-events", str(max(len(events), 1)),
-           "--timezone", "mtime=KST 환산, EXIF=시간대 미기록(정렬만 KST 가정), E01=UTC"]
+           "--timezone", "mtime=KST 환산, EXIF=시간대 미기록(정렬만 KST 가정), EWF=UTC"]
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return None if proc.returncode == 0 else (proc.stderr.strip()[-300:] or "타임라인 생성 실패")
 
@@ -1021,15 +1037,24 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     inventory = build_inventory(root, files)
     log(f"      파일 {len(inventory)}개")
 
-    image_paths = [p for p in files if p.suffix.lower() == ".e01"]
+    first_exts = {".e01", ".ex01", ".l01", ".lx01"}
+    image_paths = [p for p in files if p.suffix.lower() in first_exts]
     images = []
+    seen_segments = set()
     if image_paths:
-        log(f"[2/7] E01 이미지 {len(image_paths)}개 판독{'' if skip_image_verify else '·해시 재계산'}")
+        log(f"[2/7] EWF 이미지 {len(image_paths)}개 판독{'' if skip_image_verify else '·해시 재계산'}")
     for p in image_paths:
         res = ewf_image.examine(p, verify=not skip_image_verify)
         res["file"] = p.relative_to(root).as_posix()
         images.append(res)
+        seen_segments.add(p)
+        seen_segments.update(p.with_name(name) for name in res.get("segments", []))
         log(f"      {res['file']}: {IMAGE_STATUS_KO.get(res['status'], res['status'])}")
+    for p in files:
+        if p in seen_segments or not re.fullmatch(r"\.[el]x?[0-9]{2}", p.suffix.lower()):
+            continue
+        images.append({"file": p.relative_to(root).as_posix(), "image": p.name, "status": "unsupported",
+                       "error": "첫 세그먼트부터 연결된 EWF 세트를 확인할 수 없음"})
 
     references, sources = None, []
     if hash_lists:
@@ -1082,7 +1107,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
         problems.append("열기 실패로 무결성 미확인")
     elif post["status"] != "match":
         problems.append("분석 전후 해시 불일치")
-    problems += [f"E01 {i['file']}: {IMAGE_STATUS_KO[i['status']]}" for i in images
+    problems += [f"EWF {i['file']}: {IMAGE_STATUS_KO[i['status']]}" for i in images
                  if i["status"] in ("mismatch", "read_error", "unsupported")]
     if references and any(r["result"] == "mismatch" for r in references):
         problems.append("참조 해시 불일치")
@@ -1099,7 +1124,7 @@ def main(argv: list[str] | None = None) -> int:
         except AttributeError:
             pass
     ap = argparse.ArgumentParser(description="증거 폴더 → 한국어 포렌식 보고서 초안 + 무결성 검증 (로컬 전용)")
-    ap.add_argument("root", nargs="?", help="증거 폴더 (E01 이미지나 내보낸 파일이 든 폴더)")
+    ap.add_argument("root", nargs="?", help="증거 폴더 (EWF 이미지나 내보낸 파일이 든 폴더)")
     ap.add_argument("-o", "--output", help="출력 폴더 (기본: 증거 폴더 옆 '<폴더명>_분석결과')")
     ap.add_argument("--case-info", help="사건 정보 파일 (templates/case_info_example.txt 형식 또는 JSON)")
     ap.add_argument("--hashes", nargs="+", action="extend", default=[],
@@ -1107,7 +1132,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keywords", help="쉼표로 구분한 키워드 (텍스트 파일 검색)")
     ap.add_argument("--docx", action=argparse.BooleanOptionalAction, default=True,
                     help="편집용 보고서초안.docx 생성 및 검증 (기본: 켜짐)")
-    ap.add_argument("--no-image-verify", action="store_true", help="E01 미디어 해시 재계산 생략 (대용량 시간 절약)")
+    ap.add_argument("--no-image-verify", action="store_true", help="EWF 미디어 해시 재계산 생략 (대용량 시간 절약)")
     ap.add_argument("--case-template", metavar="파일", help="사건 정보 빈 양식을 이 경로에 쓰고 끝낸다")
     args = ap.parse_args(argv)
 
@@ -1160,7 +1185,7 @@ def main(argv: list[str] | None = None) -> int:
     status = {"match": "일치", "incomplete": UNK, "mismatch": "불일치"}[post["status"]]
     print(f"분석 전후 재해시: {status} ({post['checked']}개)")
     for img in res["images"]:
-        print(f"E01 {img['file']}: {IMAGE_STATUS_KO.get(img['status'], img['status'])}")
+        print(f"EWF {img['file']}: {IMAGE_STATUS_KO.get(img['status'], img['status'])}")
     if res["references"] is not None:
         c = Counter(r["result"] for r in res["references"])
         print(f"참조 해시: 일치 {c.get('match', 0)} / 불일치 {c.get('mismatch', 0)} / 증거에 없음 {c.get('not_found', 0)}")

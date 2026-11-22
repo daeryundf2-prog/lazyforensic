@@ -1,4 +1,4 @@
-# 구현하지 않은 능력 (v1.1.0 정직 선언)
+# 지원 범위와 한계 (v1.3.0)
 
 이 목록은 광고와 구현의 차이를 고정한다. `plugin.json`/`README.md`는 이 문서를 따른다.
 v1.0.1: 검증 체인·훅 배관·카카오 파서의 결함을 수리하고, 무라이선스 제3자 트리를 제거했다.
@@ -13,9 +13,13 @@ v1.1.0: 에이전트 없이 쓰는 `lazyforensic report`(보고서 초안·무�
 - 참조 해시 대조는 경로/파일명으로 짝을 짓는다. 같은 이름이 여러 개면 대조를 보류하고, 이름이 바뀐 파일은 '증거에 없음'으로 나온다(해시 값만으로 역추적하지 않음).
 - 초안 검증은 `verify_report.py`의 정적 검사(근거 없는 해시·금지 문구·해시-파일 결합)다. 문장의 사실 여부를 판단하지 않는다.
 
-## E01 판독 (`scripts/ewf_image.py`)
+## EWF 판독 (`scripts/ewf_image.py`)
 
-- EWF-E01(EnCase 1~7 계열, `.E01/.E02…`)만 읽는다. Ex01(EWF2), SMART(`.S01`), 논리 증거(`.L01`), AFF4, VMDK/VHD는 '미지원'으로 끝난다.
+- 물리 이미지 E01 및 EWF2 2.1 Ex01의 단일·분할 세그먼트를 지원한다. Ex01은 원본 청크, Adler-32, deflate, bzip2 스트림, 단일 bzip2 블록, 8바이트 반복 패턴을 읽는다. 세그먼트 번호·세트 ID, 섹션 체인·체크섬, 테이블, 기록된 미디어 길이를 확인하고 미디어 MD5·SHA-1을 대조한다.
+- L01(LVF/LEF)의 `ltree`와 Lx01(LEF2)의 단일 파일 데이터 섹션(`0x20`)에서 UTF-16LE `entry` 트리를 읽는다. 논리 스트림 길이는 `rec.tb`, 각 파일 내용은 `be`의 16진수 오프셋·길이를 기준으로 한다. 여러 일반 extent, 빈 파일, 데이터가 있는 폴더, 명시적인 중복 오프셋을 가진 sparse 항목을 지원한다. 파일 이름에 경로 구분자가 있을 수 있으므로 추출에는 ID를 쓴다.
+- 논리 목록의 시각은 기록된 유닉스 초다. 저장 해시는 트리의 `ha`·`sha`에서 읽는다. 별도 인덱스·권한·원본 파일시스템 속성의 복원은 지원하지 않는다. 형식이 표시된 extent, 중복 오프셋 없는 sparse fill, 비표준 트리·손상된 UTF-16은 미지원이다.
+- EWF2 암호화, 증분·재시작으로 비연속인 데이터, 메모리 extent, SMART(S01), AFF4, VMDK/VHD는 이 판독기의 범위 밖이다. EWF2 섹션 메타데이터·논리 트리는 64 MiB, 새 형식의 청크는 32 MiB까지 지원한다.
+- 공개 참조 시험은 로컬 사본만 읽는다. 고정된 manifest의 `ex01-fast`, `ex01-none`, `logical` 표본 경로를 각각 `LF_EX01_FAST_SAMPLE`, `LF_EX01_NONE_SAMPLE`, `LF_L01_SAMPLE`로 지정하고 `python -m pytest test/test_ewf_public.py -q`를 실행한다. 두 Ex01은 독립 획득기의 원본 SHA-256과, L01은 컨테이너·미디어 및 9,219개 파일의 export digest와 대조한다. Lx01과 bzip2는 합성 시험으로 검증했다. [공개 표본 및 기준 해시](https://github.com/abrignoni/ewfprobe/blob/d14572626e54f3bb99763287b3adfea212c47d7e/tests/fixtures/manifest.json)
 - `sectors` 섹션이 없는 초기 레이아웃은 미지원이다. 시험한 E01은 모두 libewf로 만든 EnCase 6 형식이다(`ewfacquire` 20140816 합성 픽스처, Digital Corpora `nps-2009-canon2-gen6.E01` — 기록상 획득 도구 20090927). FTK Imager·EnCase가 만든 E01로는 시험하지 않았다.
 - 헤더의 사건번호·검사자·획득 일시는 획득 도구가 적은 값이다. 이 도구는 획득 과정을 확인하지 않는다. `header` 섹션(구형)의 시각에는 시간대가 없다.
 - 미디어 해시 재계산은 이미지 전체를 읽는다(수백 GB면 수십 분 이상). `--no-image-verify`로 생략하면 결과는 '미확인'이다.
