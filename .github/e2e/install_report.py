@@ -170,7 +170,7 @@ def exercise(work):
             run(["locale", "charmap"])
             with (ROOT / "install.sh").open("rb") as installer:
                 run(["sh"], stdin=installer)
-        run([str(venv_python), "-c", "import sys; print(sys.executable, sys.version)"])
+        run([str(venv_python), "-c", "import sys; print(ascii(sys.executable), sys.version)"])
         # Print diagnostics before reports so a late failure cannot trim them from the log tail.
         print(log.read_bytes().decode("utf-8", errors="replace"), flush=True)
         help_start = log.stat().st_size
