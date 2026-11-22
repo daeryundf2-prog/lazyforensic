@@ -359,3 +359,84 @@ def test_malformed_content_type_is_a_verification_failure(tmp_path):
     write_parts(draft, parts)
     result = report_draft.run_verify(draft, [])
     assert result["verdict"] == "FAIL"
+
+
+def test_docx_form_digest_keeps_cell_paragraph_boundaries(tmp_path):
+    source = make_form(tmp_path / "blank.docx", "| A | B |\n| --- | --- |\n| first second | x |")
+    draft = tmp_path / forms.OUTPUT_NAME
+    forms.write_form(source, draft, {})
+    parts = package(draft)
+    doc = ET.fromstring(parts["word/document.xml"])
+    tc = doc.findall(".//" + W + "tr")[-1].find(W + "tc")
+    tc.find(".//" + W + "t").text = "first"
+    report_docx.paragraph(tc, "second")
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_table_row_cannot_be_replaced_by_literal_text(tmp_path):
+    source = make_form(tmp_path / "blank.docx", "{{증거목록표}}")
+    draft = tmp_path / forms.OUTPUT_NAME
+    matrix = [["Name", "Bytes"], ["item.bin", "0"]]
+    forms.write_form(source, draft, {"증거목록표": matrix})
+    parts = package(draft)
+    doc = ET.fromstring(parts["word/document.xml"])
+    body = doc.find(W + "body")
+    body.remove(body.find(W + "tbl"))
+    for index, row in enumerate(matrix):
+        holder = ET.Element("holder")
+        report_docx.paragraph(holder, report_docx.row_text(row))
+        body.insert(index, holder[0])
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(draft, parts)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+@pytest.mark.parametrize("suffix", [".docx", ".hwpx"])
+def test_renamed_filled_form_requires_its_reference(tmp_path, suffix):
+    source = tmp_path / ("blank" + suffix)
+    if suffix == ".docx":
+        make_form(source, "{{사건번호}}")
+    else:
+        import report_hwpx
+        report_hwpx.write_hwpx(source, "{{사건번호}}")
+    draft = tmp_path / ("양식초안" + suffix)
+    forms.write_form(source, draft, {"사건번호": "A-01"})
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+    moved = draft.rename(tmp_path / ("delivery" + suffix))
+    assert report_draft.run_verify(moved, [])["verdict"] == "FAIL"
+
+
+def test_page_field_cannot_replace_a_measured_scalar(tmp_path):
+    source = make_form(tmp_path / "blank.docx", "Page")
+    doc_parts = package(source)
+    doc = ET.fromstring(doc_parts["word/document.xml"])
+    p = doc.find(".//" + W + "p")
+    field = report_docx.word(p, "fldSimple", instr="PAGE")
+    report_docx.word(report_docx.word(field, "r"), "t").text = "{{사건번호}}"
+    doc_parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(source, doc_parts)
+    with pytest.raises(ValueError):
+        forms.write_form(source, tmp_path / forms.OUTPUT_NAME, {"사건번호": "A-01"})
+
+
+def test_legacy_docx_receipt_can_still_check_static_text(tmp_path):
+    draft = make_form(tmp_path / forms.OUTPUT_NAME, "Sample")
+    forms.digest_path(draft).write_text(hashlib.sha256(b"Sample").hexdigest() + "\n", encoding="ascii")
+    assert report_draft.run_verify(draft, [])["exit_code"] == 0
+
+
+@pytest.mark.parametrize("merge", ["hMerge", "vMerge"])
+def test_word_continuation_cell_cannot_hide_measured_text(tmp_path, merge):
+    source = make_form(tmp_path / "blank.docx", "| A | B |\n| --- | --- |\n| Sample | {{사건번호}} |")
+    parts = package(source)
+    doc = ET.fromstring(parts["word/document.xml"])
+    rows = doc.findall(".//" + W + "tr")
+    start = rows[0 if merge == "vMerge" else 1].findall(W + "tc")[1 if merge == "vMerge" else 0]
+    report_docx.word(start.find(W + "tcPr"), merge, val="restart")
+    report_docx.word(rows[1].findall(W + "tc")[1].find(W + "tcPr"), merge)
+    parts["word/document.xml"] = ET.tostring(doc)
+    write_parts(source, parts)
+    with pytest.raises(ValueError):
+        forms.write_form(source, tmp_path / forms.OUTPUT_NAME, {"사건번호": "A-01"})

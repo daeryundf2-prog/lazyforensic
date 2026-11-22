@@ -141,6 +141,7 @@ def main(argv=None):
         return 2
 
     errors = []
+    warnings = []
     readers = {".docx": ("WordprocessingML", report_docx.read_docx), ".hwpx": ("OWPML", report_hwpx.read_hwpx)}
     suffix = report_path.suffix.lower()
     if suffix in readers:
@@ -151,11 +152,14 @@ def main(argv=None):
         is_form = (args.template_digest is not None or reference.exists()
                    or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
         try:
+            if not is_form:
+                with ZipFile(report_path) as package:
+                    is_form = package.comment.endswith(report_templates.FORM_MARKER)
             if is_form:
-                text = report_templates.check_form(report_path, reference, errors)
+                text = report_templates.check_form(report_path, reference, errors, warnings)
             elif suffix == ".docx":
                 with ZipFile(report_path) as package:
-                    text = report_templates.form_text(package)
+                    _, text, _ = report_templates.word_content(package)
             else:
                 text = read_document(report_path)
                 with ZipFile(report_path) as package:
@@ -183,7 +187,6 @@ def main(argv=None):
             text, encoding_used, lossy = "", "unknown", False
             errors.append(f"보고서를 읽을 수 없음: {exc}")
 
-    warnings = []
     if lossy:
         errors.append(f"보고서 전체를 판독할 수 없음 ({encoding_used})")
         text = ""

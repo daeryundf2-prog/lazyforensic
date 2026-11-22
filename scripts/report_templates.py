@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -21,6 +22,7 @@ from report_package import check_package_size
 UNKNOWN = "미확인"
 OUTPUT_NAME = "양식초안.docx"
 DIGEST_SUFFIX = ".본문.sha256"
+FORM_MARKER = b"\nLazyForensic filled report form v2"
 TOKEN = re.compile(r"\{\{([^{}\r\n\t]*)\}\}")
 WORD = report_docx.W[1:-1]
 STORY_MIME = {kind: f"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"
@@ -74,14 +76,14 @@ def story_parts(package):
                 target = posixpath.normpath(posixpath.join(directory, rel.attrib["Target"])).lstrip("/")
                 if rel.get("TargetMode", "Internal") != "Internal" or types.get(target) != STORY_MIME[kind]:
                     raise ValueError("DOCX 양식 본문 관계의 경로 또는 콘텐츠 형식 오류")
-                linked[rel.attrib["Id"]] = kind
+                linked[rel.attrib["Id"]] = (kind, target)
     for node in report_docx.read_xml(package, main).iter():
         if node.tag in (report_docx.W + "headerReference", report_docx.W + "footerReference"):
             kind = node.tag.removeprefix(report_docx.W).removesuffix("Reference")
-            if linked.get(node.get("{" + OFFICE_REL + "}id")) != kind:
+            if linked.get(node.get("{" + OFFICE_REL + "}id"), (None, None))[0] != kind:
                 raise ValueError("DOCX 머리말·꼬리말 관계 누락")
     extra = sorted(name for name, mime in types.items() if mime in STORY_MIME.values())
-    return [main, *extra], types
+    return [main, *extra], types, linked
 
 
 def projected_lines(value, fields):
@@ -139,13 +141,24 @@ def validate_story(root):
     page_field = re.compile(r"(?:PAGE|NUMPAGES)(?:\s+\\\*\s+(?:MERGEFORMAT|Arabic))*", re.I)
     field = None
     for node in root.iter():
+        if node.tag == w + "tc":
+            merges = (node.find(w + "tcPr/" + w + name) for name in ("hMerge", "vMerge"))
+            continued = any(m is not None and m.get(w + "val", "continue") == "continue" for m in merges)
+            if continued and any((t.text or "").strip() for t in node.iter(w + "t")):
+                raise ValueError("병합 연속 셀의 텍스트를 확인할 수 없습니다")
         if node.tag in unsupported:
             raise ValueError("도형·변경 내용·외부 또는 동적 본문을 검증할 수 없습니다")
         if has_hidden_format(node):
             raise ValueError("숨김 텍스트 서식은 양식에서 지원하지 않습니다")
         if node.tag == w + "fldSimple":
+            cached = "".join(t.text or "" for t in node.iter(w + "t")).strip()
+            if cached and not cached.isdecimal():
+                raise ValueError("쪽 번호 필드 결과에는 숫자만 사용할 수 있습니다")
             if not page_field.fullmatch(node.get(w + "instr", "").strip()):
                 raise ValueError("쪽 번호 외의 동적 필드는 검증할 수 없습니다")
+        elif node.tag == w + "t" and field is not None:
+            if (node.text or "").strip() and not node.text.strip().isdecimal():
+                raise ValueError("쪽 번호 필드 결과에는 숫자만 사용할 수 있습니다")
         elif node.tag == w + "instrText":
             if field is None:
                 raise ValueError("DOCX 필드 시작 누락")
@@ -173,8 +186,44 @@ def alternative_text(root):
                     yield value
 
 
-def form_text(package, fields=None):
-    parts, types = story_parts(package)
+def word_structure(node, fields):
+    """Yield paragraph/cell boundaries in addition to the text used for policy scans."""
+    w = report_docx.W
+    name = node.tag.removeprefix(w)
+    if name == "p":
+        value, = report_docx.lines(node)
+        if fields is not None:
+            marker = TOKEN.fullmatch(value.strip())
+            rows = fields.get(marker[1].strip()) if marker else None
+            if isinstance(rows, list):
+                yield "tbl"
+                for row in rows:
+                    yield "tr"
+                    for cell_value in row:
+                        yield from ("tc", ["p", cell_value], "/tc")
+                    yield "/tr"
+                yield "/tbl"
+                value = ""
+            else:
+                value, = projected_lines(value, fields)
+        yield ["p", value]
+        # Section references and page fields can occur inside paragraphs.
+    boundary = name in ("tbl", "tr", "tc", "footnote", "endnote", "comment", "sectPr")
+    if boundary:
+        yield name
+    if name in ("footnote", "endnote", "comment", "headerReference", "footerReference",
+                "footnoteReference", "endnoteReference", "commentReference", "gridSpan",
+                "vMerge", "hMerge", "gridBefore", "gridAfter", "fldSimple", "fldChar", "instrText"):
+        yield [name, sorted(node.attrib.items()), node.text or ""]
+    for child in node:
+        yield from word_structure(child, fields)
+    if boundary:
+        yield "/" + name
+
+
+def word_content(package, fields=None):
+    parts, types, linked = story_parts(package)
+    structure = [["relationships", sorted(linked.items())]]
     used_styles = set()
     expand = None if fields is None else lambda value: projected_lines(value, fields)
     lines = []
@@ -186,11 +235,14 @@ def form_text(package, fields=None):
         used_styles.update(n.get(report_docx.W + "val") for n in root.iter()
                           if n.tag in (report_docx.W + "rStyle", report_docx.W + "pStyle", report_docx.W + "tblStyle"))
         lines.extend(report_docx.lines(root, expand))
-        lines.extend(alternative_text(root))
+        alt = list(alternative_text(root))
+        lines.extend(alt)
+        structure.append([part, list(word_structure(root, fields)), alt])
     for part, mime in types.items():
         if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml":
             check_styles(report_docx.read_xml(package, part), used_styles)
-    return "\n".join(lines)
+    encoded = json.dumps(structure, ensure_ascii=False, separators=(",", ":"))
+    return text_digest("DOCX form v2\n" + encoded), "\n".join(lines), parts
 
 
 def text_digest(text):
@@ -269,13 +321,18 @@ def write_form(source, destination, fields):
             staged = Path(temp) / "draft"
             digest = Path(temp) / "expected"
             with ZipFile(staged, "w") as filled:
-                filled.comment = blank.comment
+                comment = blank.comment
+                if not comment.endswith(FORM_MARKER):
+                    comment += FORM_MARKER
+                if len(comment) > 65535:
+                    raise ValueError("양식 표시를 추가할 ZIP 주석 공간이 없습니다")
+                filled.comment = comment
                 if source.suffix.lower() == ".hwpx":
                     import report_hwpx_forms
                     expected = report_hwpx_forms.write_parts(blank, filled, fields)
                 else:
-                    expected = text_digest(form_text(blank, fields))
-                    stories = set(story_parts(blank)[0])
+                    expected, _, parts = word_content(blank, fields)
+                    stories = set(parts)
                     for part in blank.infolist():
                         data = blank.read(part)
                         if part.filename in stories:
@@ -286,15 +343,22 @@ def write_form(source, destination, fields):
             staged.replace(destination)
 
 
-def check_form(path, reference, errors):
+def check_form(path, reference, errors, warnings=None):
+    stored = reference.read_text(encoding="ascii").strip()
     with ZipFile(path) as package:
+        legacy = not package.comment.endswith(FORM_MARKER)
         if path.suffix.lower() == ".hwpx":
             import report_hwpx_forms
             digest, text = report_hwpx_forms.form_content(package)
             report_hwpx.check_preview(package, text, errors)
+            if legacy and digest != stored:
+                legacy = report_hwpx_forms.form_content(package, legacy=True)[0] == stored
         else:
-            text = form_text(package)
-            digest = text_digest(text)
-    if reference.read_text(encoding="ascii").strip() != digest:
-        errors.append("양식 원본과 측정값으로 계산한 본문 SHA-256 불일치 (표·해시·본문 대조)")
+            digest, text, _ = word_content(package)
+            legacy = legacy and text_digest(text) == stored
+    if stored != digest:
+        if not legacy:
+            errors.append("양식 원본과 측정값으로 계산한 본문 SHA-256 불일치 (표·해시·본문 대조)")
+        elif warnings is not None:
+            warnings.append("이전 양식 대조 파일 형식으로 확인했습니다. 강화된 표 구조 검증에는 새 초안이 필요합니다.")
     return text

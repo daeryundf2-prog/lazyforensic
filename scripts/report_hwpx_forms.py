@@ -184,24 +184,31 @@ def text_paragraph(value):
     return ["p", [value] if value else []]
 
 
-def project(node, fields, literals, seen):
+def project(node, fields, literals, seen, legacy):
     """Compute a content tree from the blank and measured values, or read the saved tree."""
     seen.add(node)
     if tag(node) == "tbl":
         rows = []
+        positions = []
         for row in grid(node):
             slots, values = row_plan(row, fields) if fields else ([], [])
             for item in values or [()]:
                 replacements = dict(zip(slots, item))
                 cells = []
-                for tc in children(row, "tc"):
-                    cells.append([project(p, fields, replacements, seen) for p in cell_paras(tc)])
+                for index, tc in enumerate(children(row, "tc")):
+                    column = int(only(tc, "cellAddr").getAttribute("colAddr"))
+                    span = int(only(tc, "cellSpan").getAttribute("colSpan"))
+                    if not legacy and (column != index or span != 1):
+                        positions.append([len(rows), index, column, span])
+                    cells.append([project(p, fields, replacements, seen, legacy) for p in cell_paras(tc)])
                 rows.append(cells)
         table = ["table", rows]
+        if positions:
+            table.append(positions)
         captions = children(node, "caption")
         if captions:
             caption = only(node, "caption")
-            label = project(caption, fields, {}, seen)
+            label = project(caption, fields, {}, seen, legacy)
             below = caption.getAttribute("side") in ("BOTTOM", "RIGHT")
             return ["captioned", [table, label] if below else [label, table]]
         return table
@@ -223,7 +230,7 @@ def project(node, fields, literals, seen):
         elif isinstance(part, str):
             value = part
         else:
-            content.append(project(part, fields, literals, seen))
+            content.append(project(part, fields, literals, seen, legacy))
             continue
         if value:
             if content and isinstance(content[-1], str):
@@ -234,7 +241,7 @@ def project(node, fields, literals, seen):
 
 
 def lines(block):
-    kind, content = block
+    kind, content = block[:2]
     if kind == "table":
         for row in content:
             yield row_text([" ".join(line for p in cell for line in lines(p)) for cell in row])
@@ -246,7 +253,7 @@ def lines(block):
                 yield from lines(item)
 
 
-def form_content(package, fields=None):
+def form_content(package, fields=None, *, legacy=False):
     stories, _ = layout(package)
     sections = []
     for name in stories:
@@ -258,7 +265,7 @@ def form_content(package, fields=None):
             if root.getElementsByTagNameNS(HP, "fieldBegin") or root.getElementsByTagNameNS(HP, "fieldEnd"):
                 raise ValueError("동적 HWPX 필드는 양식에서 검증할 수 없습니다")
             seen = set()
-            blocks = [project(p, fields, {}, seen) for p in parts(root)
+            blocks = [project(p, fields, {}, seen, legacy) for p in parts(root)
                       if getattr(p, "nodeType", None) == Node.ELEMENT_NODE]
             for el in root.getElementsByTagNameNS(HP, "*"):
                 if el not in seen and (tag(el) in ("p", "tbl") or (tag(el) == "t" and forms.node_text(el))):
@@ -271,7 +278,7 @@ def form_content(package, fields=None):
             sections.append(blocks)
     reference = json.dumps(sections, ensure_ascii=False, separators=(",", ":"))
     text = "\n".join(line for section in sections for p in section for line in lines(p))
-    return forms.text_digest(reference), text
+    return forms.text_digest(reference if legacy else "HWPX form v2\n" + reference), text
 
 
 def clear_layout(p):

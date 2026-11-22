@@ -318,3 +318,32 @@ def test_unregistered_marker_without_case_data_has_matching_reference(tmp_path):
     forms.write_form(source, draft, {})
     assert members(draft)[PREVIEW].decode() == forms.UNKNOWN
     assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+
+
+def test_verification_binds_values_to_logical_merged_columns(tmp_path):
+    source, draft = tmp_path / "blank.hwpx", tmp_path / "양식초안.hwpx"
+    parts = members(SAMPLE)
+    sec = hw.section("| A | B |\n| --- | --- |\n| left | right |\n|  | result |")
+    table = next(sec.iter("hp:tbl"))
+    start, end = table.findall("hp:tr")[1:]
+    start[0].find("hp:cellSpan").set("rowSpan", "2")
+    end.remove(end[0])
+    parts[SECTION] = hw.serialize(sec)
+    write(source, parts)
+    forms.write_form(source, draft, {})
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"
+    start[0].find("hp:cellSpan").set("rowSpan", "1")
+    start[1].find("hp:cellSpan").set("rowSpan", "2")
+    end[0].find("hp:cellAddr").set("colAddr", "0")
+    changed = members(draft)
+    changed[SECTION] = hw.serialize(sec)
+    write(draft, changed)
+    assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_legacy_hwpx_receipt_can_still_check_static_text(tmp_path):
+    draft = tmp_path / "양식초안.hwpx"
+    hw.write_hwpx(draft, "Sample")
+    legacy = hashlib.sha256(b'[[["p",["Sample"]]]]').hexdigest()
+    forms.digest_path(draft).write_text(legacy + "\n", encoding="ascii")
+    assert report_draft.run_verify(draft, [])["exit_code"] == 0
