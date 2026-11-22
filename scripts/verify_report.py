@@ -112,6 +112,7 @@ def main(argv=None):
     parser.add_argument("--health-check", action="store_true", help="Run Section 5.1 & 7-8 forensic factuality health check suite")
     parser.add_argument("--evidence", nargs="*", default=[], help="Evidence files (audit json, audit_trail.jsonl, timeline json, etc.) for hash grounding")
     parser.add_argument("--timeline", help="Timeline events.json for timestamp grounding (optional)")
+    parser.add_argument("--template-digest", type=Path, help="양식 본문 대조용 SHA-256 파일")
     parser.add_argument("--claim-ledger", help="Optional path to claim-ledger.md for Section 6 verification")
     parser.add_argument("--law-cache", help="korean_law MCP 응답 캐시 JSON (법령대조 근거파일, 스켈레톤 — 자동대조 미완성)")
     parser.add_argument("--allow-historical", action="store_true", help="역사적 부처명 인용 허용 (오류 대신 경고 처리)")
@@ -165,6 +166,19 @@ def main(argv=None):
         except OSError as exc:
             text, encoding_used, lossy = "", "unknown", False
             errors.append(f"보고서를 읽을 수 없음: {exc}")
+
+    if report_path.suffix.lower() == ".docx":
+        import report_templates
+        reference = args.template_digest or report_path.with_suffix(report_templates.DIGEST_SUFFIX)
+        if args.template_digest or report_path.name == report_templates.OUTPUT_NAME or reference.exists():
+            try:
+                text = report_templates.check_form(report_path, reference, errors)
+            except report_templates.PACKAGE_ERRORS as exc:
+                errors.append(f"양식 본문 대조 실패: {exc}")
+        if "{{" in text or "}}" in text:
+            errors.append("치환되지 않은 자리표시자가 있습니다")
+    elif args.template_digest:
+        parser.error("--template-digest는 DOCX 양식 초안에 사용합니다.")
 
     warnings = []
     if lossy:

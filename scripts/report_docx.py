@@ -140,45 +140,58 @@ def write_docx(path: Path, md: str) -> None:
             package.writestr(info, data)  # identical bytes across zlib versions
 
 
-def read_docx(path: Path) -> str:
-    """Keep runs contiguous, table cells delimited, and each table row on one line."""
-    with ZipFile(path) as package:
-        def read_xml(name):
-            part = package.getinfo(name)
-            if part.file_size > 32 * 1024 * 1024:
-                raise ValueError("DOCX XML 크기 제한 초과")
-            return ET.fromstring(package.read(part))
+def read_xml(package, name):
+    part = package.getinfo(name)
+    if part.file_size > 32 * 1024 * 1024:
+        raise ValueError("DOCX XML 크기 제한 초과")
+    return ET.fromstring(package.read(part))
 
-        rel_ns = "{http://schemas.openxmlformats.org/package/2006/relationships}"
-        type_ns = "{http://schemas.openxmlformats.org/package/2006/content-types}"
-        office_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
-        rels = read_xml("_rels/.rels")
-        types = read_xml("[Content_Types].xml")
-        if rels.tag != rel_ns + "Relationships" or types.tag != type_ns + "Types":
-            raise ValueError("DOCX 패키지 메타데이터 오류")
-        main = [r for r in rels.findall(rel_ns + "Relationship") if r.get("Type") == office_rel]
-        if len(main) != 1 or main[0].get("TargetMode", "Internal") != "Internal":
-            raise ValueError("DOCX 본문 관계 오류")
-        target = main[0].attrib["Target"].removeprefix("/")
-        overrides = {t.get("PartName"): t.get("ContentType") for t in types.findall(type_ns + "Override")}
-        defaults = {t.get("Extension", "").lower(): t.get("ContentType") for t in types.findall(type_ns + "Default")}
-        mime = overrides.get("/" + target, defaults.get(Path(target).suffix[1:].lower()))
-        if mime != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":
-            raise ValueError("DOCX 본문 콘텐츠 형식 오류")
-        doc = read_xml(target)
-    body = doc.find(W + "body")
-    if doc.tag != W + "document" or body is None:
+
+def document_parts(package):
+    rel_ns = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+    type_ns = "{http://schemas.openxmlformats.org/package/2006/content-types}"
+    office_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+    rels = read_xml(package, "_rels/.rels")
+    types = read_xml(package, "[Content_Types].xml")
+    if rels.tag != rel_ns + "Relationships" or types.tag != type_ns + "Types":
+        raise ValueError("DOCX 패키지 메타데이터 오류")
+    main = [r for r in rels.findall(rel_ns + "Relationship") if r.get("Type") == office_rel]
+    if len(main) != 1 or main[0].get("TargetMode", "Internal") != "Internal":
+        raise ValueError("DOCX 본문 관계 오류")
+    target = main[0].attrib["Target"].removeprefix("/")
+    overrides = {t.get("PartName"): t.get("ContentType") for t in types.findall(type_ns + "Override")}
+    defaults = {t.get("Extension", "").lower(): t.get("ContentType") for t in types.findall(type_ns + "Default")}
+    mime = overrides.get("/" + target, defaults.get(Path(target).suffix[1:].lower()))
+    if mime != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml":
+        raise ValueError("DOCX 본문 콘텐츠 형식 오류")
+    return target, overrides
+
+
+def body(part):
+    result = part.find(W + "body")
+    if part.tag != W + "document" or result is None:
         raise ValueError("DOCX 본문 없음")
+    return result
 
-    def lines(node):
-        if node.tag == W + "p":
-            tokens = {W + "tab": "\t", W + "br": "\n", W + "cr": "\n"}
-            yield "".join((n.text or "") if n.tag == W + "t" else tokens.get(n.tag, "")
-                          for n in node.iter())
-        elif node.tag == W + "tr":
-            row = [" ".join(lines(tc)) for tc in node.findall(W + "tc")]
-            yield row_text(row)
+
+def lines(node, expand=None):
+    """Keep runs contiguous, table cells delimited, and each table row on one line."""
+    if node.tag == W + "p":
+        tokens = {W + "tab": "\t", W + "br": "\n", W + "cr": "\n"}
+        value = "".join((n.text or "") if n.tag == W + "t" else tokens.get(n.tag, "")
+                        for n in node.iter())
+        if expand is None:
+            yield value
         else:
-            for child in node:
-                yield from lines(child)
-    return "\n".join(lines(body))
+            yield from expand(value)
+    elif node.tag == W + "tr":
+        yield row_text([" ".join(lines(tc, expand)) for tc in node.findall(W + "tc")])
+    else:
+        for child in node:
+            yield from lines(child, expand)
+
+
+def read_docx(path: Path) -> str:
+    with ZipFile(path) as package:
+        target, _ = document_parts(package)
+        return "\n".join(lines(body(read_xml(package, target))))

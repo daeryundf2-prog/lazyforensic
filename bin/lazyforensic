@@ -35,7 +35,7 @@ usage() {
   cat <<EOF
 lazyforensic — 증거 선조사 CLI 래퍼 (로컬 전용)
 
-  lazyforensic report <증거폴더> [-o 출력폴더] [--case-info 사건정보.txt] [--hashes 해시목록 ...]
+  lazyforensic report <증거폴더> [-o 출력폴더] [--case-info 사건정보.txt] [--hashes 해시목록 ...] [--template 양식.docx]
                                      한국어 보고서 초안 + 무결성 검증 (주 명령)
   lazyforensic report --case-template 사건정보.txt   사건 정보 빈 양식 만들기
   lazyforensic ewf <이미지> [--json]  EWF 획득 정보·논리 파일·해시 검증 (별칭 e01)

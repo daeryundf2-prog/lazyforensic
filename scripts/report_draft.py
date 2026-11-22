@@ -45,6 +45,7 @@ SCRIPTS = Path(__file__).resolve().parent
 REPO = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
+import report_templates  # noqa: E402
 import ewf_image  # noqa: E402
 import hash_reference  # noqa: E402
 import report_docx  # noqa: E402
@@ -346,6 +347,44 @@ def build_events(root: Path, inventory: list[dict], survey: dict, images: list[d
 
 # ---------------------------------------------------------------- 보고서 본문
 
+def integrity_rows(post, images, refs):
+    rows = []
+    if post["status"] == "match" and not post["checked"]:
+        rows.append(["분석 전후 재해시", UNK, "대조할 파일이 없음"])
+    elif post["status"] == "match":
+        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음. 분석 중 증거가 바뀌지 않았다."])
+    else:
+        detail = []
+        if post["changed"]:
+            detail.append(f"변경 {len(post['changed'])}개")
+        if post["missing"]:
+            detail.append(f"사라짐 {len(post['missing'])}개")
+        if post["new"]:
+            detail.append(f"새로 생김 {len(post['new'])}개")
+        if post["unreadable"]:
+            detail.append(f"대조 완료 {post['checked']}개, 열기 실패 {len(post['unreadable'])}개")
+        rows.append(["분석 전후 재해시", UNK if post["status"] == "incomplete" else "불일치", ", ".join(detail) + " — 아래 목록 확인"])
+    for img in images:
+        cmp_ = img.get("comparison") or {}
+        verdict = IMAGE_STATUS_KO.get(img["status"], img["status"])
+        algos = ", ".join(k.upper() for k in cmp_) or "-"
+        if "entries" in img:
+            entry_results = Counter(e["status"] for e in img["entries"] if e["type"] == "file" or e["size"] or e["stored_hashes"])
+            algos = ", ".join(f"{IMAGE_STATUS_KO[k]} {n}건" for k, n in entry_results.items()) or "-"
+        rows.append([f"EWF 저장 해시 대조 ({img['file']})", verdict, algos])
+    if refs is None:
+        rows.append(["참조 해시 대조", UNK, "참조 해시 목록이 제공되지 않음 (--hashes)"])
+    else:
+        c = Counter(r["result"] for r in refs)
+        rows.append(["참조 해시 대조", "불일치 있음" if c.get("mismatch") else ("일치" if c.get("match") else UNK),
+                     f"참조 {len(refs)}건: 일치 {c.get('match', 0)}, 불일치 {c.get('mismatch', 0)}, "
+                     f"증거에 없음 {c.get('not_found', 0)}, 이름 중복으로 대조 보류 {c.get('ambiguous', 0)}, "
+                     f"재계산 불가 {c.get('not_verified', 0)}"])
+    rows.append(["쓰기 방지 장치 사용", UNK, "도구는 읽기만 했으나 쓰기 방지 장치 사용 기록은 제공되지 않음"])
+    rows.append(["증거 인계 기록(Chain of Custody)", UNK, "인계 기록이 제공되지 않음 — 분석관이 기재"])
+    return rows
+
+
 def render_report(ctx: dict) -> str:
     root_name = ctx["root_name"]
     inv = ctx["inventory"]
@@ -467,38 +506,7 @@ def render_report(ctx: dict) -> str:
     # 3
     a("## 3. 무결성 검증 결과")
     a("")
-    rows = []
-    if post["status"] == "match":
-        rows.append(["분석 전후 재해시", "일치", f"분석 전후 SHA-256 {post['checked']}개 모두 같음. 분석 중 증거가 바뀌지 않았다."])
-    else:
-        detail = []
-        if post["changed"]:
-            detail.append(f"변경 {len(post['changed'])}개")
-        if post["missing"]:
-            detail.append(f"사라짐 {len(post['missing'])}개")
-        if post["new"]:
-            detail.append(f"새로 생김 {len(post['new'])}개")
-        if post["unreadable"]:
-            detail.append(f"대조 완료 {post['checked']}개, 열기 실패 {len(post['unreadable'])}개")
-        rows.append(["분석 전후 재해시", UNK if post["status"] == "incomplete" else "불일치", ", ".join(detail) + " — 아래 목록 확인"])
-    for img in images:
-        cmp_ = img.get("comparison") or {}
-        verdict = IMAGE_STATUS_KO.get(img["status"], img["status"])
-        algos = ", ".join(k.upper() for k in cmp_) or "-"
-        if "entries" in img:
-            entry_results = Counter(e["status"] for e in img["entries"] if e["type"] == "file" or e["size"] or e["stored_hashes"])
-            algos = ", ".join(f"{IMAGE_STATUS_KO[k]} {n}건" for k, n in entry_results.items()) or "-"
-        rows.append([f"EWF 저장 해시 대조 ({img['file']})", verdict, algos])
-    if refs is None:
-        rows.append(["참조 해시 대조", UNK, "참조 해시 목록이 제공되지 않음 (--hashes)"])
-    else:
-        c = Counter(r["result"] for r in refs)
-        rows.append(["참조 해시 대조", "불일치 있음" if c.get("mismatch") else ("일치" if c.get("match") else UNK),
-                     f"참조 {len(refs)}건: 일치 {c.get('match', 0)}, 불일치 {c.get('mismatch', 0)}, "
-                     f"증거에 없음 {c.get('not_found', 0)}, 이름 중복으로 대조 보류 {c.get('ambiguous', 0)}, "
-                     f"재계산 불가 {c.get('not_verified', 0)}"])
-    rows.append(["쓰기 방지 장치 사용", UNK, "도구는 읽기만 했으나 쓰기 방지 장치 사용 기록은 제공되지 않음"])
-    rows.append(["증거 인계 기록(Chain of Custody)", UNK, "인계 기록이 제공되지 않음 — 분석관이 기재"])
+    rows = integrity_rows(post, images, refs)
     L += table(["검증 항목", "결과", "근거"], rows)
     a("")
     if post["status"] != "match":
@@ -1149,7 +1157,33 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     if verify.get("verdict") in ("FAIL", "ERROR"):
         problems.append(f"초안 검증 {verify.get('verdict')}")
     return {"paths": paths, "post": post, "images": images, "references": references, "verify": verify,
-            "problems": problems, "timeline_error": timeline_err, "inventory": inventory}
+            "case": case, "events": events, "problems": problems, "timeline_error": timeline_err, "inventory": inventory}
+
+
+def add_template(source: Path, result: dict):
+    paths = result["paths"]
+    draft = paths["md"].with_name(report_templates.OUTPUT_NAME)
+    case = {label: result["case"].get(key) for key, label, _ in CASE_FIELDS}
+    fields = report_templates.form_fields(case, result["inventory"],
+                                          integrity_rows(result["post"], result["images"], result["references"]),
+                                          result["events"], TABLE_LIMIT)
+    try:
+        report_templates.write_form(source, draft, fields)
+        checked = run_verify(draft, [paths["integrity"]])
+        paths["template"] = draft
+    except report_templates.PACKAGE_ERRORS as exc:
+        checked = {"verdict": "FAIL", "exit_code": 1, "errors": [f"양식을 채울 수 없음: {exc}"], "warnings": []}
+
+    verify = result["verify"]
+    verify["template"] = checked
+    if checked["exit_code"] or checked["verdict"] in ("FAIL", "ERROR"):
+        verify.update(verdict="FAIL", exit_code=1)
+        result["problems"].append("양식 초안 검증 FAIL")
+    elif checked["warnings"] and verify["verdict"] == "PASS":
+        verify["verdict"] = "WARN"
+    for key in ("errors", "warnings"):
+        verify[key].extend(f"양식: {message}" for message in checked[key])
+    paths["verify"].write_text(json.dumps(verify, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1161,6 +1195,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="증거 폴더 → 한국어 포렌식 보고서 초안 + 무결성 검증 (로컬 전용)")
     ap.add_argument("root", nargs="?", help="증거 폴더 (EWF 이미지나 내보낸 파일이 든 폴더)")
     ap.add_argument("-o", "--output", help="출력 폴더 (기본: 증거 폴더 옆 '<폴더명>_분석결과')")
+    ap.add_argument("--template", type=Path, help="자리표시자를 채울 보고서 양식 (.docx)")
     ap.add_argument("--case-info", help="사건 정보 파일 (templates/case_info_example.txt 형식 또는 JSON)")
     ap.add_argument("--hashes", nargs="+", action="extend", default=[],
                     help="참조 해시 목록 (획득 로그·해시표·sha256sum 출력 등). 여러 개 가능")
@@ -1195,6 +1230,15 @@ def main(argv: list[str] | None = None) -> int:
         print("출력 폴더가 증거 폴더 안에 있습니다. 증거 폴더에는 아무것도 쓰지 않습니다 — -o 로 다른 곳을 지정하세요.",
               file=sys.stderr)
         return 2
+    if args.template:
+        if args.template.suffix.lower() != ".docx" or not args.template.is_file():
+            print("읽을 수 있는 DOCX 양식을 지정하세요 (--template)", file=sys.stderr)
+            return 2
+        for name in ("보고서초안.docx", report_templates.OUTPUT_NAME):
+            dest = out_r / name
+            if dest.exists() and dest.samefile(args.template):
+                print("빈 양식과 출력 파일의 경로가 겹칩니다. 다른 출력 폴더를 지정하세요.", file=sys.stderr)
+                return 2
     case_info = Path(args.case_info) if args.case_info else None
     if case_info and not case_info.is_file():
         print(f"사건 정보 파일을 찾을 수 없습니다: {case_info}", file=sys.stderr)
@@ -1214,6 +1258,10 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 2
 
+    if args.template:
+        add_template(args.template, res)
+        if "template" in res["paths"]:
+            print(f"양식 초안: {res['paths']['template']}")
     print("")
     print(f"완료: {res['paths']['html']}")
     print(f"      (브라우저로 열어 검토. 같은 폴더에 .md·파일해시목록.csv·무결성검증.json·타임라인.html)")
