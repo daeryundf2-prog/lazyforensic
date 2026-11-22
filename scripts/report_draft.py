@@ -224,28 +224,23 @@ def post_check(root: Path, before: list[dict]) -> dict:
 
 
 def compare_references(entries: list[dict], inventory: list[dict], images: list[dict]) -> list[dict]:
-    image_by_stem = {}
-    for img in images:
-        stem = Path(img["file"]).name
-        stem = re.sub(r"\.[Ee]01$", "", stem).lower()
-        image_by_stem[stem] = img
-    generic, results = [], []
-    for e in entries:
-        p = Path(e["name"])
-        img = image_by_stem.get(p.stem.lower()) if p.suffix.lower() in RAW_IMAGE_EXTS else None
-        if img is None:
-            generic.append(e)
+    results = hash_reference.match_reference(entries, inventory)
+    media_files = [{"path": img["file"], **(img.get("computed_hashes") or {})} for img in images]
+    for i, (entry, result) in enumerate(zip(entries, results)):
+        name = Path(entry["name"])
+        if result["result"] != "not_found" or result["file"] or name.suffix.lower() not in RAW_IMAGE_EXTS:
             continue
-        computed = img.get("computed_hashes") or {}
-        actual = computed.get(e["algorithm"])
-        if not actual:
-            results.append({**e, "result": "not_verified", "file": img["file"],
-                            "note": "이미지 미디어 해시를 재계산하지 못함"})
-        else:
-            results.append({**e, "result": "match" if actual == e["hash"] else "mismatch",
-                            "file": img["file"], "matched_by": "image_media", "actual": actual})
-    ok_files = [f for f in inventory if "sha256" in f]
-    return results + hash_reference.match_reference(generic, ok_files)
+        # A raw-media reference can name the acquisition source of an E01.
+        # Keep the directory when mapping that name to the container.
+        media_entry = {**entry, "name": name.with_suffix(".E01").as_posix()}
+        media, = hash_reference.match_reference([media_entry], media_files)
+        if media["file"]:
+            if media["result"] == "not_found":
+                media.update(result="not_verified", note="이미지 미디어 해시를 재계산하지 못함")
+            else:
+                media["matched_by"] = "image_media"
+        results[i] = {**media, "name": entry["name"]}
+    return results
 
 
 # ---------------------------------------------------------------- 선조사·타임라인
