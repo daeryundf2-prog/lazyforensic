@@ -1,6 +1,7 @@
 """Deterministic WordprocessingML for the Markdown subset emitted by report_draft."""
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from itertools import groupby
@@ -21,7 +22,7 @@ RELATIONSHIPS = b'''<Relationships xmlns="http://schemas.openxmlformats.org/pack
 
 
 def cells(line: str) -> list[str]:
-    return [c.strip().replace(r"\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+    return [c.removeprefix(" ").removesuffix(" ").replace(r"\|", "|") for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
 
 
 def blocks(md: str):
@@ -47,10 +48,20 @@ def display_text(s: str) -> str:
     return re.sub(r"`([^`]+)`|\*\*([^*]+)\*\*", lambda m: m[1] or m[2], s)
 
 
+# XML-illegal code points and explicit bidirectional formatting controls.
+ESCAPED = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff"
+                     r"\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
 def xml_text(s: str) -> str:
-    # XML 1.0 cannot represent these characters. Keep their code points visible.
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]",
-                  lambda m: f"\\u{ord(m[0]):04x}", s)
+    return ESCAPED.sub(lambda m: f"\\u{ord(m[0]):04x}", s)
+
+
+def display_value(s: str) -> str:
+    """Quote exceptional measured strings using reversible JSON string notation."""
+    if s.startswith('"') or ESCAPED.search(s) or re.search(r"[\t\r\n\x7f-\x9f\u2028\u2029]", s):
+        return json.dumps(s, ensure_ascii=True)
+    return s
 
 
 def row_text(row):

@@ -305,7 +305,7 @@ def load_evidence_hash_file_pairs(evidence_paths: list[str]) -> dict[str, list[s
     return pairs
 
 
-def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str]]) -> list[str]:
+def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str]], *, display_name=None) -> list[str]:
     """해시-파일명 인접성 검증 (Proximity Binding).
 
     보고서에서 해시가 나온 줄의 ±2줄 윈도우에 적힌 파일명이, evidence의 해당
@@ -355,8 +355,11 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
             owners_norm = [_normalize_file_token(o) for o in owners]
             # 표에서 공백이 있는 파일명은 토큰으로 나누지 않고 셀 전체로 확인한다.
             if "|" in line:
-                cells = [c.strip().replace(r"\|", "|").replace("\\", "/")
-                         for c in re.split(r"(?<!\\)\|", line)]
+                raw_cells = [c.strip().replace(r"\|", "|") for c in re.split(r"(?<!\\)\|", line)]
+                # A quoted report label must equal the encoded full evidence path.
+                if display_name and any(display_name(owner) in raw_cells for owner in owners):
+                    continue
+                cells = [c.replace("\\", "/") for c in raw_cells]
                 matching = [c for c in cells if _normalize_file_token(c) in owners_norm]
                 if matching:
                     if any("/" not in c or "/" not in owner or c == owner

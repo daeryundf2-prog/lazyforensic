@@ -165,3 +165,12 @@ def test_generated_hwpx_rejects_leftover_placeholders(tmp_path):
     draft = tmp_path / "draft.hwpx"
     report_hwpx.write_hwpx(draft, "Sample {{review}}")
     assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
+
+
+def test_default_hwpx_preserves_filename_edge_spaces(tmp_path):
+    draft = tmp_path / "draft.hwpx"
+    md = "\n".join(report_draft.table(["Name"], [[" sample.bin "], ["sample.bin"]]))
+    report_hwpx.write_hwpx(draft, md)
+    with ZipFile(draft) as doc:
+        root = ET.fromstring(doc.read(SECTION))
+        assert [t.text for t in root.findall(".//hp:tc//hp:t", NS)] == ["Name", " sample.bin ", "sample.bin"]

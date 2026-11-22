@@ -228,7 +228,7 @@ def main(argv=None):
     #      위에서 1회 계산한 것을 재사용한다.
     if report_hashes and args.evidence:
         evidence_pairs = load_evidence_hash_file_pairs(args.evidence)
-        for v in check_hash_file_binding(text, evidence_pairs):
+        for v in check_hash_file_binding(text, evidence_pairs, display_name=report_docx.display_value):
             if v.startswith("[SCHEMA-WARN]"):
                 warnings.append(v[len("[SCHEMA-WARN] "):])
             else:

@@ -35,7 +35,7 @@ PACKAGE_ERRORS = (OSError, BadZipFile, KeyError, ET.ParseError, ExpatError, Valu
 def cell(value):
     if value is None or value == "":
         return UNKNOWN
-    return report_docx.xml_text(" ".join(str(value).splitlines()))
+    return report_docx.display_value(str(value))
 
 
 def limited_table(header, rows, total, companion):

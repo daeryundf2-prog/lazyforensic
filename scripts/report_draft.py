@@ -493,7 +493,7 @@ def render_report(ctx: dict) -> str:
     rows = []
     for i, f in enumerate(ok_files[:TABLE_LIMIT], 1):
         digest = f"MD5 {f['md5']} / SHA-1 {f['sha1']} / SHA-256 {f['sha256']}" if combined_hashes else f["sha256"]
-        rows.append([i, f["path"], fmt_size(f["size"]), digest])
+        rows.append([i, report_docx.display_value(f["path"]), fmt_size(f["size"]), digest])
         if hwpx_only:
             rows[-1].append(f"MD5 {f['md5']} / SHA-1 {f['sha1']}")
     L += table(columns, rows)
@@ -680,7 +680,7 @@ def render_report(ctx: dict) -> str:
     a(f"- 작성 기관: {case.get('organization') or UNK}")
     a(f"- 작성자: {case.get('analyst') or UNK}")
     a("")
-    return "\n".join(L)
+    return report_docx.xml_text("\n".join(L))
 
 
 IMAGE_STATUS_KO = {
@@ -833,7 +833,7 @@ def timeline_section(ctx: dict) -> list[str]:
                 return fmt_dt(dt)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         if len(evs) <= TIMELINE_FULL_LIMIT:
-            L += table(["시각", "파일"], [[show(e), e["file"]] for e in evs])
+            L += table(["시각", "파일"], [[show(e), report_docx.display_value(e["file"])] for e in evs])
         else:
             days = Counter(show(e)[:10] for e in evs)
             L.append(f"{len(evs)}건 — 가장 이른 시각 {show(evs[0])} (`{evs[0]['file']}`), "

@@ -440,3 +440,32 @@ def test_word_continuation_cell_cannot_hide_measured_text(tmp_path, merge):
     write_parts(source, parts)
     with pytest.raises(ValueError):
         forms.write_form(source, tmp_path / forms.OUTPUT_NAME, {"사건번호": "A-01"})
+
+
+@pytest.mark.parametrize("ext", ["docx", "hwpx"])
+def test_direction_controls_are_visible_and_hashes_stay_bound(tmp_path, ext):
+    root, out = tmp_path / "evidence", tmp_path / "out"
+    root.mkdir()
+    name = "sample\u202eitem.bin"
+    (root / name).write_bytes(b"sample")
+    source = ROOT / ("templates/report_form." + ext)
+    assert report_draft.main([str(root), "-o", str(out), "--template", str(source)]) == 0
+    checked = json.loads((out / "초안검증.json").read_text(encoding="utf-8"))
+    assert checked["template"]["verdict"] == "PASS"
+    raw = json.loads((out / "무결성검증.json").read_text(encoding="utf-8"))
+    assert raw["files"][0]["path"] == name
+    for path in [out / ("양식초안." + ext), out / ("보고서초안." + ext)]:
+        if ext == "docx":
+            body = report_docx.read_docx(path)
+        else:
+            body = package(path)["Preview/PrvText.txt"].decode()
+        assert "\u202e" not in body
+        assert r"sample\u202eitem.bin" in body
+
+
+def test_form_file_labels_keep_control_characters_distinct():
+    paths = ["a\nb", "a b", r"a\nb", "a\x0bb", "a\x00b", r"a\u0000b"]
+    fields = forms.form_fields({}, [{"path": p} for p in paths], [], [], 100)
+    labels = [r[0] for r in fields["증거목록표"][1:]]
+    assert len(set(labels)) == len(paths)
+    assert all(not any(c in value for c in "\x00\n\x0b") for value in labels)
