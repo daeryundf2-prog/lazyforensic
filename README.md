@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/i
 lazyforensic report <증거 폴더> [--case-info 사건정보.txt] [--hashes 해시목록.txt]
 ```
 
-증거 폴더(E01 이미지나 내보낸 파일)의 MD5·SHA-1·SHA-256 계산, E01 저장 해시 재계산 대조, 참조 해시 대조,
+증거 폴더(EWF 이미지나 내보낸 파일)의 MD5·SHA-1·SHA-256 계산, 미디어 및 논리 파일의 저장 해시 대조, 참조 해시 대조,
 분석 전후 재해시, 선조사·타임라인을 거쳐 증거 폴더 옆에 `<폴더명>_분석결과/보고서초안.docx`를 만든다.
 Word나 한글에서 초안을 열어 "미확인" 항목을 검토하고 다른 이름으로 저장한다. 같은 폴더에 Markdown·HTML 초안도 있다.
 DOCX는 기본으로 생성하며 `--no-docx`로 생략할 수 있다.
@@ -72,7 +72,7 @@ DOCX는 기본으로 생성하며 `--no-docx`로 생략할 수 있다.
 
 ```bash
 git clone https://github.com/daeryundf2-prog/lazyforensic && cd lazyforensic
-python -m pytest test/ -v   # 권장: 343개 수집, 선택 의존성이 없으면 일부 skip (로컬 약 10~40초). pytest 없으면 python -m unittest discover -s test
+python -m pytest test/ -v   # 권장: 선택 의존성이 없으면 일부 skip (로컬 약 10~40초). pytest 없으면 python -m unittest discover -s test
 ```
 
 ### C. 다른 컴퓨터에서 한 방 세팅 (선택 의존성 포함)
@@ -171,8 +171,8 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | lazyothers 증거 JSON보내기 | ✅ | `python scripts/evidence_export.py <manifest.json> -o evidence.json` — lazyothers `generate_evidence_doc.py`/`bind_court_pdf.py`가 그대로 소비하는 형식 (scan→서증→표찰·병합 파이프라인) |
 | DLP 로그 체크리스트 정리 | ✅ | `python scripts/dlp_log_table.py <로그.csv>` — 확보된 로그의 시간순·4축 재배열. **탐지 아님** — 없는 로그는 만들지 않음 |
 | 보고서 초안 + 무결성 검증 (에이전트 불필요) | ✅ | `lazyforensic report <폴더> [--case-info …] [--hashes …]` — [`docs/QUICKSTART.md`](docs/QUICKSTART.md). 사람 판단이 필요한 칸은 "미확인" |
-| E01 판독·저장 해시 재계산 대조 | ✅ | `lazyforensic e01 <이미지.E01>` — 표준 라이브러리만으로 EWF-E01 판독. Ex01/L01/S01 미지원 |
-| CLI 래퍼 | ✅ | `bin/lazyforensic report\|e01\|scan\|stt\|pii\|manifest\|timeline\|sheet\|export\|dlp ...` — `bin/`을 PATH에 추가(설치 스크립트가 자동 처리). Windows는 `bin/lazyforensic.cmd`(또는 `.ps1`)로 동일 서브커맨드 |
+| EWF 판독·저장 해시 대조 | ✅ | `lazyforensic ewf <첫 세그먼트>` — E01·Ex01 미디어 검증, L01·Lx01 논리 항목 목록·추출·파일별 검증. 기존 명령 `e01`도 지원 |
+| CLI 래퍼 | ✅ | `bin/lazyforensic report\|ewf\|e01\|scan\|stt\|pii\|manifest\|timeline\|sheet\|export\|dlp ...` — `bin/`을 PATH에 추가(설치 스크립트가 자동 처리). Windows는 `bin/lazyforensic.cmd`(또는 `.ps1`)로 동일 서브커맨드 |
 | 유사 이미지 검색 (pHash/aHash/dHash+색 히스토그램) | ✅ | `python scripts/image_similarity.py <폴더> [--query 사진]` — Pillow 필요, 리사이즈·재압축본도 해밍 거리로 탐지 |
 | 영상 지문 매칭 (프레임 해시 유사도) | ✅ | `python scripts/video_fingerprint.py A.mp4 --scan 폴더/` — ffmpeg 필요, 재인코딩·해상도 차이 영상도 유사도로 판정 |
 | 개인정보 탐지·마스킹 (외부 전송 전 프리플라이트) | ✅ | `python scripts/pii_mask.py <파일|폴더> [--mask]` — 주민번호/전화/카드/계좌/이메일 정규식 탐지 |
