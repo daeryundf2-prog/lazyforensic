@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.0
+
+- 한글 HWPX 양식에도 DOCX와 같은 자리표시자를 사용할 수 있다. `--template 양식.hwpx`로 새 표를 삽입하거나 기존 표의 데이터 행을 항목별로 반복한다. [빈 한글 양식](templates/report_form.hwpx)
+- 검증기는 저장된 HWPX의 섹션과 중첩 표 셀을 원본 양식·측정값에서 계산한 SHA-256과 대조한다. 초안 판정과 실패 사유는 `초안검증.json`의 `template`에 기록한다. [작성 및 재검증 방법](docs/REPORT_TEMPLATES.md)
+
 ## v1.5.0
 
 - `lazyforensic report --template 양식.docx`로 사건 정보와 증거·무결성·타임라인 표를 채운 양식 초안을 만든다. 검증기는 저장된 초안의 본문을 예상값과 대조하고 금지 문구, 근거 없는 해시, 남은 자리표시자를 검사한다. [자리표시자 목록과 빈 양식](docs/REPORT_TEMPLATES.md)

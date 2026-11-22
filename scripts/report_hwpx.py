@@ -108,16 +108,16 @@ def page_settings(para):
     add(add(run, "hp:ctrl"), "hp:colPr", id="", type="NEWSPAPER", layout="LEFT", colCount=1, sameSz=1, sameGap=0)
 
 
-def table(run, rows, ids):
+def table(run, rows, ids, *, width=TEXT_WIDTH, border=2):
     weights = {"번호": 1, "파일": 5, "크기": 2, "해시": 13, "SHA-256": 8, "보조 해시": 9}
     cols = [weights.get(label, 4) for label in rows[0]]
     total_weight = sum(cols)
-    widths = [TEXT_WIDTH * weight // total_weight for weight in cols]
-    widths[-1] += TEXT_WIDTH - sum(widths)
+    widths = [width * weight // total_weight for weight in cols]
+    widths[-1] += width - sum(widths)
     tbl = add(run, "hp:tbl", id=next(ids), zOrder=0, numberingType="TABLE", textWrap="TOP_AND_BOTTOM",
               textFlow="BOTH_SIDES", lock=0, pageBreak="CELL", repeatHeader=1, rowCnt=len(rows),
-              colCnt=len(cols), cellSpacing=0, borderFillIDRef=2, noAdjust=0)
-    add(tbl, "hp:sz", width=TEXT_WIDTH, widthRelTo="ABSOLUTE", height=1800 * len(rows), heightRelTo="ABSOLUTE", protect=0)
+              colCnt=len(cols), cellSpacing=0, borderFillIDRef=border, noAdjust=0)
+    add(tbl, "hp:sz", width=width, widthRelTo="ABSOLUTE", height=1800 * len(rows), heightRelTo="ABSOLUTE", protect=0)
     add(tbl, "hp:pos", treatAsChar=1, affectLSpacing=0, flowWithText=1, allowOverlap=0, holdAnchorAndSO=0,
         vertRelTo="PARA", horzRelTo="COLUMN", vertAlign="TOP", horzAlign="LEFT", vertOffset=0, horzOffset=0)
     add(tbl, "hp:outMargin", left=0, right=0, top=0, bottom=0)
@@ -127,7 +127,7 @@ def table(run, rows, ids):
         tr = add(tbl, "hp:tr")
         style = 6 if y == 0 else 5
         for x, value in enumerate(values):
-            tc = add(tr, "hp:tc", name="", header=int(y == 0), hasMargin=0, protect=0, editable=0, dirty=0, borderFillIDRef=2)
+            tc = add(tr, "hp:tc", name="", header=int(y == 0), hasMargin=0, protect=0, editable=0, dirty=0, borderFillIDRef=border)
             sub = add(tc, "hp:subList", id="", textDirection="HORIZONTAL", lineWrap="BREAK", vertAlign="CENTER",
                       linkListIDRef=0, linkListNextIDRef=0, textWidth=0, textHeight=0, hasTextRef=0, hasNumRef=0)
             cell_run = add(paragraph(sub, ids, style), "hp:run", charPrIDRef=style)
@@ -172,7 +172,7 @@ def content_package():
 def write_hwpx(path: Path, md: str) -> None:
     version = ET.Element("hv:HCFVersion", {"xmlns:hv": HWP + "2011/version", "tagetApplication": "WORDPROCESSOR",
                          "major": "5", "minor": "1", "micro": "1", "buildNumber": "0", "os": "1",
-                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.4.0"})
+                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.6.0"})
     container = ET.Element("container", xmlns=CONTAINER)
     roots = add(container, "rootfiles")
     for name, mime in (("Contents/content.hpf", "application/hwpml-package+xml"), ("Preview/PrvText.txt", "text/plain")):

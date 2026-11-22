@@ -20,11 +20,8 @@ import argparse
 import json
 import re
 import sys
-import zlib
 from datetime import datetime
 from pathlib import Path
-from xml.etree.ElementTree import ParseError
-from zipfile import BadZipFile
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -103,6 +100,7 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
 
 import report_docx
 import report_hwpx
+import report_templates
 
 
 def main(argv=None):
@@ -148,16 +146,26 @@ def main(argv=None):
         encoding_used, read_document = readers[suffix]
         fmt = suffix[1:].upper()
         lossy = False
+        reference = args.template_digest or report_templates.digest_path(report_path)
+        is_form = (args.template_digest is not None or reference.exists()
+                   or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
         try:
-            text = read_document(report_path)
+            text = (report_templates.check_form(report_path, reference, errors) if is_form
+                    else read_document(report_path))
             companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
             if args.markdown or companion.exists():
                 md = companion.read_text(encoding="utf-8-sig")
-                if text != report_docx.draft_text(md):
+                # DOCX Markdown companions describe the main body only, excluding header stories.
+                body = read_document(report_path) if is_form and suffix == ".docx" else text
+                if body != report_docx.draft_text(md):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
-        except (OSError, BadZipFile, KeyError, ParseError, ValueError, RuntimeError, zlib.error) as exc:
+        except report_templates.PACKAGE_ERRORS as exc:
             text = ""
             errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
+        if (is_form or suffix == ".docx") and ("{{" in text or "}}" in text):
+            errors.append("치환되지 않은 자리표시자가 있습니다")
+    elif args.template_digest:
+        parser.error("--template-digest는 DOCX·HWPX 양식 초안에 사용합니다.")
     elif args.markdown:
         parser.error("--markdown은 DOCX·HWPX 초안 검증에 사용합니다.")
     else:
@@ -166,19 +174,6 @@ def main(argv=None):
         except OSError as exc:
             text, encoding_used, lossy = "", "unknown", False
             errors.append(f"보고서를 읽을 수 없음: {exc}")
-
-    if report_path.suffix.lower() == ".docx":
-        import report_templates
-        reference = args.template_digest or report_path.with_suffix(report_templates.DIGEST_SUFFIX)
-        if args.template_digest or report_path.name == report_templates.OUTPUT_NAME or reference.exists():
-            try:
-                text = report_templates.check_form(report_path, reference, errors)
-            except report_templates.PACKAGE_ERRORS as exc:
-                errors.append(f"양식 본문 대조 실패: {exc}")
-        if "{{" in text or "}}" in text:
-            errors.append("치환되지 않은 자리표시자가 있습니다")
-    elif args.template_digest:
-        parser.error("--template-digest는 DOCX 양식 초안에 사용합니다.")
 
     warnings = []
     if lossy:
