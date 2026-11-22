@@ -22,7 +22,8 @@ def main():
     ctx = {"root": root.resolve(), "root_name": root.name, "case": load_case_info(EXAMPLE / "case.txt"),
            "inventory": records["files"], "links": [], "images": records["images"], "survey": survey,
            "post": records["post_check"], "references": [{**r, "hash": r[r["algorithm"]]} for r in refs["entries"]],
-           "reference_sources": refs["sources"], "environment": env, "skip_image_verify": False, "docx": True,
+           "reference_sources": refs["sources"], "environment": env, "skip_image_verify": False,
+           "docx": True, "hwpx": True,
            "events": json.loads((output / "events.json").read_text(encoding="utf-8"))}
     _, verification = write_drafts(output, ctx, integrity)
     print(verification["verdict"])
