@@ -16,7 +16,7 @@ v1.1.0: 에이전트 없이 쓰는 `lazyforensic report`(보고서 초안·무�
 ## EWF 판독 (`scripts/ewf_image.py`)
 
 - 물리 이미지 E01 및 EWF2 2.1 Ex01의 단일·분할 세그먼트를 지원한다. Ex01은 원본 청크, Adler-32, deflate, bzip2 스트림, 단일 bzip2 블록, 8바이트 반복 패턴을 읽는다. 세그먼트 번호·세트 ID, 섹션 체인·체크섬, 테이블, 기록된 미디어 길이를 확인하고 미디어 MD5·SHA-1을 대조한다.
-- L01(LVF/LEF)의 `ltree`와 Lx01(LEF2)의 단일 파일 데이터 섹션(`0x20`)에서 UTF-16LE `entry` 트리를 읽는다. 논리 스트림 길이는 `rec.tb`, 각 파일 내용은 `be`의 16진수 오프셋·길이를 기준으로 한다. 여러 일반 extent, 빈 파일, 데이터가 있는 폴더, 명시적인 중복 오프셋을 가진 sparse 항목을 지원한다. 파일 이름에 경로 구분자가 있을 수 있으므로 추출에는 ID를 쓴다.
+- L01(LVF/LEF)의 `ltree`와 Lx01(LEF2)의 단일 파일 데이터 섹션(`0x20`)에서 UTF-16LE `entry` 트리를 읽는다. 논리 스트림 길이는 `rec.tb`, 각 파일 내용은 `be`의 16진수 오프셋·길이를 기준으로 한다. 여러 일반 extent, 빈 파일, 데이터가 있는 폴더, 명시적인 중복 오프셋을 가진 sparse 항목을 지원한다. 파일 이름에 경로 구분자가 있을 수 있으므로 추출에는 ID를 쓴다. 이름에 짝이 없는 UTF-16 서로게이트가 있으면 화면에는 `\uNNNN`으로 표시하고, JSON의 `name_utf16le`에 원래 이름 바이트를 16진수로 보존한다.
 - 논리 목록의 시각은 기록된 유닉스 초다. 저장 해시는 트리의 `ha`·`sha`에서 읽는다. 별도 인덱스·권한·원본 파일시스템 속성의 복원은 지원하지 않는다. 형식이 표시된 extent, 중복 오프셋 없는 sparse fill, 비표준 트리·손상된 UTF-16은 미지원이다.
 - EWF2 암호화, 증분·재시작으로 비연속인 데이터, 메모리 extent, SMART(S01), AFF4, VMDK/VHD는 이 판독기의 범위 밖이다. EWF2 섹션 메타데이터·논리 트리는 64 MiB, 새 형식의 청크는 32 MiB까지 지원한다.
 - 공개 참조 시험은 로컬 사본만 읽는다. 고정된 manifest의 `ex01-fast`, `ex01-none`, `logical` 표본 경로를 각각 `LF_EX01_FAST_SAMPLE`, `LF_EX01_NONE_SAMPLE`, `LF_L01_SAMPLE`로 지정하고 `python -m pytest test/test_ewf_public.py -q`를 실행한다. 두 Ex01은 독립 획득기의 원본 SHA-256과, L01은 컨테이너·미디어 및 9,219개 파일의 export digest와 대조한다. Lx01과 bzip2는 합성 시험으로 검증했다. [공개 표본 및 기준 해시](https://github.com/abrignoni/ewfprobe/blob/d14572626e54f3bb99763287b3adfea212c47d7e/tests/fixtures/manifest.json)

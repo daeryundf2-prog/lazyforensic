@@ -27,6 +27,7 @@ EVF_SIGNATURE = b"EVF\x09\x0d\x0a\xff\x00"
 EVF2_SIGNATURE = ewf2.EVF2
 LOGICAL_V1 = (b"LVF" + EVF_SIGNATURE[3:], b"LEF" + EVF_SIGNATURE[3:])
 SECTION_DESCRIPTOR_SIZE = 76
+MAX_L01_TABLE_ENTRIES = 65534  # EWF specification, EnCase 6/7 table header
 
 HEADER_KEYS = {
     "c": "case_number",
@@ -100,6 +101,9 @@ def _read_sections(f, path: Path, number: int, signature: bytes):
             raise EwfError(f"{path.name}: 섹션 기술자 체크섬 불일치 ({stype} @ {offset})")
         sections.append((stype, offset, size))
         if stype in ("done", "next"):
+            if signature in LOGICAL_V1 and (next_off != offset or size not in (0, SECTION_DESCRIPTOR_SIZE)
+                                            or offset + SECTION_DESCRIPTOR_SIZE != file_size):
+                raise EwfError(f"{path.name}: invalid logical segment terminator")
             break
         if size < SECTION_DESCRIPTOR_SIZE or offset + size > min(file_size, next_off):
             raise EwfError(f"{path.name}: 섹션 범위 오류 ({stype} @ {offset})")
@@ -130,7 +134,7 @@ def _format_header_date(raw: str) -> str:
             return raw
         return dt.isoformat(sep=" ", timespec="seconds")[:-6] + " UTC"
     parts = raw.split()
-    if len(parts) >= 6 and all(p.isdigit() for p in parts[:6]):
+    if len(parts) >= 6 and all(re.fullmatch(r"[0-9]{1,4}", p) for p in parts[:6]):
         y, mo, d, h, mi, s = (int(p) for p in parts[:6])
         # header 섹션의 시각은 획득 PC의 지역 시각이며 시간대가 기록되지 않는다.
         return f"{y:04d}-{mo:02d}-{d:02d} {h:02d}:{mi:02d}:{s:02d} (시간대 미기록)"
@@ -182,6 +186,7 @@ class EwfImage:
     def _parse(self):
         tree = None
         header2_seen = False
+        set_identifier = None
         for seg_idx, path in enumerate(self.segments):
             with path.open("rb") as f:
                 sections = _read_sections(f, path, seg_idx + 1, self.signature)
@@ -192,10 +197,10 @@ class EwfImage:
                 for stype, off, size in sections:
                     data_off = off + SECTION_DESCRIPTOR_SIZE
                     data_len = max(0, size - SECTION_DESCRIPTOR_SIZE)
-                    if self.logical and stype in ("ltypes", "map", "table2", "data", "session", "error2"):
+                    if self.logical and stype in ("ltypes", "map", "table2", "session", "error2"):
                         self.unparsed_sections.add(stype)
                         continue
-                    if self.logical and stype not in ("header2", "header", "volume", "disk", "sectors", "ltree",
+                    if self.logical and stype not in ("header2", "header", "volume", "disk", "data", "sectors", "ltree",
                                                       "table", "hash", "digest", "next", "done"):
                         raise EwfError(f"unsupported logical section {stype!r}")
                     if stype in ("header2", "header") and not (stype == "header" and header2_seen):
@@ -216,15 +221,29 @@ class EwfImage:
                         parsed = _parse_header_text(text)
                         if parsed:
                             self.header = parsed
-                    elif stype in ("volume", "disk") and not self.media:
+                    elif (stype in ("volume", "disk") and not self.media) or (self.logical and stype == "data"):
                         f.seek(data_off)
                         raw = f.read(min(data_len, 1052))
                         if len(raw) < 24:
                             raise EwfError(f"{path.name}: volume 섹션이 짧음")
                         media_type = raw[0]
+                        chunk_count, spc, bps = struct.unpack_from("<III", raw, 4)
                         if self.logical and media_type != 14:
                             raise EwfError("unexpected logical volume type")
-                        chunk_count, spc, bps = struct.unpack_from("<III", raw, 4)
+                        if self.logical:
+                            if data_len != 1052:
+                                raise EwfError("invalid logical volume/data length")
+                            if any(raw[-4:]):
+                                ewf2.check_adler(raw[:-4], raw[-4:])
+                            guid = raw[64:80]
+                            if any(guid):
+                                if set_identifier is not None and guid != set_identifier:
+                                    raise EwfError("conflicting logical segment set identifiers")
+                                set_identifier = guid
+                            if stype == "data":
+                                if (spc, bps) != (self.media.get("sectors_per_chunk"), self.media.get("bytes_per_sector")):
+                                    raise EwfError("conflicting logical chunk geometry")
+                                continue
                         if data_len >= 1052:
                             sector_count = struct.unpack_from("<Q", raw, 16)[0]
                             self.format_note = "EnCase (EWF-E01)"
@@ -245,6 +264,8 @@ class EwfImage:
                         f.seek(data_off)
                         tree = ewf_logical.read_ltree(f, data_len)
                     elif stype == "sectors":
+                        if self.logical and sectors_range is not None:
+                            raise EwfError("missing logical sector table")
                         sectors_range = (data_off, off + size)
                     elif stype == "table":
                         if sectors_range is None:
@@ -257,14 +278,12 @@ class EwfImage:
                         base = struct.unpack_from("<Q", hdr, 8)[0]
                         if count > (data_len - 24) // 4:
                             raise EwfError(f"{path.name}: table 섹션이 잘림")
-                        if self.logical and data_len > ewf2.MAX_METADATA:
-                            raise EwfError("unsupported logical table size")
+                        if self.logical and (count > MAX_L01_TABLE_ENTRIES or count * 4 + 28 != data_len):
+                            raise EwfError("unsupported logical sector table layout")
                         raw = f.read(count * 4)
                         if len(raw) < count * 4:
                             raise EwfError(f"{path.name}: table 섹션이 잘림")
                         if self.logical:
-                            if count * 4 + 28 != data_len:
-                                raise EwfError("unsupported logical sector table layout")
                             ewf2.check_adler(hdr[:20], hdr[20:])
                             ewf2.check_adler(raw, ewf2.read_exact(f, 4))
                         entries = struct.unpack(f"<{count}I", raw)
@@ -278,15 +297,27 @@ class EwfImage:
                             if self.logical and end - start > ewf2.MAX_CHUNK + 65536:
                                 raise EwfError("unsupported logical chunk size")
                             self.chunks.append((seg_idx, start, end - start, mode))
+                        if self.logical:
+                            sectors_range = None
                     elif stype in ("hash", "digest"):
                         required = 16 if stype == "hash" else 36
                         if data_len < required:
                             raise EwfError(f"{path.name}: {stype} 섹션이 잘림")
                         f.seek(data_off)
-                        raw = f.read(required)
+                        if self.logical:
+                            length = 36 if stype == "hash" else 80
+                            if data_len != length:
+                                raise EwfError("invalid logical media hash record length")
+                            record = ewf2.read_exact(f, length)
+                            ewf2.check_adler(record[:-4], record[-4:])
+                            raw = record[:required]
+                        else:
+                            raw = f.read(required)
                         for algo, value in (("md5", raw[:16]), ("sha1", raw[16:])):
                             if any(value) and value.hex() not in self.stored[algo]:
                                 self.stored[algo].append(value.hex())
+                if self.logical and sectors_range is not None:
+                    raise EwfError("missing logical sector table")
         if not self.media:
             raise EwfError("volume/disk 섹션 없음 — 미디어 크기를 알 수 없음")
         if self.media["chunk_count"] and len(self.chunks) != self.media["chunk_count"]:
@@ -346,7 +377,7 @@ class EwfImage:
             if mode == "compressed":
                 data = ewf2.unpack_stream(raw, self.codec, min(chunk_size, sys.maxsize - 1),
                                           allow_trailing=self.signature == EVF_SIGNATURE)
-            elif mode == "adler" or (mode == "v1_raw" and size - 4 in lengths):
+            elif mode == "adler" or (mode == "v1_raw" and (self.logical or size - 4 in lengths)):
                 data = raw[:-4]
                 ewf2.check_adler(data, raw[-4:])
             else:

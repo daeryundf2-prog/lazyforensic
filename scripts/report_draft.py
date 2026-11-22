@@ -1024,6 +1024,24 @@ def write_drafts(out: Path, ctx: dict, integrity: Path, log=print) -> tuple[dict
     return paths, verify
 
 
+def is_ewf_continuation(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if re.fullmatch(r"\.[el]x?[0-9]{2}", suffix):
+        return True
+    if re.fullmatch(r"\.[e-z][a-z]{2}", suffix):
+        signatures = (ewf_image.EVF_SIGNATURE, *ewf_image.LOGICAL_V1)
+    elif re.fullmatch(r"\.[el][xyz][a-z]{2}", suffix):
+        signatures = (ewf_image.ewf2.EVF2, ewf_image.ewf2.LEF2)
+    else:
+        return False
+    # Alphabetic segment suffixes overlap ordinary filename extensions.
+    try:
+        with path.open("rb") as f:
+            return f.read(8) in signatures
+    except OSError:
+        return False  # Read failures are recorded by the file inventory.
+
+
 def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Path], keywords: list[str],
              skip_image_verify: bool, log=print, *, docx: bool = True) -> dict:
     started = now_kst()
@@ -1051,7 +1069,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
         seen_segments.update(p.with_name(name) for name in res.get("segments", []))
         log(f"      {res['file']}: {IMAGE_STATUS_KO.get(res['status'], res['status'])}")
     for p in files:
-        if p in seen_segments or not re.fullmatch(r"\.[el]x?[0-9]{2}", p.suffix.lower()):
+        if p in seen_segments or not is_ewf_continuation(p):
             continue
         images.append({"file": p.relative_to(root).as_posix(), "image": p.name, "status": "unsupported",
                        "error": "첫 세그먼트부터 연결된 EWF 세트를 확인할 수 없음"})

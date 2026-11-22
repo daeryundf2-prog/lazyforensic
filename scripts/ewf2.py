@@ -81,6 +81,8 @@ def descriptors(f):
             raise EwfError("invalid EWF2 section bounds")
         if flags & ~1 or kind in (7, 11, 12):
             raise EwfError(f"unsupported EWF2 section {kind:#x} or flags {flags:#x}")
+        if kind == 0x20 and not flags & 1:
+            raise EwfError("missing EWF2 single files integrity hash")
         if flags & 1:
             f.seek(start)
             digest = hashlib.md5()
@@ -107,6 +109,8 @@ def sector_table(raw, chunks, segment, bounds, codec):
     entries = memoryview(raw)[32:-16]
     check_adler(entries, raw[-16:-12])
     for offset, size, flags in struct.iter_unpack("<QII", entries):
+        if not flags & 1:
+            flags &= ~4  # PATTERNFILL only has meaning on compressed chunks.
         if flags == 1 and not codec:
             raise EwfError("compressed chunk without a compression method")
         if flags == 5 and size in (0, 8):
@@ -131,6 +135,13 @@ def main_fields(raw, codec):
         raise EwfError("invalid EWF2 metadata columns")
     escapes = {1: "\n", 2: "\r", 3: "\t"}
     return {key: value.translate(escapes) for key, value in zip(keys, values)}
+
+
+def geometry_value(value, bits):
+    digits = value.lstrip("0") or "0"
+    if not value.isascii() or not value.isdecimal() or len(digits) > 20 or int(digits) >= 1 << bits:
+        raise EwfError("invalid EWF2 geometry")
+    return str(int(digits))
 
 
 def parse(image):
@@ -162,14 +173,19 @@ def parse(image):
                     continue
                 if kind not in (1, 2, 4, 8, 9, 0x20) or size > MAX_METADATA:
                     raise EwfError(f"unsupported EWF2 section {kind:#x} or metadata size")
+                if kind in (8, 9):
+                    if terminal != 15 or size != 32 or pad != (12 if kind == 8 else 8):
+                        raise EwfError("invalid EWF2 media hash location, size or padding")
                 f.seek(start)
                 raw = read_exact(f, size if kind == 4 else size - pad)
                 if kind in (1, 2):
                     fields = main_fields(raw, codec)
                     target = device if kind == 1 else case
                     for key, value in fields.items():
-                        if key in ("bp", "sb", "ts", "tb") and target.get(key) not in (None, "", "0", value):
-                            raise EwfError("conflicting EWF2 geometry")
+                        if value and key in ("bp", "sb", "ts", "tb"):
+                            value = geometry_value(value, 32 if key in ("bp", "sb") else 64)
+                            if target.get(key) not in (None, "0", value):
+                                raise EwfError("conflicting EWF2 geometry")
                         if value:
                             target[key] = value
                 elif kind == 4:
@@ -181,8 +197,6 @@ def parse(image):
                     sectors = None
                 elif kind in (8, 9):
                     algo, length = ("md5", 16) if kind == 8 else ("sha1", 20)
-                    if len(raw) != length + 4:
-                        raise EwfError(f"invalid EWF2 {algo} section length")
                     check_adler(raw[:length], raw[length:])
                     value = raw[:length].hex()
                     if value not in image.stored[algo]:

@@ -66,7 +66,7 @@ def extents(row, size, total):
 def parse_tree(raw):
     if raw is None:
         raise EwfError("missing logical single files / ltree section")
-    text = raw.decode("utf-16-le").lstrip("\ufeff").rstrip("\x00\n").replace("\r\n", "\n")
+    text = raw.decode("utf-16-le", "surrogatepass").replace("\r\n", "\n").lstrip("\ufeff").rstrip("\x00\n")
     first, _, body = text.partition("\n")
     parts = body.split("\n\n")
     groups = {}
@@ -82,7 +82,10 @@ def parse_tree(raw):
     rec = groups["rec"]
     if len(rec) != 2 or "tb" not in rec[0].split("\t"):
         raise EwfError("missing logical stream length")
-    total = number(dict(zip(rec[0].split("\t"), rec[1].split("\t"))).get("tb", ""), "stream length")
+    keys, values = (line.split("\t") for line in rec)
+    if len(keys) != len(values) or len(set(keys)) != len(keys):
+        raise EwfError("invalid logical record columns")
+    total = number(values[keys.index("tb")], "stream length")
     lines = groups["entry"]
     if len(lines) < 4 or len(lines) % 2 or not re.fullmatch(r"[0-9]+\t1", lines[0]):
         raise EwfError("incomplete logical entry tree")
@@ -92,22 +95,29 @@ def parse_tree(raw):
     entries = []
     path_chars = 0
     ranges = []
-    # Each stack item is a directory path and its number of unvisited children.
-    parents = [("", 1)]
+    # Preserve the original child count for writers that record it in each child tag.
+    parents = [("", 1, 1)]
     for index in range(2, len(lines), 2):
         while parents and parents[-1][1] == 0:
             parents.pop()
         children = lines[index].split("\t")
         values = lines[index + 1].split("\t")
-        if not parents or len(children) != 2 or children[0] not in ("0", "26") or len(values) != len(keys):
+        if not parents or len(children) != 2 or len(values) != len(keys):
             raise EwfError("invalid logical tree structure")
+        parent, left, siblings = parents[-1]
+        indicator = number(children[0], "entry tag")
+        if indicator not in (0, 26) and (index == 2 or indicator != siblings):
+            raise EwfError("invalid logical entry tag")
         row = dict(zip(keys, values))
         child_count = number(children[1], "child count")
         if row["p"] not in ("", "0", "1") or (child_count and row["p"] != "1"):
             raise EwfError("unsupported logical entry type")
-        parent, left = parents[-1]
-        parents[-1] = parent, left - 1
+        parents[-1] = parent, left - 1, siblings
         name = row["n"].translate({1: "\n", 2: "\r", 3: "\t"})
+        raw_name = None
+        if re.search(r"[\ud800-\udfff]", name):
+            raw_name = row["n"].encode("utf-16-le", "surrogatepass").hex()
+            name = name.encode("utf-8", "backslashreplace").decode("utf-8")
         path_chars += len(parent) + len(name) + 1
         if path_chars > MAX_METADATA:
             raise EwfError("unsupported expanded logical path size")
@@ -131,12 +141,16 @@ def parse_tree(raw):
             dates = {"cr": "created", "ac": "accessed", "wr": "written", "mo": "entry_modified",
                      "dl": "deleted", "aq": "acquired"}
             times = {label: row[k] for k, label in dates.items() if row.get(k)}
+            if any(re.search(r"[\ud800-\udfff]", value) for value in times.values()):
+                raise EwfError("invalid logical timestamp encoding")
             entries.append(dict(id=len(entries), path=path, name=name, size=size,
                                 type="directory" if row["p"] == "1" else "file",
                                 timestamps=times, stored_hashes=stored))
+            if raw_name is not None:
+                entries[-1]["name_utf16le"] = raw_name
             ranges.append(runs)
         if child_count:
-            parents.append((path, child_count))
-    if any(left for _, left in parents):
+            parents.append((path, child_count, child_count))
+    if any(left for _, left, _ in parents):
         raise EwfError("missing logical child entries")
     return total, entries, ranges
