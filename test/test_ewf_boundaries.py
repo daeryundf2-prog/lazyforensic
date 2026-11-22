@@ -116,3 +116,28 @@ def test_incomplete_segment_set_marks_report_run_incomplete(tmp_path):
     out = tmp_path / "output"
     assert report_draft.main([str(root), "-o", str(out)]) == 1
     assert (out / "보고서초안.docx").is_file()
+
+
+@pytest.mark.parametrize(("stored_size", "compressed", "checksum_bytes", "expected"), [
+    (512, False, 4, "verified"), (512, False, 2, "read_error"),
+    (1024, False, 4, "verified"), (1024, True, 0, "verified"),
+    (1025, True, 0, "read_error"),
+])
+def test_partial_final_chunk_uses_media_length_and_validates_storage(
+        tmp_path, stored_size, compressed, checksum_bytes, expected):
+    path = tmp_path / "disk.E01"
+    media = b"m" * 512
+    stored = media.ljust(stored_size, b"\0")
+    payload = (zlib.compress(stored) if compressed else
+               stored + struct.pack("<I", zlib.adler32(stored))[:checksum_bytes])
+    volume = struct.pack("<B3xIIIQ", 1, 1, 2, 512, 1)
+    data_offset = 13 + 76 + len(volume) + 76
+    header = struct.pack("<I4xQ4x", 1, data_offset)
+    entry = struct.pack("<I", (1 << 31) if compressed else 0)
+    table = header + struct.pack("<I", zlib.adler32(header)) + entry + struct.pack("<I", zlib.adler32(entry))
+    segment(path, 1, [("volume", volume), ("sectors", payload), ("table", table),
+                      ("hash", hashlib.md5(media).digest() + bytes(20)), ("done", b"")])
+    result = ewf_image.examine(path)
+    assert result["status"] == expected
+    if expected == "verified":
+        assert result["computed_hashes"]["sha256"] == hashlib.sha256(media).hexdigest()

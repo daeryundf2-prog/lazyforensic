@@ -287,24 +287,32 @@ class EwfImage:
         try:
             for seg_idx, off, size, compressed in self.chunks:
                 if remaining <= 0:
-                    break
+                    raise EwfError("미디어 크기를 초과한 청크")
                 fh = handles.get(seg_idx)
                 if fh is None:
                     fh = handles[seg_idx] = self.segments[seg_idx].open("rb")
                 fh.seek(off)
                 raw = fh.read(size)
+                want = min(chunk_size, remaining)
+                if len(raw) != size:
+                    raise EwfError(f"청크가 잘림 (offset {off})")
                 if compressed:
                     try:
-                        data = zlib.decompress(raw)
+                        stream = zlib.decompressobj()
+                        data = stream.decompress(raw, min(chunk_size + 1, sys.maxsize))
                     except zlib.error as e:
                         raise EwfError(f"청크 압축 해제 실패 (offset {off}): {e}") from e
-                else:
-                    want = min(chunk_size, remaining)
-                    data = raw[:want]
-                    tail = raw[want:want + 4]
-                    if len(tail) == 4 and zlib.adler32(data) != struct.unpack("<I", tail)[0]:
+                    if not stream.eof or len(data) not in (want, chunk_size):
+                        raise EwfError(f"압축 청크 크기 오류 (offset {off})")
+                elif size - 4 in (want, chunk_size):
+                    data = raw[:-4]
+                    if zlib.adler32(data) != struct.unpack_from("<I", raw, size - 4)[0]:
                         raise EwfError(f"비압축 청크 체크섬 불일치 (offset {off})")
-                data = data[:remaining]
+                elif size in (want, chunk_size):
+                    data = raw  # checksum-free chunk
+                else:
+                    raise EwfError(f"비압축 청크 크기 오류 (offset {off})")
+                data = data[:want]
                 remaining -= len(data)
                 yield data
         finally:
