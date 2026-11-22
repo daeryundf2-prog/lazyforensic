@@ -176,3 +176,16 @@ def test_static_forbidden_claim_in_blank_form(tmp_path):
     result = report_draft.run_verify(draft, [])
     assert result["verdict"] == "FAIL" and result["forbidden_hits"] == ["명백히 입증"]
     assert not any("SHA-256 불일치" in message for message in result["errors"])
+
+
+def test_catalogue_and_sample_cover_every_field(tmp_path):
+    sample = ROOT / "templates/report_form.docx"
+    catalogue = (ROOT / "docs/REPORT_TEMPLATES.md").read_text(encoding="utf-8")
+    case = {label: f"합성 {label}" for _, label, _ in report_draft.CASE_FIELDS}
+    fields = forms.form_fields(case, [], [], [], 100)
+    assert set(forms.TOKEN.findall(catalogue)) == set(forms.TOKEN.findall(report_docx.read_docx(sample))) == set(fields)
+    draft = tmp_path / forms.OUTPUT_NAME
+    forms.write_form(sample, draft, fields)
+    text = report_docx.read_docx(draft)
+    assert all(value in text for value in case.values())
+    assert report_draft.run_verify(draft, [])["verdict"] == "PASS"

@@ -18,6 +18,8 @@
 
 ## 바로 쓰기: 증거 폴더 → 한국어 보고서 초안 (에이전트 없이)
 
+기관 양식이 있으면 `--template 양식.docx`로 제목과 절 순서를 유지한 초안을 만들 수 있다. [양식 사용법과 자리표시자 목록](docs/REPORT_TEMPLATES.md)
+
 설치 한 줄, 실행 한 줄. 자세한 안내는 [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
 ```powershell
