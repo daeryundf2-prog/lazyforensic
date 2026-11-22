@@ -102,12 +102,13 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
 
 
 import report_docx
+import report_hwpx
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Report hallucination guard — hard grounding verifier")
-    parser.add_argument("report", nargs="?", default=None, help="Report draft path (.md/.html/.docx)")
-    parser.add_argument("--markdown", help="DOCX와 대조할 Markdown 초안")
+    parser.add_argument("report", nargs="?", default=None, help="Report draft path (.md/.html/.docx/.hwpx)")
+    parser.add_argument("--markdown", help="DOCX·HWPX와 대조할 Markdown 초안")
     parser.add_argument("--health-check", action="store_true", help="Run Section 5.1 & 7-8 forensic factuality health check suite")
     parser.add_argument("--evidence", nargs="*", default=[], help="Evidence files (audit json, audit_trail.jsonl, timeline json, etc.) for hash grounding")
     parser.add_argument("--timeline", help="Timeline events.json for timestamp grounding (optional)")
@@ -140,20 +141,24 @@ def main(argv=None):
         return 2
 
     errors = []
-    if report_path.suffix.lower() == ".docx":
-        encoding_used, lossy = "WordprocessingML", False
+    readers = {".docx": ("WordprocessingML", report_docx.read_docx), ".hwpx": ("OWPML", report_hwpx.read_hwpx)}
+    suffix = report_path.suffix.lower()
+    if suffix in readers:
+        encoding_used, read_document = readers[suffix]
+        fmt = suffix[1:].upper()
+        lossy = False
         try:
-            text = report_docx.read_docx(report_path)
+            text = read_document(report_path)
             companion = Path(args.markdown) if args.markdown else report_path.with_suffix(".md")
             if args.markdown or companion.exists():
                 md = companion.read_text(encoding="utf-8-sig")
                 if text != report_docx.draft_text(md):
-                    errors.append("DOCX 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
+                    errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
         except (OSError, BadZipFile, KeyError, ParseError, ValueError, RuntimeError, zlib.error) as exc:
             text = ""
-            errors.append(f"DOCX 검증 입력을 읽을 수 없음: {exc}")
+            errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
     elif args.markdown:
-        parser.error("--markdown은 DOCX 초안 검증에 사용합니다.")
+        parser.error("--markdown은 DOCX·HWPX 초안 검증에 사용합니다.")
     else:
         try:
             text, encoding_used, lossy = read_text_smart(report_path)

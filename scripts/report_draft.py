@@ -13,7 +13,7 @@ report_draft.py — 증거 폴더 하나로 한국어 포렌식 분석 보고서
   4. 선조사 (scripts/case_survey.py): 시그니처 위장·중복·EXIF·압축·PDF·SQLite·개인정보 패턴 등
   5. 타임라인: 파일 수정 시각(KST 환산), EXIF 촬영 시각(시간대 미기록), 이미지 획득 기록
   6. 분석 후 전체 파일 재해시 → 분석 중 증거가 바뀌지 않았는지 대조
-  7. 보고서초안.docx / 보고서초안.md / 보고서초안.html / 파일해시목록.csv / 무결성검증.json / 타임라인.html 작성
+  7. 보고서초안.hwpx / 보고서초안.docx / 보고서초안.md / 보고서초안.html / 파일해시목록.csv / 무결성검증.json / 타임라인.html 작성
   8. 작성한 초안을 scripts/verify_report.py로 검증 (근거 없는 해시·금지 문구 차단)
 
 원칙 (fail-closed): 측정하지 않은 값은 "미확인"으로 남긴다. 의견·결론·법적 판단은 쓰지 않는다.
@@ -48,6 +48,7 @@ sys.path.insert(0, str(SCRIPTS))
 import ewf_image  # noqa: E402
 import hash_reference  # noqa: E402
 import report_docx  # noqa: E402
+import report_hwpx  # noqa: E402
 
 UNK = "미확인"
 TABLE_LIMIT = 100        # 보고서 본문 표 최대 행 수 (전체는 CSV/JSON)
@@ -433,17 +434,25 @@ def render_report(ctx: dict) -> str:
     sec = "다" if images else "나"
     a(f"### {sec}. 증거 파일 목록과 해시 (분석 전 계산)")
     a("")
-    full_hashes = ctx.get("docx", False)
-    if full_hashes:
+    combined_hashes = ctx.get("docx", False)
+    hwpx_only = ctx.get("hwpx", False) and not combined_hashes
+    if combined_hashes:
         a("MD5·SHA-1·SHA-256을 싣는다. 수정 시각을 포함한 전체 목록은 `파일해시목록.csv`에 있다.")
+    elif hwpx_only:
+        a("기본 해시 열에는 SHA-256만 싣는다. 보조 해시 열에는 MD5·SHA-1을 표시한다. 전체 목록은 `파일해시목록.csv`에 있다.")
     else:
         a("SHA-256만 싣는다. MD5·SHA-1·수정 시각을 포함한 전체 목록은 `파일해시목록.csv`에 있다.")
     a("")
+    columns = ["번호", "파일", "크기", "해시" if combined_hashes else "SHA-256"]
+    if hwpx_only:
+        columns.append("보조 해시")
     rows = []
     for i, f in enumerate(ok_files[:TABLE_LIMIT], 1):
-        digest = f"MD5 {f['md5']} / SHA-1 {f['sha1']} / SHA-256 {f['sha256']}" if full_hashes else f["sha256"]
+        digest = f"MD5 {f['md5']} / SHA-1 {f['sha1']} / SHA-256 {f['sha256']}" if combined_hashes else f["sha256"]
         rows.append([i, f["path"], fmt_size(f["size"]), digest])
-    L += table(["번호", "파일", "크기", "해시" if full_hashes else "SHA-256"], rows)
+        if hwpx_only:
+            rows[-1].append(f"MD5 {f['md5']} / SHA-1 {f['sha1']}")
+    L += table(columns, rows)
     if len(ok_files) > TABLE_LIMIT:
         a("")
         a(f"(앞 {TABLE_LIMIT}개만 표시. 나머지 {len(ok_files) - TABLE_LIMIT}개는 `파일해시목록.csv` 참조)")
@@ -644,8 +653,9 @@ def render_report(ctx: dict) -> str:
 
     a("## 부록. 산출물")
     a("")
+    formats = ["md", "html"] + [fmt for fmt in ("docx", "hwpx") if ctx.get(fmt)]
     L += table(["파일", "내용"], [
-        ["보고서초안.md / 보고서초안.html" + (" / 보고서초안.docx" if full_hashes else ""), "이 보고서 (HTML은 브라우저로 열어 인쇄·복사)"],
+        [" / ".join("보고서초안." + fmt for fmt in formats), "이 보고서 (HTML은 브라우저로 열어 인쇄·복사)"],
         ["파일해시목록.csv", "전체 파일의 경로·크기·수정 시각·MD5·SHA-1·SHA-256 (엑셀에서 열림)"],
         ["무결성검증.json", "분석 전 해시, 분석 후 재해시 대조, EWF 판독, 참조 해시 대조 원자료"],
         ["타임라인.html / events.json", "전체 타임라인 (브라우저로 열기)"],
@@ -794,6 +804,7 @@ def timeline_section(ctx: dict) -> list[str]:
     labels = {
         "파일시스템(mtime)": "파일 수정 시각 (파일시스템 기록값, KST 환산)",
         "EXIF": "촬영 시각 (EXIF 기록값, 시간대 미기록 — 카메라 시계 기준)",
+        "E01 헤더": "이미지 획득 시각 (E01 기록값, UTC)",  # archived reports before v1.3
         "EWF 헤더": "이미지 획득 시각 (EWF 기록값, UTC)",
     }
     for i, (src, evs) in enumerate(by_src.items()):
@@ -803,10 +814,10 @@ def timeline_section(ctx: dict) -> list[str]:
         def show(e):
             ts = e["timestamp"]
             dt = datetime.fromisoformat(ts)
-            if dt.tzinfo is not None and src != "EWF 헤더":
-                return fmt_dt(dt)
-            if src == "EWF 헤더":
+            if src in ("E01 헤더", "EWF 헤더"):
                 return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+            if dt.tzinfo is not None:
+                return fmt_dt(dt)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         if len(evs) <= TIMELINE_FULL_LIMIT:
             L += table(["시각", "파일"], [[show(e), e["file"]] for e in evs])
@@ -1007,17 +1018,23 @@ def write_drafts(out: Path, ctx: dict, integrity: Path, log=print) -> tuple[dict
         paths["docx"] = out / "보고서초안.docx"
         report_docx.write_docx(paths["docx"], md)
 
+    if ctx.get("hwpx"):
+        paths["hwpx"] = out / "보고서초안.hwpx"
+        report_hwpx.write_hwpx(paths["hwpx"], md)
+
     log("[7/7] 초안 검증 (verify_report.py)")
     verify = run_verify(paths["md"], [integrity])
-    if ctx["docx"]:
-        word_result = run_verify(paths["docx"], [integrity], markdown=paths["md"])
-        verify["docx"] = word_result
-        if word_result["exit_code"] or word_result["verdict"] == "ERROR":
+    for fmt in ("docx", "hwpx"):
+        if fmt not in paths:
+            continue
+        format_result = run_verify(paths[fmt], [integrity], markdown=paths["md"])
+        verify[fmt] = format_result
+        if format_result["exit_code"] or format_result["verdict"] == "ERROR":
             verify["verdict"] = "FAIL"
             verify["exit_code"] = 1
-            verify["errors"].extend("DOCX: " + msg for msg in word_result["errors"])
-        if word_result["warnings"]:
-            verify["warnings"].extend("DOCX: " + msg for msg in word_result["warnings"])
+            verify["errors"].extend(fmt.upper() + ": " + msg for msg in format_result["errors"])
+        if format_result["warnings"]:
+            verify["warnings"].extend(fmt.upper() + ": " + msg for msg in format_result["warnings"])
             if verify["verdict"] == "PASS":
                 verify["verdict"] = "WARN"
     paths["verify"].write_text(json.dumps(verify, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1043,7 +1060,7 @@ def is_ewf_continuation(path: Path) -> bool:
 
 
 def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Path], keywords: list[str],
-             skip_image_verify: bool, log=print, *, docx: bool = True) -> dict:
+             skip_image_verify: bool, log=print, *, docx: bool = True, hwpx: bool = True) -> dict:
     started = now_kst()
     root = root.resolve()
     case = load_case_info(case_info)
@@ -1092,7 +1109,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     post = post_check(root, inventory)
     env["finished"] = fmt_dt(now_kst())
 
-    ctx = {"docx": docx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": case,
+    ctx = {"docx": docx, "hwpx": hwpx, "root": root, "root_name": root.name, "inventory": inventory, "links": links, "case": case,
            "images": images, "references": references, "reference_sources": sources, "post": post,
            "survey": survey, "events": events, "environment": env, "skip_image_verify": skip_image_verify}
 
@@ -1148,6 +1165,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hashes", nargs="+", action="extend", default=[],
                     help="참조 해시 목록 (획득 로그·해시표·sha256sum 출력 등). 여러 개 가능")
     ap.add_argument("--keywords", help="쉼표로 구분한 키워드 (텍스트 파일 검색)")
+    ap.add_argument("--hwpx", action=argparse.BooleanOptionalAction, default=True,
+                    help="편집용 보고서초안.hwpx 생성 및 검증 (기본: 켜짐)")
     ap.add_argument("--docx", action=argparse.BooleanOptionalAction, default=True,
                     help="편집용 보고서초안.docx 생성 및 검증 (기본: 켜짐)")
     ap.add_argument("--no-image-verify", action="store_true", help="EWF 미디어 해시 재계산 생략 (대용량 시간 절약)")
@@ -1189,7 +1208,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"LazyForensic {tool_version()} — 보고서 초안 생성 (로컬 전용, 증거 폴더는 읽기만 함)")
     try:
-        res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify, docx=args.docx)
+        res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify,
+                       docx=args.docx, hwpx=args.hwpx)
     except CaseInfoError as exc:
         print(exc, file=sys.stderr)
         return 2
@@ -1197,8 +1217,9 @@ def main(argv: list[str] | None = None) -> int:
     print("")
     print(f"완료: {res['paths']['html']}")
     print(f"      (브라우저로 열어 검토. 같은 폴더에 .md·파일해시목록.csv·무결성검증.json·타임라인.html)")
-    if args.docx:
-        print(f"편집용 초안: {res['paths']['docx']}")
+    for fmt in ("docx", "hwpx"):
+        if fmt in res["paths"]:
+            print(f"편집용 초안: {res['paths'][fmt]}")
     post = res["post"]
     status = {"match": "일치", "incomplete": UNK, "mismatch": "불일치"}[post["status"]]
     print(f"분석 전후 재해시: {status} ({post['checked']}개)")

@@ -62,7 +62,7 @@ E01 nps-2009-canon2-gen6.E01: 일치 (저장 해시 = 재계산 해시)
 
 ## 결과 (`output/`)
 
-- [`보고서초안.docx`](output/보고서초안.docx) / [`보고서초안.md`](output/보고서초안.md) / [`보고서초안.html`](output/보고서초안.html) — 보고서 초안
+- [`보고서초안.hwpx`](output/보고서초안.hwpx) / [`보고서초안.docx`](output/보고서초안.docx) / [`보고서초안.md`](output/보고서초안.md) / [`보고서초안.html`](output/보고서초안.html) — 보고서 초안
 - [`무결성검증.json`](output/무결성검증.json), [`파일해시목록.csv`](output/파일해시목록.csv), [`타임라인.html`](output/타임라인.html),
   [`events.json`](output/events.json), [`선조사.json`](output/선조사.json), [`초안검증.json`](output/초안검증.json)
 
@@ -83,7 +83,7 @@ E01 nps-2009-canon2-gen6.E01: 일치 (저장 해시 = 재계산 해시)
 ## 저장된 측정값으로 초안 다시 만들기
 
 저장소 루트에서 다음 명령을 실행하면 보관된 측정값과 당시 분석 환경을 사용해
-Markdown·HTML·DOCX 초안과 `초안검증.json`을 다시 만든다. 같은 입력에서는 DOCX 바이트도 같다.
+Markdown·HTML·DOCX·HWPX 초안과 `초안검증.json`을 다시 만든다. 같은 환경과 입력에서 반복 실행하면 HWPX와 DOCX가 바이트 단위로 일치한다.
 
 ```sh
 python examples/nps-2009-canon2/render_drafts.py
