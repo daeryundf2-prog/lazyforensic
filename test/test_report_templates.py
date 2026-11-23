@@ -90,7 +90,8 @@ def test_cli_table_values_and_order(tmp_path):
         [[tc.find(".//" + W + "t").text for tc in row.findall(W + "tc")] for row in table.findall(W + "tr")]
         for table in tables]
     event, = json.loads((out / "events.json").read_text(encoding="utf-8"))
-    assert timeline[1:] == [[event[k] for k in ("timestamp", "source", "file", "description")]]
+    # File events are shown with the exact nanosecond mtime recorded in events.json.
+    assert timeline[1:] == [[event[k] for k in ("mtime", "source", "file", "description")]]
     digest = f"MD5 {hashlib.md5(data).hexdigest()} / SHA-1 {hashlib.sha1(data).hexdigest()} / SHA-256 {hashlib.sha256(data).hexdigest()}"
     assert inventory == [["파일", "크기(바이트)", "해시"], ["한글 자료.bin", "9", digest]]
     assert integrity[0] == ["검증 항목", "결과", "근거"]

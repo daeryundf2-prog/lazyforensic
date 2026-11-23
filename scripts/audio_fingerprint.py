@@ -34,6 +34,9 @@ import sys
 from itertools import combinations
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac",
               ".mp4", ".mkv", ".mov", ".webm"}
 DEFAULT_THRESHOLD = 0.85
@@ -116,8 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         sims = [{"file": r["file"], "similarity": round(hamming_similarity(
             r["fingerprint"], other["fingerprint"]), 3)} for r in records]
         if args.json:
-            print(json.dumps({"against": args.compare, "results": sims},
-                             ensure_ascii=False, indent=2))
+            print_json({"against": args.compare, "results": sims}, indent=2)
         else:
             for s in sorted(sims, key=lambda x: -x["similarity"]):
                 print(f"{s['similarity']:.3f}  {s['file']}")
@@ -125,8 +127,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pairs = find_pairs(records, args.threshold)
     if args.json:
-        print(json.dumps({"files": len(records), "similar_pairs": pairs},
-                         ensure_ascii=False, indent=2))
+        print_json({"files": len(records), "similar_pairs": pairs}, indent=2)
     else:
         print(f"{len(records)}개 오디오, 유사 쌍 {len(pairs)}건 (임계 {args.threshold})")
         for p in pairs:

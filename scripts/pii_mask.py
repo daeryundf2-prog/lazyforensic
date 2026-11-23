@@ -30,10 +30,12 @@ AI 모델이 아니라 정규식 기반이므로 결과는 결정적(determinist
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 TEXT_EXTS = {".txt", ".md", ".csv", ".json", ".log", ".tsv", ".xml", ".html"}
 
@@ -119,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total = sum(r.get("pii_count", 0) for r in records)
     if args.json:
-        print(json.dumps({"files": records, "total_pii": total}, ensure_ascii=False, indent=2))
+        print_json({"files": records, "total_pii": total}, indent=2)
     else:
         for r in records:
             if r.get("pii_count"):

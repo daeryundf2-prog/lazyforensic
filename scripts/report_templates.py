@@ -60,7 +60,9 @@ def form_fields(case, inventory, integrity_rows, events, limit):
         evidence.append([cell(item["path"]), cell(item.get("size")), hashes])
     values["증거목록표"] = limited_table(["파일", "크기(바이트)", "해시"], evidence, len(inventory), "파일해시목록.csv")
     values["무결성검증표"] = [["검증 항목", "결과", "근거"], *[[cell(v) for v in row] for row in integrity_rows]]
-    timeline = [[cell(ev.get(k)) for k in ("timestamp", "source", "file", "description")] for ev in events[:limit]]
+    # File events carry the exact nanosecond mtime; timestamp is truncated to microseconds for ISO parsers.
+    timeline = [[cell(ev.get("mtime") or ev.get("timestamp")), *[cell(ev.get(k)) for k in ("source", "file", "description")]]
+                for ev in events[:limit]]
     values["타임라인표"] = limited_table(["시각(기록값)", "출처", "파일", "설명"], timeline, len(events), "events.json")
     return values
 

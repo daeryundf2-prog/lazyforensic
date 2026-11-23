@@ -54,6 +54,7 @@ KST = timezone(timedelta(hours=9))
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 from processing_receipt import TOOL_VERSION, build_receipt, utc_now_iso
+from console_json import print_json  # noqa: E402
 
 
 def _load(name: str):
@@ -117,20 +118,29 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
     if keywords:
         def step_keywords():
             mod = _load("keyword_report")
-            searched, results, skipped = [], [], []
+            searched, results, skipped, undecodable = [], [], [], []
+            encodings: dict[str, int] = {}
             for f in by_ext(mod.TEXT_EXTS):
-                hits, read_error = mod.search_file_result(f, keywords, context=0)
-                if read_error is not None:
-                    skipped.append({"file": str(f), "error": read_error})
+                res = mod.search_file_result(f, keywords, context=0)
+                if res["error"] is not None:
+                    skipped.append({"file": str(f), "error": res["error"]})
+                    continue
+                if res["undecodable"] is not None:
+                    # 해석할 수 없는 파일은 '미검출'이 아니므로 검색 분모에서 뺀다.
+                    undecodable.append({"file": str(f), "reason": res["undecodable"]})
                     continue
                 searched.append(str(f))
-                if hits:
+                encodings[res["encoding"]] = encodings.get(res["encoding"], 0) + 1
+                if res["hits"]:
                     results.append({"file": str(f), "sha256": mod.sha256_file(f),
-                                    "hit_count": len(hits), "hits": hits})
+                                    "encoding": res["encoding"], "encoding_basis": res["basis"],
+                                    "hit_count": len(res["hits"]), "hits": res["hits"]})
             return {"keywords": keywords, "files_searched": len(searched),
+                    "files_undecodable": len(undecodable), "files_read_failed": len(skipped),
+                    "encodings": encodings,
                     "total_hits": sum(r["hit_count"] for r in results),
-                    "status": "partial" if skipped else "complete",
-                    "skipped": skipped, "results": results}
+                    "status": "partial" if skipped or undecodable else "complete",
+                    "skipped": skipped, "undecodable": undecodable, "results": results}
         report["steps"]["keywords"] = _run_step("keywords", step_keywords)
 
     def step_audio():
@@ -311,7 +321,8 @@ def to_markdown(report: dict) -> str:
             for h in r["hits"]:
                 lines.append(f"- {h['file']}: {h['pii_count']}건")
         elif key == "keywords":
-            lines.append(f"## {title}: {r['total_hits']}히트 ({r['files_searched']}개 파일 검색)")
+            lines.append(f"## {title}: {r['total_hits']}히트 ({r['files_searched']}개 파일 검색, "
+                         f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개)")
             for res in r["results"]:
                 lines.append(f"- {res['file']}: {res['hit_count']}히트")
         elif key == "audio":
@@ -395,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.markdown:
         Path(args.markdown).write_text(to_markdown(report), encoding="utf-8")
     if not args.output and not args.markdown:
-        print(out)
+        print_json(report, indent=2)
 
     print(f"선조사 완료 — 단계 {len(report['steps'])}개 중 실패 {len(failed)}개"
           + (f" ({', '.join(failed)})" if failed else ""), file=sys.stderr)

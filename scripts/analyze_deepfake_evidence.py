@@ -9,12 +9,14 @@ and 2D FFT frequency spectrum anomaly checks.
 
 import argparse
 import hashlib
-import json
 import os
 import struct
 import sys
 from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 
 def calculate_hashes(file_path: str) -> dict:
@@ -322,7 +324,7 @@ def main():
             sys.exit(2)
 
     if args.json:
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print_json(data, indent=2)
         return
 
     md = format_markdown_report(data)

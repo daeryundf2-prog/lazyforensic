@@ -9,6 +9,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 
 def verify_audit_chain(trail_path, allow_empty=True, require_hmac=False, hmac_key=None):
     path = Path(trail_path)
@@ -94,7 +97,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     result = verify_audit_chain(args.trail, not args.no_empty, args.require_hmac)
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result, indent=2)
     else:
         print(f"[{result['status']}] {result['message']}")
         for error in result["errors"]:

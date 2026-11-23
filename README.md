@@ -191,7 +191,7 @@ python scripts/korean_morph_forensic.py --evidence case/audit.json --report case
 | 중복 파일 탐지 | ✅ | `python scripts/dedup_files.py <폴더>` — SHA-256 정확 중복 + Pillow 있으면 유사 이미지 그룹 |
 | 아카이브 내부 감사 (추출 없이) | ✅ | `python scripts/archive_survey.py <파일|폴더>` — zip/tar 멤버 해시·이중확장자·압축폭탄·중첩 아카이브 |
 | PDF 구조 감사 | ✅ | `python scripts/pdf_audit.py <파일|폴더>` — 암호화·JavaScript·임베딩 첨부·메타데이터 표면 조사 |
-| SQLite 증거 DB 조사 | ✅ | `python scripts/sqlite_survey.py <파일|폴더>` — immutable 읽기전용, 테이블/행 수/무결성. `--sample 테이블 N`으로 표본 확인 |
+| SQLite 증거 DB 조사 | ✅ | `python scripts/sqlite_survey.py <파일|폴더>` — 원본은 immutable 읽기전용, `-wal`/`-journal`이 있으면 작업 사본에서 커밋 상태를 읽음. 테이블 행 수(뷰 조회 행은 별도)/무결성. `--sample 테이블 N`으로 표본 확인 |
 | 영상 손상·잘림 감지 | 🟡 BYO | `python scripts/video_integrity.py <파일|폴더>` — ffmpeg/ffprobe 필요, 디코드 오류·moov 위치·duration 불일치 |
 | 증거 통합 선조사 (위 도구 전부 한 번에) | ✅ | `python scripts/case_survey.py <폴더> [--keywords ...] [--stt] -o survey.json --markdown survey.md` — 단계별 실패도 '실패'로 기록 |
 | 다른 컴퓨터 환경 복제 | ✅ | `python scripts/setup_forensic_env.py --check` / 실행 시 venv+선택 의존성 설치 (Windows는 `scripts/setup_forensic_env.ps1`) |

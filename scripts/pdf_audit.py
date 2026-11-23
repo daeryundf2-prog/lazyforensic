@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 _PDF_RE = {
     "author": re.compile(rb"/Author\s*\(([^)]*)\)"),
@@ -138,8 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.json:
-        print(json.dumps({"pdf_files": len(records), "records": records},
-                         ensure_ascii=False, indent=2))
+        print_json({"pdf_files": len(records), "records": records}, indent=2)
     else:
         for r in records:
             if not r.get("is_pdf"):

@@ -27,6 +27,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 INSTALL_HINT = (
     "PySceneDetect가 설치돼 있지 않아 장면 컷을 만들지 않고 종료합니다.\n"
     "설치 예 (시스템 Python이 아닌 venv 권장):\n"
@@ -98,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.out).write_text(text, encoding="utf-8")
         print(f"[OK] {path} — 샷 {result['shot_count']}개 → {args.out}")
     else:
-        print(text)
+        print_json(result, indent=2)
     return 0
 
 

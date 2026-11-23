@@ -30,11 +30,13 @@ allowlist: `<root>/.local_only_allowlist` — 한 줄에 `relpath kind`
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 SCAN_DIRS = ["scripts", "skills"]
@@ -145,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         result["env_keys_present"] = {k: bool(os.getenv(k)) for k in ENV_KEYS}
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result, indent=2)
     else:
         print(f"스캔 파일 {scanned}개, 외부 송신 가능 지점 {len(all_findings)}곳 "
               f"(GATED {len(gated)} / REVIEWED {len(reviewed)} / UNGATED {len(ungated)})")

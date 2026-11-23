@@ -30,10 +30,13 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 HEX_RE = re.compile(r"(?<![0-9A-Fa-f])([0-9A-Fa-f]{64}|[0-9A-Fa-f]{40}|[0-9A-Fa-f]{32})(?![0-9A-Fa-f])")
 ALGO_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256"}
@@ -146,28 +149,48 @@ def load_reference(path: str | Path) -> list[dict]:
     return parse_text(text, p.name)
 
 
+def _nfc(text: str) -> str:
+    return unicodedata.normalize("NFC", text)
+
+
 def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
     """files: [{'path': 상대경로, 'md5':…, 'sha1':…, 'sha256':…}] → 항목별 대조 결과.
 
     result: match | mismatch | not_found | ambiguous
+
+    문자 그대로 같은 이름이 없을 때만 유니코드 정규형(NFC)을 맞춰 다시 찾는다 (macOS의 NFD 한글 파일명 등).
+    이때 후보가 하나일 때만 대조하고 normalization에 방식을 남긴다. name·file은 각각 목록과 증거의 원형이다.
     """
     by_base: dict[str, list[tuple[str, dict]]] = {}
+    by_nfc: dict[str, list[tuple[str, dict]]] = {}
     for f in files:
         path = f["path"].replace("\\", "/")
-        by_base.setdefault(path.rsplit("/", 1)[-1].casefold(), []).append((path, f))
+        base = path.rsplit("/", 1)[-1]
+        by_base.setdefault(base.casefold(), []).append((path, f))
+        by_nfc.setdefault(_nfc(base).casefold(), []).append((_nfc(path), f))
     results = []
     for e in entries:
         name = e["name"].replace("\\", "/")
         folded = name.casefold()
         candidates = by_base.get(folded.rsplit("/", 1)[-1], [])
+        normalized = {}
+        if not candidates:
+            name = _nfc(name)
+            folded = name.casefold()
+            candidates = by_nfc.get(folded.rsplit("/", 1)[-1], [])
+            if candidates:
+                normalized = {"normalization": "NFC",
+                              "note": "목록과 증거의 유니코드 정규형이 달라 NFC로 맞춰 대조"}
         exact = [f for p, f in candidates if p == name]
         suffix = [f for p, f in candidates if p.casefold() == folded
                   or p.casefold().endswith("/" + folded) or folded.endswith("/" + p.casefold())]
         matches = exact or suffix or [f for _, f in candidates]
         how = "path" if exact else ("path_suffix" if suffix else "basename")
         if len(matches) > 1:
-            results.append({**e, "result": "ambiguous", "file": None,
-                            "note": f"같은 이름 {len(matches)}개"})
+            note = f"같은 이름 {len(matches)}개"
+            if normalized:
+                note = f"유니코드 정규화(NFC) 후 같은 이름 {len(matches)}개 — 대조 보류"
+            results.append({**e, "result": "ambiguous", "file": None, **normalized, "note": note})
             continue
         target = matches[0] if matches else None
         if target is None:
@@ -175,11 +198,11 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
             continue
         actual = target.get(e["algorithm"])
         if not actual:
-            results.append({**e, "result": "not_found", "file": target["path"],
+            results.append({**e, "result": "not_found", "file": target["path"], **normalized,
                             "note": f"{e['algorithm']} 미계산"})
             continue
         results.append({**e, "result": "match" if actual == e["hash"] else "mismatch",
-                        "file": target["path"], "matched_by": how, "actual": actual})
+                        "file": target["path"], "matched_by": how, "actual": actual, **normalized})
     return results
 
 
@@ -190,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     entries = [e for r in args.reference for e in load_reference(r)]
     if args.json:
-        print(json.dumps(entries, ensure_ascii=False, indent=2))
+        print_json(entries, indent=2)
     else:
         for e in entries:
             print(f"{e['algorithm']:6} {e['hash']}  {e['name']}  ({e['source']}:{e['line']})")

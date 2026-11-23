@@ -29,6 +29,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".ts", ".mts"}
 
 
@@ -159,10 +162,10 @@ def main(argv: list[str] | None = None) -> int:
     bad = [r for r in records if r["status"] != "OK"]
 
     if args.json:
-        print(json.dumps({"video_files": len(records),
+        print_json({"video_files": len(records),
                           "ok": len(records) - len(bad),
                           "problem": len(bad),
-                          "records": records}, ensure_ascii=False, indent=2))
+                          "records": records}, indent=2)
     else:
         for r in records:
             if r["status"] == "OK":

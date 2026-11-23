@@ -156,7 +156,10 @@ def test_shipped_form_cli_and_independent_recheck(tmp_path):
         label + " " + h(data).hexdigest() for label, h in (("MD5", hashlib.md5), ("SHA-1", hashlib.sha1), ("SHA-256", hashlib.sha256)))]
     assert integrity[1][:2] == ["분석 전후 재해시", "일치"]
     event, = json.loads((out / "events.json").read_text(encoding="utf-8"))
-    assert timeline[1] == [event[k] for k in ("timestamp", "source", "file", "description")]
+    # The form keeps the exact nanosecond mtime; events.json timestamp is truncated to microseconds.
+    assert event["mtime_ns"] == (ev / "자료.bin").stat().st_mtime_ns
+    assert timeline[1] == [event[k] for k in ("mtime", "source", "file", "description")]
+    assert event["mtime"].startswith(event["timestamp"].removesuffix("+09:00"))
     for form in (draft.with_suffix(".docx"), draft):
         assert report_draft.run_verify(form, [out / "무결성검증.json"])["verdict"] == "PASS"
     before = draft.read_bytes()

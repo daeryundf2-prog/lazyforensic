@@ -20,12 +20,14 @@ HWPX는 ZIP 컨테이너 + XML이다. Contents/section*.xml 안의
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 HWP_NS = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 SECTION_CAP = 8 * 1024 * 1024
@@ -123,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 (outdir / (f.stem + ".txt")).write_text(r["text"], encoding="utf-8")
         print(f"추출 완료: {ok}/{len(files)}개 → {outdir}")
     elif args.json:
-        print(json.dumps(records, ensure_ascii=False, indent=2))
+        print_json(records, indent=2)
     else:
         for r in records:
             if r["status"] == "ok":

@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from court_evidence_sheet import build_rows, load_files
+from console_json import print_json  # noqa: E402
 from processing_receipt import (RECEIPT_SCHEMA_VERSION, TOOL_VERSION, build_receipt,
                                 resolve_source, sha256_file, utc_now_iso, validate_receipt)
 
@@ -140,7 +141,7 @@ def main(argv=None):
                 raise ValueError("Output would overwrite source evidence or manifest")
             output.write_text(text, encoding="utf-8")
         else:
-            print(text, end="")
+            print_json(payload, indent=2)
         return code
     except (OSError, ValueError, TypeError, KeyError) as exc:
         print(f"Export failed: {exc}", file=sys.stderr)
