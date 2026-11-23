@@ -248,7 +248,9 @@ def main(argv=None):
     for line in text.splitlines():
         for ts in extract_timestamps(line):
             try:
-                is_future = datetime.fromisoformat(ts).replace(tzinfo=KST) > now
+                # Python 3.10의 fromisoformat은 소수 3·6자리만 받는다 — 나노초·밀리초 표기를 마이크로초로 맞춘다.
+                parsed = re.sub(r"\.(\d+)$", lambda m: "." + m.group(1)[:6].ljust(6, "0"), ts)
+                is_future = datetime.fromisoformat(parsed).replace(tzinfo=KST) > now
             except ValueError:
                 # 월/일 오기(예: 2024-13-45)도 정합성 오류로 본다
                 if ts not in future_hits:
