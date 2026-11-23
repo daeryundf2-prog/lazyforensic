@@ -173,34 +173,49 @@ def _plaso_record_event(rec: dict, path: str) -> dict | None:
     }
 
 
-def events_from_plaso(path: str) -> list[dict]:
-    """log2timeline 출력(JSONL 또는 CSV) → 통합 이벤트 목록."""
+def events_from_plaso(path: str) -> tuple[list[dict], dict]:
+    """log2timeline 출력(JSONL 또는 CSV) → (통합 이벤트 목록, 입력·채택·탈락 집계).
+
+    탈락한 레코드는 줄 번호와 이유를 남긴다 — 결과 건수만으로 입력 전체를 반영했다고 오인하지 않게."""
     import csv
     import io
 
     raw = Path(path).read_text(encoding="utf-8", errors="replace")
-    records: list[dict] = []
+    records: list[tuple[int, dict]] = []
+    rejected: list[dict] = []
     if raw.lstrip().startswith("{"):
-        for line in raw.splitlines():
+        for n, line in enumerate(raw.splitlines(), start=1):
             line = line.strip()
             if not line:
                 continue
             try:
-                records.append(json.loads(line))
+                rec = json.loads(line)
             except json.JSONDecodeError:
+                rejected.append({"line": n, "reason": "JSON 해석 실패(미완성·손상된 줄)"})
                 continue
+            if not isinstance(rec, dict):
+                rejected.append({"line": n, "reason": "JSON 객체가 아님"})
+                continue
+            records.append((n, rec))
     else:
-        records = list(csv.DictReader(io.StringIO(raw)))
+        reader = csv.DictReader(io.StringIO(raw))
+        records = [(reader.line_num, row) for row in reader]
     out = []
-    for r in records:
+    for n, r in records:
         ev = _plaso_record_event(r, path)
         if ev:
             out.append(ev)
-    return out
+        else:
+            rejected.append({"line": n, "reason": "시각 없음 또는 해석 불가"})
+    rejected.sort(key=lambda r: r["line"])
+    # 입력 레코드 하나는 채택 또는 탈락 중 정확히 하나로 집계된다.
+    stats = {"source": "plaso", "file": path, "records": len(out) + len(rejected),
+             "accepted": len(out), "rejected": rejected}
+    return out, stats
 
 
 def merge(manifests, kakaos, exifs, stts, anchors, plasos=None) -> dict:
-    events, unanchored = [], []
+    events, unanchored, inputs = [], [], []
     for p in manifests:
         events += events_from_manifest(p)
     for p in kakaos:
@@ -208,7 +223,9 @@ def merge(manifests, kakaos, exifs, stts, anchors, plasos=None) -> dict:
     for p in exifs:
         events += events_from_exif(p)
     for p in plasos or []:
-        events += events_from_plaso(p)
+        plaso_events, stats = events_from_plaso(p)
+        events += plaso_events
+        inputs.append(stats)
     for p in stts:
         a, u = events_from_stt(p, anchors)
         events += a
@@ -223,7 +240,7 @@ def merge(manifests, kakaos, exifs, stts, anchors, plasos=None) -> dict:
             return (1, datetime.min.replace(tzinfo=timezone.utc))
 
     events.sort(key=sort_key)
-    return {"events": events, "unanchored_stt": unanchored}
+    return {"events": events, "unanchored_stt": unanchored, "inputs": inputs}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -263,9 +280,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         Path(args.report).write_text(json.dumps({
             "event_count": len(merged["events"]),
+            "inputs": merged["inputs"],
             "unanchored_stt": merged["unanchored_stt"],
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    for stats in merged["inputs"]:
+        print(f"{stats['source']} {stats['file']}: 입력 {stats['records']}건 중 채택 {stats['accepted']}건, "
+              f"탈락 {len(stats['rejected'])}건", file=sys.stderr)
+        for r in stats["rejected"]:
+            print(f"  탈락 {r['line']}행: {r['reason']}", file=sys.stderr)
     n_un = len(merged["unanchored_stt"])
     print(f"이벤트 {len(merged['events'])}건 병합"
           + (f", STT 상대시각 {n_un}건은 미배치(--anchor 필요)" if n_un else ""),

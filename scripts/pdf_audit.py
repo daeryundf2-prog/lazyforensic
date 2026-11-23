@@ -118,10 +118,10 @@ def audit_pdf(path: Path) -> dict:
     return rec
 
 
-def scan(root: Path) -> list[dict]:
-    files = sorted(p for p in root.rglob("*")
-                   if p.is_file() and p.suffix.lower() == ".pdf")
-    return [audit_pdf(f) for f in files]
+def scan(root: Path, files: list[Path] | None = None) -> list[dict]:
+    if files is None:
+        files = sorted(p for p in root.rglob("*") if p.is_file())
+    return [audit_pdf(f) for f in files if f.suffix.lower() == ".pdf"]
 
 
 def main(argv: list[str] | None = None) -> int:

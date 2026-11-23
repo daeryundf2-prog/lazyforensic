@@ -140,12 +140,13 @@ def test_nested_repeat_preserves_header_styles_and_following_row(tmp_path):
 
 def test_shipped_form_cli_and_independent_recheck(tmp_path):
     assert hw.read_hwpx(SAMPLE) == report_docx.read_docx(SAMPLE.with_suffix(".docx"))
-    ev, out = tmp_path / "증거", tmp_path / "결과"
+    ev, out, docx_out = tmp_path / "증거", tmp_path / "결과", tmp_path / "결과-docx"
     ev.mkdir()
     data = b"synthetic"
     (ev / "자료.bin").write_bytes(data)
-    for source in (SAMPLE.with_suffix(".docx"), SAMPLE):
-        assert report_draft.main([str(ev), "-o", str(out), "--no-hwpx", "--template", str(source)]) == 0
+    # Each run owns a fresh output folder, so the two forms are filled in separate runs.
+    for source, target in ((SAMPLE.with_suffix(".docx"), docx_out), (SAMPLE, out)):
+        assert report_draft.main([str(ev), "-o", str(target), "--no-hwpx", "--template", str(source)]) == 0
     draft = out / "양식초안.hwpx"
     assert not (out / "보고서초안.hwpx").exists()
     result = json.loads((out / "초안검증.json").read_text(encoding="utf-8"))
@@ -160,11 +161,13 @@ def test_shipped_form_cli_and_independent_recheck(tmp_path):
     assert event["mtime_ns"] == (ev / "자료.bin").stat().st_mtime_ns
     assert timeline[1] == [event[k] for k in ("mtime", "source", "file", "description")]
     assert event["mtime"].startswith(event["timestamp"].removesuffix("+09:00"))
-    for form in (draft.with_suffix(".docx"), draft):
+    for form in (docx_out / "양식초안.docx", draft):
         assert report_draft.run_verify(form, [out / "무결성검증.json"])["verdict"] == "PASS"
     before = draft.read_bytes()
-    assert report_draft.main([str(ev), "-o", str(out), "--template", str(draft)]) == 2
+    # Reusing a filled draft from a previous run never writes into that run's folder.
+    assert report_draft.main([str(ev), "-o", str(out), "--template", str(draft)]) == 0
     assert draft.read_bytes() == before
+    assert (tmp_path / "결과_2" / "양식초안.hwpx").is_file()
     forms.digest_path(draft).unlink()
     assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
 

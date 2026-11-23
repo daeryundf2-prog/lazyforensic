@@ -99,8 +99,16 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         return mod.build_manifest(root)
     report["steps"]["manifest"] = _run_step("manifest", step_manifest)
 
-    # 단계별 rglob 반복을 피하기 위해 파일 목록을 한 번만 열거한다.
-    all_files = sorted(p for p in root.rglob("*") if p.is_file())
+    # 모든 단계가 매니페스트(해시 목록)와 같은 허용 파일 목록을 쓴다 — 링크 등 제외 항목을 다시 읽지 않는다.
+    listing = report["steps"]["manifest"].get("result")
+    if listing is None:
+        walk = _load("evidence_manifest").walk_evidence(root)
+        listing = {"files": [{"path": p.relative_to(root).as_posix()} for p in walk["files"]],
+                   "excluded": walk["excluded"], "enumeration_errors": walk["errors"]}
+    all_files = [root / f["path"] for f in listing["files"]]
+    report["scope"] = {"files": len(all_files), "excluded": listing.get("excluded", []),
+                       "enumeration_errors": listing.get("enumeration_errors", []),
+                       "complete": not listing.get("enumeration_errors")}
 
     def by_ext(exts):
         return [p for p in all_files if p.suffix.lower() in exts]
@@ -165,7 +173,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         Image = mod._require_pillow()
         if Image is None:
             raise RuntimeError("Pillow 없음 — image_similarity 생략")
-        records = mod.scan_dir(root, Image)
+        records = mod.scan_dir(root, Image, files=all_files)
         return {"image_files": len(records),
                 "similar_pairs": mod.find_pairs(records, 10)}
     report["steps"]["similar_images"] = _run_step("similar_images", step_images)
@@ -182,20 +190,20 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         mod = _load("dedup_files")
         files = [p for p in all_files if "__pycache__" not in p.parts]
         return {"exact_groups": mod.exact_dups(files),
-                "similar_groups": mod.similar_image_groups(root)}
+                "similar_groups": mod.similar_image_groups(root, files=all_files)}
     report["steps"]["dedup"] = _run_step("dedup", step_dedup)
 
     def step_archives():
         mod = _load("archive_survey")
-        records = mod.scan(root)
+        records = mod.scan(root, files=all_files)
         flagged = [m for r in records for m in r.get("members", []) if m["flags"]]
-        return {"archives": len(records), "flagged_members": len(flagged),
-                "records": records}
+        return {"archives": len(records), "unreadable": sum(1 for r in records if mod.unreadable(r)),
+                "flagged_members": len(flagged), "records": records}
     report["steps"]["archives"] = _run_step("archives", step_archives)
 
     def step_pdf():
         mod = _load("pdf_audit")
-        records = mod.scan(root)
+        records = mod.scan(root, files=all_files)
         return {"pdf_files": len(records),
                 "flagged": sum(1 for r in records
                                if r.get("suspicious") or r.get("encrypted")),
@@ -204,8 +212,9 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     def step_sqlite():
         mod = _load("sqlite_survey")
-        records = mod.scan(root)
+        records = mod.scan(root, files=all_files)
         return {"db_files": len(records),
+                "unreadable": sum(1 for r in records if mod.unreadable(r)),
                 "broken": sum(1 for r in records
                               if r.get("is_sqlite") and not r.get("integrity_ok")),
                 "records": records}
@@ -315,7 +324,13 @@ def to_markdown(report: dict) -> str:
             continue
         r = step["result"]
         if key == "manifest":
-            lines.append(f"## {title}: {r['file_count']}개 파일")
+            scope = report.get("scope") or {}
+            lines.append(f"## {title}: {r['file_count']}개 파일"
+                         + ("" if scope.get("complete", True) else " (일부 폴더 열거 실패 — 전체 수 미확인)"))
+            for e in scope.get("excluded", []):
+                lines.append(f"- 제외: {e['path']} — {e['reason']}")
+            for e in scope.get("enumeration_errors", []):
+                lines.append(f"- 열거 실패: {e['path']} ({e['error']}) — 하위 파일 수 미확인")
         elif key == "pii":
             lines.append(f"## {title}: {r['total_pii']}건 탐지 ({r['files_scanned']}개 파일)")
             for h in r["hits"]:
@@ -342,7 +357,7 @@ def to_markdown(report: dict) -> str:
             lines.append(f"## {title}: 정확 중복 {len(r['exact_groups'])}그룹, "
                          f"유사 이미지 {len(r['similar_groups'])}그룹")
         elif key == "archives":
-            lines.append(f"## {title}: {r['archives']}개 아카이브, "
+            lines.append(f"## {title}: 후보 {r['archives']}개(판독 불가 {r.get('unreadable', 0)}개), "
                          f"플래그 멤버 {r['flagged_members']}개")
             for rec in r["records"]:
                 for m in rec.get("members", []):
@@ -354,7 +369,8 @@ def to_markdown(report: dict) -> str:
                 for n in rec.get("notes", []):
                     lines.append(f"- {rec['file']}: {n}")
         elif key == "sqlite":
-            lines.append(f"## {title}: {r['db_files']}개 DB, 무결성 이상 {r['broken']}건")
+            lines.append(f"## {title}: 후보 {r['db_files']}개(판독 불가·무결성 검사 미수행 {r.get('unreadable', 0)}개), "
+                         f"무결성 이상 {r['broken']}건")
             for rec in r["records"]:
                 if rec.get("tables"):
                     lines.append(f"- {rec['file']}: 테이블 {len(rec['tables'])}개, "
@@ -394,6 +410,11 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(args.root)
     if not root.is_dir():
         print(f"디렉터리를 찾을 수 없습니다: {root}", file=sys.stderr)
+        return 2
+    mod = _load("evidence_manifest")
+    if any(target and mod.inside(root, Path(target)) for target in (args.output, args.markdown)):
+        print("출력 경로가 증거 폴더 안에 있습니다. 증거 폴더에는 아무것도 쓰지 않습니다 — "
+              "증거 폴더 밖을 지정하세요.", file=sys.stderr)
         return 2
 
     keywords = [k.strip() for k in args.keywords.split(",")] if args.keywords else []

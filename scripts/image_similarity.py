@@ -158,8 +158,10 @@ def hash_file(path: Path, Image) -> dict | None:
         return None
 
 
-def scan_dir(target: Path, Image) -> list[dict]:
-    files = sorted(p for p in target.rglob("*") if p.suffix.lower() in IMG_EXTS)
+def scan_dir(target: Path, Image, files: list[Path] | None = None) -> list[dict]:
+    if files is None:
+        files = sorted(target.rglob("*"))
+    files = [p for p in files if p.suffix.lower() in IMG_EXTS]
     records = []
     for f in files:
         r = hash_file(f, Image)

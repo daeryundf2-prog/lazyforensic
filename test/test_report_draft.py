@@ -228,7 +228,9 @@ class ReportDraftTest(unittest.TestCase):
         html = report_draft.md_to_html("# 제목\n\n| a | b |\n| --- | --- |\n| 1 \\| 2 | `x` |\n", "t")
         self.assertIn("<th>a</th>", html)
         self.assertIn("<td>1 | 2</td>", html)
-        self.assertIn("<code>x</code>", html)
+        # Table cells are measured values: backticks stay literal, as in the Word and Hangul drafts.
+        self.assertIn("<td>`x`</td>", html)
+        self.assertNotIn("<code>x</code>", html)
 
 
 if __name__ == "__main__":

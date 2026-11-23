@@ -56,7 +56,7 @@ def exact_dups(files: list[Path]) -> list[dict]:
     return [{"sha256": h, "files": paths} for h, paths in by_hash.items() if len(paths) > 1]
 
 
-def similar_image_groups(root: Path) -> list[dict]:
+def similar_image_groups(root: Path, files: list[Path] | None = None) -> list[dict]:
     """image_similarity.py가 있고 Pillow가 있을 때만 동작."""
     spec = importlib.util.spec_from_file_location(
         "image_similarity", Path(__file__).resolve().parent / "image_similarity.py")
@@ -67,7 +67,7 @@ def similar_image_groups(root: Path) -> list[dict]:
     Image = mod._require_pillow()
     if Image is None:
         return []
-    records = mod.scan_dir(root, Image)
+    records = mod.scan_dir(root, Image, files=files)
     pairs = mod.find_pairs(records, 10)
     # 유사 쌍을 그룹으로 묶는다 (union-find 없이 단순 연결)
     groups: list[set[str]] = []
