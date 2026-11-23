@@ -219,16 +219,27 @@ def audit_archive(path: Path, sig=None) -> dict:
     return {"file": str(path), "error": "지원하지 않는 아카이브 형식 (RAR/7z는 외부 도구 필요)"}
 
 
-def scan(root: Path) -> list[dict]:
+def is_candidate(p: Path) -> bool:
+    suf, name = p.suffix.lower(), p.name.lower()
+    return suf in ARCHIVE_EXTS or suf in TAR_EXTS or name.endswith((".tar.gz", ".tar.bz2", ".tar.xz"))
+
+
+def unreadable(rec: dict) -> bool:
+    """구조를 읽지 못한 후보 (판독 불가) — 멤버 0개를 '내용 없음'으로 오인하지 않게 따로 센다."""
+    return bool(rec.get("error")) or rec.get("status") == "failed"
+
+
+def scan(root: Path, files: list[Path] | None = None) -> list[dict]:
+    """확장자로 고른 후보마다 기록을 하나씩 남긴다. 읽지 못한 후보도 error와 함께 남긴다."""
     sig = _sig_mod()
+    if files is None:
+        files = sorted(p for p in root.rglob("*") if p.is_file())
     out = []
-    for p in sorted(root.rglob("*")):
-        if not p.is_file() or "__pycache__" in p.parts:
+    for p in files:
+        if "__pycache__" in p.parts or not is_candidate(p):
             continue
-        suf, name = p.suffix.lower(), p.name.lower()
-        if suf in ARCHIVE_EXTS or suf in TAR_EXTS or name.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
-            if zipfile.is_zipfile(p) or suf in TAR_EXTS or ".tar." in name:
-                out.append(audit_archive(p, sig))
+        is_zip = zipfile.is_zipfile(p) or p.suffix.lower() in ARCHIVE_EXTS
+        out.append(audit_zip(p, sig) if is_zip else audit_tar(p, sig))
     return out
 
 

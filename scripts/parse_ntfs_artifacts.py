@@ -21,10 +21,44 @@ if hasattr(sys.stdout, "reconfigure"):
 MAX_RECORDS_DEFAULT = 10000
 
 
+def _users(user):
+    return {"username": getattr(user, "name", "N/A"), "home": getattr(user, "home", "N/A"),
+            "sid": getattr(user, "sid", "N/A")}
+
+
+def _prefetch(pf):
+    return {"executable": getattr(pf, "name", getattr(pf, "executable", "N/A")),
+            "run_count": getattr(pf, "run_count", 0),
+            "last_run": str(getattr(pf, "last_run", getattr(pf, "last_execution", "N/A")))}
+
+
+def _eventlog(record):
+    # event_id 접근은 단일 getattr 로 통일 (구버전은 같은 속성을 두 번 물어보는 복붙 버그)
+    return {"timestamp": str(getattr(record, "ts", getattr(record, "timestamp", "N/A"))),
+            "provider": getattr(record, "provider", getattr(record, "source", "N/A")),
+            "event_id": getattr(record, "event_id", "N/A"),
+            "computer": getattr(record, "computer", "N/A")}
+
+
+def _shimcache(shim):
+    return {"path": getattr(shim, "path", "N/A"), "last_modified": str(getattr(shim, "last_modified", "N/A")),
+            "exec_flag": getattr(shim, "exec_flag", "N/A")}
+
+
+# 아티팩트 → (Target 메서드, 레코드 변환, 메서드가 없을 때의 사유)
+ARTIFACTS = {
+    "users": ("users", _users, "target.users() 미지원 Dissect 버전"),
+    "prefetch": ("prefetch", _prefetch, "target.prefetch() 미지원 Dissect 버전 — dissect.target 3.15+ 권장"),
+    "eventlogs": ("eventlogs", _eventlog, "target.eventlogs() 미지원 — 대신 Hayabusa/Chainsaw로 .evtx 직접 분석 권장"),
+    "shimcache": ("shimcache", _shimcache, "target.shimcache() 미지원 Dissect 버전"),
+}
+
+
 def run_dissect_query(target_path: str, artifact_type: str, limit: int = MAX_RECORDS_DEFAULT):
     """Fox-IT Dissect 프레임워크를 활용한 아티팩트 추출 (bring-your-own-binary 래퍼).
     E01/RAW는 dissect + ewf 플러그인 필요.
-    반환: (records, error) — error 는 None 또는 사람이 읽을 수 있는 실패 사유.
+    반환: (records, error, has_more) — error 는 None 또는 사람이 읽을 수 있는 실패 사유,
+    has_more 는 상한(limit)에 도달한 뒤 레코드가 더 있었는지 (상한+1번째를 확인해 판단).
     """
     try:
         from dissect.target import Target
@@ -32,7 +66,7 @@ def run_dissect_query(target_path: str, artifact_type: str, limit: int = MAX_REC
         return [], (
             "Dissect 프레임워크 미설치 — pip install dissect[full] 실행 후 재시도. "
             "이 상태에서는 레코드 0건조차 보고할 수 없다."
-        )
+        ), False
 
     # E01 사전 힌트
     lower = target_path.lower()
@@ -48,63 +82,21 @@ def run_dissect_query(target_path: str, artifact_type: str, limit: int = MAX_REC
         return [], (
             f"Dissect Target.open 실패 on '{target_path}': {e}. "
             "이미지가 E01이면 ewfmount 후 마운트 경로를 전달하거나 dissect[full] 설치 확인."
-        )
+        ), False
 
-    truncated = False
+    method, convert, unsupported = ARTIFACTS[artifact_type]
+    has_more = False
     try:
-        if artifact_type == "users":
-            for user in target.users():
-                results.append({
-                    "username": getattr(user, "name", "N/A"),
-                    "home": getattr(user, "home", "N/A"),
-                    "sid": getattr(user, "sid", "N/A")
-                })
-                if len(results) >= limit:
-                    truncated = True
-                    break
-        elif artifact_type == "prefetch":
-            func = getattr(target, "prefetch", None)
-            if func is None:
-                return [], "target.prefetch() 미지원 Dissect 버전 — dissect.target 3.15+ 권장"
-            for pf in func():
-                results.append({
-                    "executable": getattr(pf, "name", getattr(pf, "executable", "N/A")),
-                    "run_count": getattr(pf, "run_count", 0),
-                    "last_run": str(getattr(pf, "last_run", getattr(pf, "last_execution", "N/A")))
-                })
-                if len(results) >= limit:
-                    truncated = True
-                    break
-        elif artifact_type == "eventlogs":
-            func = getattr(target, "eventlogs", None)
-            if func is None:
-                return [], "target.eventlogs() 미지원 — 대신 Hayabusa/Chainsaw로 .evtx 직접 분석 권장"
-            for record in func():
-                # event_id 접근은 단일 getattr 로 통일 (구버전은 같은 속성을 두 번 물어보는 복붙 버그)
-                results.append({
-                    "timestamp": str(getattr(record, "ts", getattr(record, "timestamp", "N/A"))),
-                    "provider": getattr(record, "provider", getattr(record, "source", "N/A")),
-                    "event_id": getattr(record, "event_id", "N/A"),
-                    "computer": getattr(record, "computer", "N/A")
-                })
-                if len(results) >= limit:
-                    truncated = True
-                    break
-        elif artifact_type == "shimcache":
-            func = getattr(target, "shimcache", None)
-            if func is None:
-                return [], "target.shimcache() 미지원 Dissect 버전"
-            for shim in func():
-                results.append({
-                    "path": getattr(shim, "path", "N/A"),
-                    "last_modified": str(getattr(shim, "last_modified", "N/A")),
-                    "exec_flag": getattr(shim, "exec_flag", "N/A")
-                })
-                if len(results) >= limit:
-                    truncated = True
-                    break
+        func = getattr(target, method, None)
+        if func is None:
+            return [], unsupported, False
+        for item in func():
+            if len(results) >= limit:
+                has_more = True  # 상한 다음 레코드가 실제로 있다 — 결과는 잘린 것이다
+                break
+            results.append(convert(item))
     except Exception as e:
-        return results, f"Dissect query error on '{target_path}' artifact '{artifact_type}': {e}"
+        return results, f"Dissect query error on '{target_path}' artifact '{artifact_type}': {e}", has_more
     finally:
         try:
             if target is not None and hasattr(target, "close"):
@@ -112,13 +104,13 @@ def run_dissect_query(target_path: str, artifact_type: str, limit: int = MAX_REC
         except Exception:
             pass
 
-    return results, None
+    return results, None, has_more
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Fox-IT Dissect 기반 디스크 아티팩트 파서")
     parser.add_argument("target", help="분석 대상 디스크 이미지 (E01, RAW, VHDX, VMDK) 또는 루트 경로")
-    parser.add_argument("--artifact", "-a", choices=["users", "prefetch", "eventlogs", "shimcache"], default="prefetch", help="추출할 아티팩트 유형")
+    parser.add_argument("--artifact", "-a", choices=sorted(ARTIFACTS), default="prefetch", help="추출할 아티팩트 유형")
     parser.add_argument("--output", "-o", help="결과 JSON 저장 경로")
     parser.add_argument("--limit", type=int, default=MAX_RECORDS_DEFAULT,
                         help=f"레코드 상한 (기본 {MAX_RECORDS_DEFAULT}) — eventlogs 등 대용량 이터레이션 보호")
@@ -130,16 +122,23 @@ def main(argv=None):
 
     # 진행 로그는 stderr 로 — stdout 은 JSON 데이터 전용으로 유지한다.
     print(f"[*] Extracting artifact '{args.artifact}' from '{args.target}'...", file=sys.stderr)
-    data, error = run_dissect_query(args.target, args.artifact, limit=max(1, args.limit))
+    limit = max(1, args.limit)
+    data, error, has_more = run_dissect_query(args.target, args.artifact, limit=limit)
 
     output_json = {
         "target": args.target,
         "artifact": args.artifact,
         "count": len(data),
+        "limit": limit,
+        # truncated: 상한까지만 읽었고 그 뒤 레코드가 실제로 더 있었다 (count == limit 만으로는 알 수 없음).
+        "truncated": has_more,
         "error": error,
         "extracted_at": datetime.now(timezone.utc).isoformat(),
         "records": data,
     }
+    if has_more:
+        print(f"[!] 레코드 상한 {limit}건에 도달 — 뒤에 레코드가 더 있어 결과가 잘렸습니다 (--limit 조정).",
+              file=sys.stderr)
 
     if error:
         # 실패를 성공처럼 쓰지 않는다: error 필드가 담긴 JSON + exit 3.

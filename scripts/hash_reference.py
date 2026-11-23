@@ -22,13 +22,17 @@ hash_reference.py — 참조 해시 목록(획득 로그·납품 해시표) 판�
 
 알려진 한계:
 - 파일명 대조는 경로 끝부분 일치 → 고유한 파일명 일치 순으로 한다.
-  같은 이름의 파일이 여러 개면 '미확인'으로 남긴다.
-- 형식을 못 알아본 줄은 조용히 건너뛴다. 읽힌 항목 수를 반드시 확인할 것.
+  같은 이름의 파일이 여러 개면 '미확인'으로 남긴다. 참조에 적힌 상위 경로가
+  증거 경로와 다른데 파일명만 같으면 해시가 일치해도 path_differs로 표시한다
+  (같은 내용이라는 뜻이지 같은 위치의 파일이라는 뜻이 아니다).
+- 해시 형식이 있으나 쓰지 못한 줄(값 없음·해시 2개·파일명 없음 등)은 read_reference의
+  rejected에 줄 번호와 이유를 남긴다. 해시가 없는 줄은 ignored로만 센다.
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import re
 import sys
@@ -64,7 +68,7 @@ def _entry(name: str, algo: str, value: str, source: str, line: int) -> dict:
             "hash": value.lower(), "source": source, "line": line}
 
 
-def _parse_csv(text: str, source: str) -> list[dict] | None:
+def _parse_csv(text: str, source: str, rejected: list[dict]) -> tuple[list[dict], int] | None:
     first = text.lstrip("\ufeff").splitlines()[0] if text.strip() else ""
     if "," not in first and "\t" not in first:
         return None
@@ -78,33 +82,52 @@ def _parse_csv(text: str, source: str) -> list[dict] | None:
     if name_idx is None or not hash_idx:
         return None
     out = []
+    data_rows = 0
     for n, row in enumerate(rows[1:], start=2):
-        if name_idx >= len(row) or not row[name_idx].strip():
+        if not any(cell.strip() for cell in row):
             continue
+        data_rows += 1
+        if name_idx >= len(row) or not row[name_idx].strip():
+            rejected.append({"line": n, "reason": "파일명 없음"})
+            continue
+        accepted = 0
         for i, algo in hash_idx.items():
-            if i < len(row):
-                v = row[i].strip()
-                if HEX_RE.fullmatch(v) and ALGO_BY_LEN[len(v)] == algo:
-                    out.append(_entry(row[name_idx], algo, v, source, n))
-    return out
+            v = row[i].strip() if i < len(row) else ""
+            if HEX_RE.fullmatch(v) and ALGO_BY_LEN[len(v)] == algo:
+                out.append(_entry(row[name_idx], algo, v, source, n))
+                accepted += 1
+            elif v:
+                rejected.append({"line": n, "reason": f"{rows[0][i].strip()} 값이 해시 형식이 아님"})
+        if not accepted and not any(r["line"] == n for r in rejected):
+            rejected.append({"line": n, "reason": "해시 값 없음"})
+    return out, data_rows
 
 
-def parse_text(text: str, source: str = "") -> list[dict]:
-    csv_entries = _parse_csv(text, source)
-    if csv_entries is not None:
-        return csv_entries
+def _parse(text: str, source: str, rejected: list[dict]) -> tuple[list[dict], int]:
+    """(항목, 데이터 줄 수). 해시 형식이 보이지만 쓰지 못한 줄은 rejected에 남긴다."""
+    parsed_csv = _parse_csv(text, source, rejected)
+    if parsed_csv is not None:
+        return parsed_csv
     out: list[dict] = []
     block_name: str | None = None
+    data_lines = 0
+
+    def reject(n: int, reason: str) -> None:
+        rejected.append({"line": n, "reason": reason})
+
     for n, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
             block_name = None
             continue
+        data_lines += 1
         m = BSD_RE.match(line)
         if m:
             algo = _norm_algo(m.group(1))
             if len(m.group(3)) == {"md5": 32, "sha1": 40, "sha256": 64}[algo]:
                 out.append(_entry(m.group(2), algo, m.group(3), source, n))
+            else:
+                reject(n, "알고리즘과 해시 길이가 다름")
             continue
         m = FILENAME_LABEL_RE.match(line)
         if m:
@@ -116,11 +139,18 @@ def parse_text(text: str, source: str = "") -> list[dict]:
         if m:
             algo = _norm_algo(m.group(1))
             value = m.group(2)
-            if block_name and len(value) == {"md5": 32, "sha1": 40, "sha256": 64}[algo]:
+            if len(value) != {"md5": 32, "sha1": 40, "sha256": 64}[algo]:
+                reject(n, "알고리즘과 해시 길이가 다름")
+            elif not block_name:
+                reject(n, "파일명 줄 없이 나온 해시")
+            else:
                 out.append(_entry(block_name, algo, value, source, n))
             continue
         hashes = HEX_RE.findall(line)
+        if not hashes:
+            continue
         if len(hashes) != 1:
+            reject(n, f"한 줄에 해시 {len(hashes)}개")
             continue
         # sha256sum uses one space plus a mode character (space or "*").
         # Everything after it is one path, including embedded spaces.
@@ -131,12 +161,18 @@ def parse_text(text: str, source: str = "") -> list[dict]:
         rest = HEX_RE.sub(" ", line)
         tokens = [t.lstrip("*") for t in rest.split() if NAME_TOKEN_RE.match(t.lstrip("*"))]
         if len(tokens) != 1:
+            reject(n, f"파일명 후보 {len(tokens)}개")
             continue
         out.append(_entry(tokens[0], ALGO_BY_LEN[len(hashes[0])], hashes[0], source, n))
-    return out
+    return out, data_lines
 
 
-def load_reference(path: str | Path) -> list[dict]:
+def parse_text(text: str, source: str = "") -> list[dict]:
+    return _parse(text, source, [])[0]
+
+
+def read_reference(path: str | Path) -> dict:
+    """참조 목록 한 개 → 출처 식별자(SHA-256·크기)와 채택·거절·무시 줄 수를 포함한 판독 결과."""
     p = Path(path)
     data = p.read_bytes()
     if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
@@ -146,7 +182,13 @@ def load_reference(path: str | Path) -> list[dict]:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError:
             text = data.decode("cp949", "replace")
-    return parse_text(text, p.name)
+    rejected: list[dict] = []
+    entries, rows = _parse(text, p.name, rejected)
+    accepted = len({e["line"] for e in entries})
+    rejected_rows = len({r["line"] for r in rejected} - {e["line"] for e in entries})
+    return {"name": p.name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
+            "rows": rows, "accepted_rows": accepted, "rejected_rows": rejected_rows,
+            "ignored_rows": rows - accepted - rejected_rows, "rejected": rejected, "entries": entries}
 
 
 def _nfc(text: str) -> str:
@@ -160,6 +202,7 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
 
     문자 그대로 같은 이름이 없을 때만 유니코드 정규형(NFC)을 맞춰 다시 찾는다 (macOS의 NFD 한글 파일명 등).
     이때 후보가 하나일 때만 대조하고 normalization에 방식을 남긴다. name·file은 각각 목록과 증거의 원형이다.
+    path_differs: 참조에 적힌 상위 경로와 증거 경로가 다르고 파일명만 같다 (해시 일치 ≠ 같은 파일 귀속).
     """
     by_base: dict[str, list[tuple[str, dict]]] = {}
     by_nfc: dict[str, list[tuple[str, dict]]] = {}
@@ -202,7 +245,8 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
                             "note": f"{e['algorithm']} 미계산"})
             continue
         results.append({**e, "result": "match" if actual == e["hash"] else "mismatch",
-                        "file": target["path"], "matched_by": how, "actual": actual, **normalized})
+                        "file": target["path"], "matched_by": how, "actual": actual, **normalized,
+                        "path_differs": how == "basename" and "/" in name.strip("/")})
     return results
 
 
@@ -211,13 +255,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("reference", nargs="+", help="해시 목록 파일")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    entries = [e for r in args.reference for e in load_reference(r)]
+    lists = [read_reference(r) for r in args.reference]
+    entries = [e for listing in lists for e in listing["entries"]]
     if args.json:
         print_json(entries, indent=2)
     else:
         for e in entries:
             print(f"{e['algorithm']:6} {e['hash']}  {e['name']}  ({e['source']}:{e['line']})")
         print(f"읽은 항목 {len(entries)}개", file=sys.stderr)
+    for listing in lists:
+        print(f"{listing['name']} (SHA-256 {listing['sha256']}): 데이터 {listing['rows']}줄 — "
+              f"채택 {listing['accepted_rows']}, 거절 {listing['rejected_rows']}, 해시 없음 {listing['ignored_rows']}",
+              file=sys.stderr)
+        for r in listing["rejected"]:
+            print(f"  거절 {r['line']}행: {r['reason']}", file=sys.stderr)
     return 0 if entries else 3
 
 

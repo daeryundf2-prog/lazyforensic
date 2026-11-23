@@ -20,9 +20,9 @@ def main():
            "version": survey["processing_receipt"]["tool"]["version"], "os": "Darwin 27.2.0 (arm64)",
            "python": "3.12.12", "optional": "Pillow 있음, ffmpeg 있음, ffprobe 있음, fpcalc 있음"}
     ctx = {"root": root.resolve(), "root_name": root.name, "case": load_case_info(EXAMPLE / "case.txt"),
-           "inventory": records["files"], "links": [], "images": records["images"], "survey": survey,
+           "inventory": records["files"], "images": records["images"], "survey": survey,
            "post": records["post_check"], "references": [{**r, "hash": r[r["algorithm"]]} for r in refs["entries"]],
-           "reference_sources": refs["sources"], "environment": env, "skip_image_verify": False,
+           "reference_sources": refs["sources"], "environment": env,
            "docx": True, "hwpx": True,
            "events": json.loads((output / "events.json").read_text(encoding="utf-8"))}
     _, verification = write_drafts(output, ctx, integrity)

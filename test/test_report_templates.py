@@ -133,8 +133,10 @@ def test_empty_tables_missing_reference_and_input_collision(tmp_path):
     draft.with_suffix(forms.DIGEST_SUFFIX).unlink()
     assert report_draft.run_verify(draft, [])["verdict"] == "FAIL"
     before = draft.read_bytes()
-    assert report_draft.main([str(ev), "-o", str(out), "--template", str(draft)]) == 2
+    # A previous run's folder is never reused, so the filled draft cannot be overwritten by the next run.
+    assert report_draft.main([str(ev), "-o", str(out), "--template", str(draft)]) == 0
     assert draft.read_bytes() == before
+    assert (tmp_path / "결과_2" / forms.OUTPUT_NAME).is_file()
 
 
 def test_unsupported_form_and_mixed_table_marker(tmp_path):

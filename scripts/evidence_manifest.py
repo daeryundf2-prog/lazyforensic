@@ -20,12 +20,17 @@ evidence_manifest.py — 증거 매니페스트 생성기 (chain-of-custody 초�
   이 도구로 판정할 수 없다.
 - '무결성 보장'이 아니라 '변경 탐지'다. 원본 보존은 별도 읽기전용
   조치(scripts/lock_evidence.sh)와 병행할 것.
+- 심볼릭 링크·연결 지점과 일반 파일이 아닌 항목은 따라가지 않고 excluded에
+  이유와 함께 남긴다. 열지 못한 폴더는 enumeration_errors에 남기며, 이때
+  complete는 false다 (그 폴더 안의 파일 수는 알 수 없다).
+- 매니페스트(-o)를 증거 폴더 안에 쓰지 않는다 — 대조 대상이 바뀌기 때문이다.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
 import platform
 import re
 import sys
@@ -47,11 +52,69 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_manifest(root: Path) -> dict:
-    files = []
-    for f in sorted(root.rglob("*")):
-        if not f.is_file():
+# Windows reparse tags for links that point elsewhere (symbolic links and junctions/mount points).
+LINK_REPARSE_TAGS = {0xA000000C, 0xA0000003}
+LINK_REASON = "링크(심볼릭 링크·연결 지점) — 따라가지 않음"
+SPECIAL_REASON = "일반 파일이 아님(장치·파이프 등) — 읽지 않음"
+
+
+def _is_link(entry: os.DirEntry) -> bool:
+    if entry.is_symlink():
+        return True
+    st = entry.stat(follow_symlinks=False)
+    return getattr(st, "st_reparse_tag", 0) in LINK_REPARSE_TAGS
+
+
+def walk_evidence(root: Path) -> dict:
+    """증거 폴더의 일반 파일을 한 가지 규칙으로 열거한다 (보고서·선조사·매니페스트 공통).
+
+    반환: {"files": [Path], "excluded": [{"path", "reason"}], "errors": [{"path", "error"}]}
+    errors가 있으면 그 폴더 아래 파일 수는 알 수 없다.
+    """
+    files: list[Path] = []
+    excluded: list[dict] = []
+    errors: list[dict] = []
+
+    def relpath(p: Path) -> str:
+        return p.relative_to(root).as_posix() or "."
+
+    pending = [root]
+    while pending:
+        folder = pending.pop()
+        try:
+            with os.scandir(folder) as it:
+                entries = list(it)
+        except OSError as exc:
+            errors.append({"path": relpath(folder), "error": exc.strerror or type(exc).__name__})
             continue
+        for entry in entries:
+            path = Path(entry.path)
+            try:
+                if _is_link(entry):
+                    excluded.append({"path": relpath(path), "reason": LINK_REASON})
+                elif entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
+                elif entry.is_file(follow_symlinks=False):
+                    files.append(path)
+                else:
+                    excluded.append({"path": relpath(path), "reason": SPECIAL_REASON})
+            except OSError as exc:
+                errors.append({"path": relpath(path), "error": exc.strerror or type(exc).__name__})
+    excluded.sort(key=lambda e: e["path"])
+    errors.sort(key=lambda e: e["path"])
+    return {"files": sorted(files), "excluded": excluded, "errors": errors}
+
+
+def inside(root: Path, target: Path) -> bool:
+    """target이 root 자체이거나 그 아래에 있으면 True (출력 경로 사전 검사용)."""
+    root_r, target_r = root.resolve(), target.resolve()
+    return target_r == root_r or root_r in target_r.parents
+
+
+def build_manifest(root: Path) -> dict:
+    walk = walk_evidence(root)
+    files = []
+    for f in walk["files"]:
         st = f.stat()
         files.append({
             "path": f.relative_to(root).as_posix(),
@@ -69,6 +132,9 @@ def build_manifest(root: Path) -> dict:
         "generated_at": datetime.now(KST).isoformat(),
         "root": str(root.resolve()),
         "file_count": len(files),
+        "complete": not walk["errors"],
+        "excluded": walk["excluded"],
+        "enumeration_errors": walk["errors"],
         "files": files,
     }
 
@@ -101,7 +167,9 @@ def verify_manifest(root: Path, manifest: dict) -> list[str]:
         if path in recorded:
             return [f"DUPLICATE: {path}"]
         recorded[path] = digest.lower()
-    current = {f.relative_to(root).as_posix(): f for f in root.rglob("*") if f.is_file()}
+    walk = walk_evidence(root)
+    current = {f.relative_to(root).as_posix(): f for f in walk["files"]}
+    problems += [f"UNLISTED: {e['path']} ({e['error']}) — 폴더를 열지 못해 하위 파일 미확인" for e in walk["errors"]]
 
     for path in sorted(set(recorded) - set(current)):
         problems.append(f"MISSING: {path}")
@@ -142,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"일치 — {manifest.get('file_count', '?')}개 파일 모두 해시 동일")
         return 0
 
+    if args.output and inside(root, Path(args.output)):
+        print("매니페스트 출력 경로가 증거 폴더 안에 있습니다. 증거 폴더에는 아무것도 쓰지 않습니다 — "
+              "-o 로 증거 폴더 밖을 지정하세요.", file=sys.stderr)
+        return 2
     manifest = build_manifest(root)
     out = json.dumps(manifest, ensure_ascii=False, indent=2)
     if args.output:
@@ -149,6 +221,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"매니페스트 → {args.output} ({manifest['file_count']}개 파일)")
     else:
         print_json(manifest, indent=2)
+    for e in manifest["excluded"]:
+        print(f"제외: {e['path']} — {e['reason']}", file=sys.stderr)
+    if manifest["enumeration_errors"]:
+        for e in manifest["enumeration_errors"]:
+            print(f"열거 실패: {e['path']} ({e['error']})", file=sys.stderr)
+        print("일부 폴더를 열지 못해 전체 파일 수는 미확인입니다 (부분 매니페스트).", file=sys.stderr)
+        return 1
     return 0
 
 

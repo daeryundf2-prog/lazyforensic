@@ -181,10 +181,17 @@ def survey_db(path: Path, sample: tuple[str, int] | None = None) -> dict:
     return rec
 
 
-def scan(root: Path) -> list[dict]:
+def unreadable(rec: dict) -> bool:
+    """무결성 검사까지 가지 못한 후보 (매직 없음·열기 실패) — 무결성 결과는 미수행이다."""
+    return "integrity" not in rec
+
+
+def scan(root: Path, files: list[Path] | None = None) -> list[dict]:
+    if files is None:
+        files = sorted(p for p in root.rglob("*") if p.is_file())
     out = []
-    for p in sorted(root.rglob("*")):
-        if not p.is_file() or "__pycache__" in p.parts:
+    for p in files:
+        if "__pycache__" in p.parts:
             continue
         if p.suffix.lower() in SQLITE_EXTS or is_sqlite(p):
             out.append(survey_db(p))
