@@ -232,7 +232,8 @@ class RegressionTests(unittest.TestCase):
     def test_keyword_read_failure_reported(self):
         source = self.source()
         output = io.StringIO()
-        with patch.object(keyword, "search_file_result", return_value=([], "unreadable")), redirect_stdout(output):
+        failure = {"hits": [], "error": "unreadable", "encoding": None, "basis": None, "undecodable": None}
+        with patch.object(keyword, "search_file_result", return_value=failure), redirect_stdout(output):
             keyword.main([str(source), "word", "--json"])
         result = json.loads(output.getvalue())
         self.assertEqual(result["files_searched"], 0)

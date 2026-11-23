@@ -21,12 +21,14 @@ sherlock-project가 설치돼 있을 때만 동작한다. 미설치 시 결과�
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 
 def find_sherlock() -> list[str] | None:
@@ -87,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             results.append({"username": name, "error": f"timeout {args.timeout}s"})
 
     if args.json:
-        print(json.dumps(results, ensure_ascii=False, indent=2))
+        print_json(results, indent=2)
     else:
         for r in results:
             if "error" in r:

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import re
 import struct
 import sys
@@ -17,9 +16,11 @@ from pathlib import Path
 
 if __package__:
     from . import ewf2, ewf_logical
+    from .console_json import print_json
 else:
     import ewf2
     import ewf_logical
+    from console_json import print_json
 
 EwfError = ewf2.EwfError
 
@@ -542,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
 
     res = examine(args.image, verify=not args.no_verify, extract_id=args.extract, output=args.output)
     if args.json:
-        print(json.dumps(res, ensure_ascii=False, indent=2))
+        print_json(res, indent=2)
     else:
         print(f"이미지: {res['image']}  상태: {res['status']}")
         if res.get("error"):

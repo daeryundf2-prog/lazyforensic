@@ -21,9 +21,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
-import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 
 def sha256_file(path: Path) -> str:
@@ -107,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.json:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print_json(report, indent=2)
     else:
         print(f"{len(files)}개 파일: 정확 중복 {len(exact)}그룹, 유사 이미지 {len(similar)}그룹")
         for g in exact:

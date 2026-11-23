@@ -30,11 +30,13 @@ import argparse
 import hashlib
 import importlib.util
 import io
-import json
 import sys
 import tarfile
 import zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 ARCHIVE_EXTS = {".zip", ".jar", ".hwpx", ".docx", ".xlsx", ".pptx"}
 TAR_EXTS = {".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz"}
@@ -247,8 +249,8 @@ def main(argv: list[str] | None = None) -> int:
 
     flagged = [m for r in records for m in r.get("members", []) if m["flags"]]
     if args.json:
-        print(json.dumps({"archives": len(records), "flagged_members": len(flagged),
-                          "records": records}, ensure_ascii=False, indent=2))
+        print_json({"archives": len(records), "flagged_members": len(flagged),
+                          "records": records}, indent=2)
     else:
         for r in records:
             if "error" in r:

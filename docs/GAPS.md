@@ -9,8 +9,9 @@ v1.1.0: 에이전트 없이 쓰는 `lazyforensic report`(보고서 초안·무�
 - 초안은 도구가 측정한 값(해시, E01 기록값, 파일 수정 시각, EXIF 기록값, 선조사 결과)만 채운다. 사건 개요·인계 기록·쓰기 방지 장치·분석관 의견은 사람이 쓴다 — 입력이 없으면 "미확인"으로 남는다.
 - 보고서 서식은 일반적인 분석 보고서 구성을 따른 기본안이다. 기관의 DOCX·HWPX 양식에 자리표시자를 넣어 같은 형식으로 초안을 만들 수 있다. [양식 사용법](REPORT_TEMPLATES.md) Markdown·HTML과 편집용 DOCX·HWPX를 만든다. HWPX의 글꼴, 긴 해시의 줄바꿈, 여러 쪽에 걸친 표는 사용하는 한글 버전에서 확인한다.
 - 삭제 파일 복구, 카빙, 파일시스템(NTFS/FAT/APFS) 해석, 레지스트리·브라우저·메신저 DB 분석은 하지 않는다. 증거 폴더에 있는 파일 그대로만 본다.
-- 파일 수정 시각은 분석 PC에서 본 `os.stat` 값(KST 환산)이다. 복사·내보내기로 바뀐 시각을 원래 시각과 구별하지 못한다. EXIF 시각은 시간대 없이 그대로 싣고, `타임라인.html` 정렬에서만 KST로 가정한다.
-- 참조 해시 대조는 경로/파일명으로 짝을 짓는다. 같은 이름이 여러 개면 대조를 보류하고, 이름이 바뀐 파일은 '증거에 없음'으로 나온다(해시 값만으로 역추적하지 않음).
+- 파일 수정 시각은 분석 PC에서 본 `os.stat`의 정수 나노초(`st_mtime_ns`)를 KST로 환산한 값이다. 파일시스템 자체의 시각 해상도(FAT 2초, NTFS 100 ns 등)는 확인하지 않는다. `events.json`의 timestamp와 `타임라인.html`은 마이크로초까지만 표시하고 원값은 mtime·mtime_ns에 남긴다. 복사·내보내기로 바뀐 시각을 원래 시각과 구별하지 못한다.
+- EXIF 촬영 시각은 DateTimeOriginal에 SubSecTimeOriginal·OffsetTimeOriginal을 붙여 싣는다. 오프셋이 기록되지 않은 사진만 시간대 미기록으로 두고 정렬에서만 KST로 가정한다.
+- 참조 해시 대조는 경로/파일명으로 짝을 짓는다. 같은 이름이 여러 개면 대조를 보류하고, 이름이 바뀐 파일은 '증거에 없음'으로 나온다(해시 값만으로 역추적하지 않음). 한글 파일명의 유니코드 정규형(NFC/NFD)만 다르면 후보가 하나일 때만 정규화해 대조하고 그 방식을 기록한다.
 - 초안 검증은 `verify_report.py`의 정적 검사(근거 없는 해시·금지 문구·해시-파일 결합)다. 문장의 사실 여부를 판단하지 않는다.
 
 ## EWF 판독 (`scripts/ewf_image.py`)
@@ -88,12 +89,12 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/audio_survey.py`의 RMS 발화 구간은 '후보'다 — 배경소음이 크면 무음도 발화로 잡힌다.
 - `scripts/exif_audit.py`의 EXIF는 자유롭게 편집 가능하다. '기록된 값'이지 '진실'이 아니며, EXIF 부재는 메신저 경유 흔적일 뿐 조작 증거가 아니다.
 - `scripts/osint_username.py`는 sherlock BYO다. 조회 닉네임이 외부 사이트에 노출되므로 의뢰인 동의 없이 쓰지 않는다.
-- `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다.
+- `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다. 인코딩은 BOM → XML/HTML 선언 → 엄격한 UTF-8 → 엄격한 CP949 순으로 정하고, 어느 것으로도 해석되지 않는 파일은 '인코딩 판정 불가'로 따로 세어 검색 수에서 뺀다. 한글만 든 BOM 없는 UTF-16처럼 다른 인코딩으로도 해석되는 입력은 구별하지 못한다.
 - `scripts/signature_check.py`는 선두 수십 바이트만 본다. 시그니처를 위조한 파일·UNKNOWN(시그니처 없는 텍스트류)은 정상일 수 있다.
 - `scripts/dedup_files.py`는 정확 중복만 확실하다. 유사 그룹은 이미지뿐이고 '어느 쪽이 원본인가'는 판정하지 않는다.
 - `scripts/archive_survey.py`는 zip/tar만 본다 — RAR/7z는 외부 도구. 플래그는 '수동 확인 필요 신호'이지 악성 판정이 아니다.
 - `scripts/pdf_audit.py`는 바이트 패턴 표면 감사다 — PDF 1.5+ 객체 스트림에 숨은 /Encrypt·/JavaScript는 못 잡는다. 정밀 파싱은 qpdf/pikepdf 영역.
-- `scripts/sqlite_survey.py`는 immutable 읽기전용으로 열지만 스키마·행 수만 본다 — 어느 컬럼이 메시지인지 같은 해석은 수동이다.
+- `scripts/sqlite_survey.py`는 원본을 immutable 읽기전용으로만 열고 스키마·행 수만 본다 — 어느 컬럼이 메시지인지 같은 해석은 수동이다. `-wal`/`-journal`이 있으면 본체와 함께 임시 작업 사본으로 복사해 커밋된 상태를 읽고 두 파일의 SHA-256을 기록한다. 반영하지 못하면 행 수를 미확인으로 둔다. `total_rows`는 테이블 행 수 합계이고 뷰가 돌려주는 행은 `view_rows`로 따로 센다. 삭제된 레코드(프리 페이지·미커밋 WAL 프레임) 복구는 하지 않는다.
 - `scripts/merge_timeline.py`의 STT 이벤트는 '--anchor'로 사용자가 준 녹음 기준시각에 의존한다 — 앵커가 틀리면 전 구간이 어긋나며, 앵커 없는 STT는 타임라인에서 제외된다(벽시계를 지어내지 않음). mtime·EXIF·카톡 시각도 '기록된 값'이지 위조 불가능한 진실이 아니다.
 - `scripts/court_evidence_sheet.py`의 출력은 관행 양식 **초안**이다 — ECFS 공인 기계 형식은 없고, 입증취지는 --purpose 지정분만 채운다. 제출 전 사람의 법률 검토가 필수다.
 - `scripts/video_integrity.py`는 '어디까지 읽히나' 진단이다 — 복구 자체는 untrunc 등 별도 도구. ffprobe/ffmpeg가 없으면 실행 자체가 안 된다(exit 3).

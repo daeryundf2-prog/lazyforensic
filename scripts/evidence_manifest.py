@@ -32,6 +32,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 KST = timezone(timedelta(hours=9))
 TOOL_VERSION = "1.6.2"
 
@@ -54,7 +57,10 @@ def build_manifest(root: Path) -> dict:
             "path": f.relative_to(root).as_posix(),
             "sha256": sha256_file(f),
             "size": st.st_size,
-            "mtime": datetime.fromtimestamp(st.st_mtime, KST).isoformat(),
+            # 부동소수 st_mtime은 자정 1 ns 전을 다음 날로 올린다. 정수 ns를 마이크로초로 버림한다.
+            "mtime": (datetime(1970, 1, 1, tzinfo=timezone.utc)
+                      + timedelta(microseconds=st.st_mtime_ns // 1000)).astimezone(KST).isoformat(),
+            "mtime_ns": st.st_mtime_ns,
         })
     return {
         "manifest_version": 1,
@@ -142,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.output).write_text(out, encoding="utf-8")
         print(f"매니페스트 → {args.output} ({manifest['file_count']}개 파일)")
     else:
-        print(out)
+        print_json(manifest, indent=2)
     return 0
 
 

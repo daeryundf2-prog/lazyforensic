@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import argparse
 import difflib
-import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import dumps_for  # noqa: E402
 
 
 def build_rows(old: list[str], new: list[str]) -> list[dict]:
@@ -86,8 +88,9 @@ def main(argv: list[str] | None = None) -> int:
         rows = [r for r in rows if r["note"] != "동일"]
 
     if args.json:
-        out = json.dumps({"old": str(old_p), "new": str(new_p), "rows": rows},
-                         ensure_ascii=False, indent=2)
+        # 파일로 쓸 때는 UTF-8 그대로, 콘솔로 낼 때는 표현 못 하는 문자를 \u 이스케이프로 보존한다.
+        out = dumps_for(None if args.output else sys.stdout, {"old": str(old_p), "new": str(new_p), "rows": rows},
+                        indent=2)
     elif args.markdown:
         out = to_markdown(rows, old_p.name, new_p.name)
     else:

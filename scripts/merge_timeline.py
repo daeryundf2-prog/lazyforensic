@@ -8,7 +8,7 @@ forensic-timeline(--input events.json)에 넣을 정규화 이벤트 목록을 �
 
   --manifest m.json     evidence_manifest.py 출력 → 파일 수정시각(mtime)
   --kakao k.json        parse_kakao.py 출력 → 메시지 수발신 시각
-  --exif e.json         exif_audit.py --json 출력 → DateTimeOriginal
+  --exif e.json         exif_audit.py --json 출력 → DateTimeOriginal(+SubSecTimeOriginal·OffsetTimeOriginal)
   --stt t.json          local_stt.py 전사 JSON → 발화 구간
   --plaso p.{jsonl,csv} log2timeline 슈퍼 타임라인 출력 → 통합 이벤트
 
@@ -40,6 +40,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from exif_audit import capture_time  # noqa: E402
+from console_json import print_json  # noqa: E402
+
 KST = timezone(timedelta(hours=9))
 
 
@@ -63,14 +67,6 @@ def _norm_iso(raw: str) -> str | None:
         return datetime(int(y), int(mo), int(d), int(h), int(mi),
                         int(sec or 0), tzinfo=KST).isoformat()
     return None
-
-
-def _norm_exif_dt(raw: str) -> str | None:
-    """EXIF 'YYYY:MM:DD HH:MM:SS' → ISO(+09:00)."""
-    m = re.match(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})", raw.strip())
-    if not m:
-        return None
-    return datetime(*[int(g) for g in m.groups()], tzinfo=KST).isoformat()
 
 
 def events_from_manifest(path: str) -> list[dict]:
@@ -107,15 +103,17 @@ def events_from_exif(path: str) -> list[dict]:
     records = data.get("records", []) if isinstance(data, dict) else data
     out = []
     for r in records:
-        dto = (r.get("tags") or {}).get("DateTimeOriginal")
-        if not dto:
+        shot = capture_time(r.get("tags") or {})
+        if shot is None:
             continue
-        ts = _norm_exif_dt(dto)
-        if ts is None:
-            continue
-        out.append({"timestamp": ts, "source": "EXIF",
-                    "description": f"촬영(기록값): {Path(r['file']).name}",
-                    "file": r["file"]})
+        ev = {"timestamp": shot["timestamp"], "source": "EXIF",
+              "description": f"촬영(기록값): {Path(r['file']).name}",
+              "file": r["file"]}
+        if not shot["offset"]:
+            # 오프셋이 기록되지 않은 경우에만 KST를 가정하고, 가정했다고 남긴다.
+            ev["timestamp"] = shot["timestamp"] + "+09:00"
+            ev["note"] = "OffsetTimeOriginal 미기록 — KST로 가정"
+        out.append(ev)
     return out
 
 
@@ -261,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         Path(args.output).write_text(out, encoding="utf-8")
     else:
-        print(out)
+        print_json(merged["events"], indent=2)
     if args.report:
         Path(args.report).write_text(json.dumps({
             "event_count": len(merged["events"]),

@@ -47,6 +47,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import report_templates  # noqa: E402
 import ewf_image  # noqa: E402
+import exif_audit  # noqa: E402
 import hash_reference  # noqa: E402
 import report_docx  # noqa: E402
 import report_hwpx  # noqa: E402
@@ -94,6 +95,29 @@ def now_kst() -> datetime:
 
 def fmt_dt(dt: datetime) -> str:
     return dt.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def kst_from_ns(ns: int, digits: int = 9) -> str:
+    """정수 나노초 → KST ISO 8601. 소수는 digits 자리에서 버린다.
+
+    부동소수 초를 거치거나 반올림하면 자정 1 ns 전이 다음 날로 넘어간다.
+    """
+    secs, frac = divmod(ns, 10**9)
+    dt = (EPOCH + timedelta(seconds=secs)).astimezone(KST)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S") + f".{frac:09d}"[:digits + 1] + "+09:00"
+
+
+def instant_ns(ev: dict) -> int:
+    """정렬용 정수 나노초. 파일 이벤트는 운영체제가 돌려준 mtime_ns를 그대로 쓴다."""
+    if "mtime_ns" in ev:
+        return ev["mtime_ns"]
+    dt = datetime.fromisoformat(ev["timestamp"])
+    if dt.tzinfo is None:  # EXIF 오프셋 미기록: 정렬에서만 KST로 가정 (보고서에 명시)
+        dt = dt.replace(tzinfo=KST)
+    return (dt - EPOCH) // timedelta(microseconds=1) * 1000
 
 
 def fmt_size(n: int) -> str:
@@ -204,7 +228,7 @@ def build_inventory(root: Path, files: list[Path]) -> list[dict]:
             st = p.stat()
             md5, sha1, sha256 = hash_file(p)
             inv.append({"path": rel, "size": st.st_size,
-                        "mtime": datetime.fromtimestamp(st.st_mtime, KST).replace(microsecond=0).isoformat(),
+                        "mtime": kst_from_ns(st.st_mtime_ns), "mtime_ns": st.st_mtime_ns,
                         "md5": md5, "sha1": sha1, "sha256": sha256, "category": category(rel)})
         except OSError as e:
             inv.append({"path": rel, "error": f"열기 실패: {e.strerror or type(e).__name__}", "category": category(rel)})
@@ -302,32 +326,28 @@ def relativize(obj, root: Path):
     return obj
 
 
-def exif_naive(raw: str) -> str | None:
-    m = re.match(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})", raw.strip())
-    if not m:
-        return None
-    try:
-        dt = datetime(*[int(g) for g in m.groups()])
-    except ValueError:
-        return None
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
 def build_events(root: Path, inventory: list[dict], survey: dict, images: list[dict]) -> list[dict]:
     events = []
     for f in inventory:
-        if "mtime" in f:
-            events.append({"timestamp": f["mtime"], "category": "file", "source": "파일시스템(mtime)",
-                           "description": f"파일 수정 시각(기록값): {f['path']}", "file": f["path"],
+        if "mtime_ns" in f:
+            # timestamp는 ISO 파서가 읽을 수 있게 마이크로초까지(버림), 원값은 mtime·mtime_ns.
+            events.append({"timestamp": kst_from_ns(f["mtime_ns"], 6), "category": "file",
+                           "source": "파일시스템(mtime)", "description": f"파일 수정 시각(기록값): {f['path']}",
+                           "file": f["path"], "mtime": f["mtime"], "mtime_ns": f["mtime_ns"],
                            "details": f"SHA-256 {f['sha256']}"})
     exif, _ = step_result(survey, "exif")
     for r in (exif or {}).get("records", []):
-        dto = (r.get("tags") or {}).get("DateTimeOriginal")
-        ts = exif_naive(dto) if dto else None
-        if ts:
+        shot = exif_audit.capture_time(r.get("tags") or {})
+        if shot:
             name = rel(root, r["file"])
-            events.append({"timestamp": ts.replace(" ", "T"), "category": "media", "source": "EXIF",
-                           "description": f"촬영 시각(카메라 기록값, 시간대 미기록): {name}", "file": name})
+            zone = f"UTC{shot['offset']} 기록" if shot["offset"] else "시간대 미기록"
+            ev = {"timestamp": shot["timestamp"], "category": "media", "source": "EXIF",
+                  "description": f"촬영 시각(카메라 기록값, {zone}): {name}", "file": name,
+                  "recorded": {"DateTimeOriginal": shot["raw"], "SubSecTimeOriginal": shot["subsec"],
+                               "OffsetTimeOriginal": shot["offset"]}}
+            if not shot["offset"]:
+                ev["timezone_assumed"] = "KST (정렬 전용)"
+            events.append(ev)
     for img in images:
         acq = (img.get("acquisition") or {}).get("acquisition_date", "")
         m = re.match(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC$", acq)
@@ -336,12 +356,7 @@ def build_events(root: Path, inventory: list[dict], survey: dict, images: list[d
                            "source": "EWF 헤더", "description": f"이미지 획득 시각(이미지 기록값): {img['file']}",
                            "file": img["file"]})
 
-    def key(ev):
-        dt = datetime.fromisoformat(ev["timestamp"])
-        if dt.tzinfo is None:  # EXIF: 시간대 미기록 → 정렬에서만 KST로 가정 (보고서에 명시)
-            dt = dt.replace(tzinfo=KST)
-        return dt.astimezone(timezone.utc)
-    events.sort(key=key)
+    events.sort(key=instant_ns)
     return events
 
 
@@ -553,6 +568,8 @@ def render_report(ctx: dict) -> str:
             how = {"image_media": "이미지 미디어 해시와 대조", "basename": "파일명 일치",
                    "path_suffix": "경로 끝부분 일치", "path": "경로 일치"}.get(r.get("matched_by", ""),
                                                                        r.get("note") or "-")
+            if r.get("normalization") and r.get("matched_by"):
+                how += f" (유니코드 {r['normalization']} 정규화 후)"
             rows.append([r["name"], ALGO_KO[r["algorithm"]], r["hash"], target, label, how])
         L += table(["참조 항목", "알고리즘", "참조 해시", "대조한 증거", "결과", "대조 방법"], rows)
         if len(refs) > TABLE_LIMIT * 2:
@@ -725,7 +742,14 @@ def findings_table(ctx: dict) -> list[str]:
     r, why = step_result(survey, "pdf")
     rows.append(["PDF 구조", why or f"PDF {r['pdf_files']}개, 암호화·능동 콘텐츠 표시 {r['flagged']}개", "표면 검사"])
     r, why = step_result(survey, "sqlite")
-    rows.append(["SQLite 데이터베이스", why or f"DB {r['db_files']}개, 무결성 이상 {r['broken']}개", "읽기 전용 구조 조사"])
+    if r:
+        copies = [x for x in r["records"] if x.get("read_from") == "working_copy"]
+        unknown = sum(1 for x in copies if x.get("total_rows") is None)
+        text = f"DB {r['db_files']}개, 무결성 이상 {r['broken']}개"
+        if copies:
+            text += f", -wal/-journal 반영 {len(copies) - unknown}개" + (f", 행 수 미확인 {unknown}개" if unknown else "")
+    rows.append(["SQLite 데이터베이스", why or text,
+                 "읽기 전용 구조 조사. -wal/-journal이 있으면 원본 대신 작업 사본에서 커밋 상태를 읽음"])
     r, why = step_result(survey, "pii")
     rows.append(["개인정보 패턴", why or f"{r['total_pii']}건 (텍스트 파일 {r['files_scanned']}개 검사)",
                  "외부 전달 전 마스킹 검토 대상. 정규식 기반"])
@@ -739,8 +763,11 @@ def findings_table(ctx: dict) -> list[str]:
         rows.append(["영상 무결성", why, "ffmpeg 설치 시 수행"])
     if "keywords" in (survey.get("steps") or {}):
         r, why = step_result(survey, "keywords")
-        rows.append(["키워드 검색", why or f"{r['total_hits']}건 ({', '.join(r['keywords'])})",
-                     "텍스트 파일 리터럴 검색"])
+        if r:
+            why = (("부분 완료 — " if r["status"] != "complete" else "")
+                   + f"{r['total_hits']}건 ({', '.join(r['keywords'])}); 텍스트 파일 {r['files_searched']}개 검색, "
+                   f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개")
+        rows.append(["키워드 검색", why, "텍스트 파일 리터럴 검색. 판정 불가·읽기 실패 파일은 검색 수에서 제외"])
     return table(["점검 항목", "결과", "비고"], rows)
 
 
@@ -781,7 +808,7 @@ def findings_details(ctx: dict) -> list[str]:
             L.append("EXIF에 소프트웨어 기록이 있는 이미지 (원본성 검토 대상):")
             L.append("")
             for x in sw[:TABLE_LIMIT]:
-                L.append(f"- `{rel(root, x['file'])}` — {(x.get('tags') or {}).get('Software', '')}")
+                L.append(f"- `{rel(root, x['file'])}` — {exif_audit.excerpt((x.get('tags') or {}).get('Software', ''))}")
             L.append("")
     r, _ = step_result(survey, "archives")
     if r:
@@ -816,7 +843,7 @@ def timeline_section(ctx: dict) -> list[str]:
     L.append("")
     labels = {
         "파일시스템(mtime)": "파일 수정 시각 (파일시스템 기록값, KST 환산)",
-        "EXIF": "촬영 시각 (EXIF 기록값, 시간대 미기록 — 카메라 시계 기준)",
+        "EXIF": "촬영 시각 (EXIF 기록값 — UTC 오프셋이 기록된 경우 그 오프셋, 없으면 카메라 시계 기준)",
         "E01 헤더": "이미지 획득 시각 (E01 기록값, UTC)",  # archived reports before v1.3
         "EWF 헤더": "이미지 획득 시각 (EWF 기록값, UTC)",
     }
@@ -825,10 +852,14 @@ def timeline_section(ctx: dict) -> list[str]:
         L.append("")
 
         def show(e):
+            if "mtime" in e:  # 운영체제가 돌려준 나노초 그대로
+                return e["mtime"].removesuffix("+09:00").replace("T", " ")
             ts = e["timestamp"]
             dt = datetime.fromisoformat(ts)
             if src in ("E01 헤더", "EWF 헤더"):
                 return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+            if src == "EXIF":  # 기록된 벽시계 값과 기록된 오프셋을 그대로
+                return ts.replace("T", " ")
             if dt.tzinfo is not None:
                 return fmt_dt(dt)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -841,8 +872,18 @@ def timeline_section(ctx: dict) -> list[str]:
             L.append("")
             L += table(["날짜", "건수"], [[d, n] for d, n in sorted(days.items())][:TABLE_LIMIT])
         L.append("")
+    if any("mtime" in e for e in by_src.get("파일시스템(mtime)", [])):
+        L.append("파일 수정 시각은 운영체제가 돌려준 정수 나노초(mtime_ns)를 KST로 환산한 값이다. "
+                 "`events.json`의 timestamp와 `타임라인.html`은 마이크로초까지만 표시하며(버림), "
+                 "원값은 같은 항목의 mtime·mtime_ns에 있다. 파일시스템 자체의 시각 해상도는 확인하지 않았다.")
+        L.append("")
     if "EXIF" in by_src:
-        L.append("EXIF 시각에는 시간대가 기록되지 않는다. `타임라인.html`에서는 정렬을 위해서만 KST로 가정했다.")
+        naive = sum(1 for e in by_src["EXIF"] if datetime.fromisoformat(e["timestamp"]).tzinfo is None)
+        if naive:
+            L.append(f"EXIF 촬영 시각 {naive}건은 UTC 오프셋(OffsetTimeOriginal)이 기록되지 않아 시간대 미기록이다. "
+                     "시간순 정렬에서만 KST로 가정했다.")
+        if naive < len(by_src["EXIF"]):
+            L.append(f"EXIF 촬영 시각 {len(by_src['EXIF']) - naive}건은 기록된 UTC 오프셋으로 시간순을 정했다.")
     while L and L[-1] == "":
         L.pop()
     return L
@@ -990,7 +1031,7 @@ def write_csv(path: Path, inventory: list[dict]) -> None:
         if "error" in f:
             w.writerow([i, f["path"], f["category"], "", "", "", "", "", f["error"]])
         else:
-            w.writerow([i, f["path"], f["category"], f["size"], f["mtime"].replace("T", " ")[:19],
+            w.writerow([i, f["path"], f["category"], f["size"], f["mtime"].removesuffix("+09:00").replace("T", " "),
                         f["md5"], f["sha1"], f["sha256"], ""])
     path.write_text(buf.getvalue(), encoding="utf-8-sig", newline="")
 
@@ -1018,7 +1059,8 @@ def write_timeline_html(events: list[dict], out_json: Path, out_html: Path, root
            "--input", str(out_json), "--output", str(out_html),
            "--title", f"타임라인 — {root_name}", "--target", root_name,
            "--max-events", str(max(len(events), 1)),
-           "--timezone", "mtime=KST 환산, EXIF=시간대 미기록(정렬만 KST 가정), EWF=UTC"]
+           "--timezone", "mtime=KST 환산(µs까지 표시, 원값 mtime_ns), "
+                         "EXIF=기록된 UTC 오프셋(미기록이면 정렬만 KST 가정), EWF=UTC"]
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return None if proc.returncode == 0 else (proc.stderr.strip()[-300:] or "타임라인 생성 실패")
 

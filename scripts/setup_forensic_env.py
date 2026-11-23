@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import shutil
 import subprocess
 import sys
 import venv
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 # 그룹: (표시이름, pip 패키지들, 설치 후 쓸 스크립트)
 DEP_GROUPS = {
@@ -97,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         info = check_environment()
         if args.json:
-            print(json.dumps(info, ensure_ascii=False, indent=2))
+            print_json(info, indent=2)
         else:
             print_check(info)
         return 0

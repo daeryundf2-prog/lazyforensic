@@ -25,7 +25,6 @@ WAV는 표준 라이브러리(wave)로 직접 읽고, 그 외 포맷은 ffmpeg�
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import struct
 import subprocess
@@ -33,6 +32,9 @@ import sys
 import tempfile
 import wave
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
 DEFAULT_THRESHOLD = 0.01
@@ -233,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     ok = sum(1 for r in records if r["status"] == "ok")
 
     if args.json:
-        print(json.dumps(records, ensure_ascii=False, indent=2))
+        print_json(records, indent=2)
     else:
         for r in records:
             if r["status"] == "ok":

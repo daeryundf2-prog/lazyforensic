@@ -35,6 +35,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
+
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".ts", ".mts"}
 DEFAULT_SAMPLES = 16
 
@@ -181,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         s = similarity(fp_src, fp_b)
         out = {"a": str(src), "b": str(other), **s, "verdict": verdict(s["similarity"])}
         if args.json:
-            print(json.dumps(out, ensure_ascii=False, indent=2))
+            print_json(out, indent=2)
         else:
             print(f"유사도 {s['similarity']:.3f} ({s['matched_frames']}/{s['compared_frames']} 프레임 일치, "
                   f"길이차 {s['duration_diff']}s) — {out['verdict']}")
@@ -205,8 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[SKIP] {v}: {e}", file=sys.stderr)
         results.sort(key=lambda x: -x["similarity"])
         if args.json:
-            print(json.dumps({"query": str(src), "scanned": len(videos), "matches": results},
-                             ensure_ascii=False, indent=2))
+            print_json({"query": str(src), "scanned": len(videos), "matches": results}, indent=2)
         else:
             if results:
                 for r in results:
@@ -217,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 비교/스캔 없으면 지문 자체를 출력한다
     fp_out = {**fp_src, "frame_hashes": [format(h, "016x") for h in fp_src["frame_hashes"]]}
-    print(json.dumps(fp_out, ensure_ascii=False, indent=2))
+    print_json(fp_out, indent=2)
     return 0
 
 

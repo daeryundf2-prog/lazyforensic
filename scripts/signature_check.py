@@ -23,9 +23,11 @@ signature_check.py — 매직바이트 vs 확장자 불일치 감사
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 # (시그니처, 오프셋, 형식명, 기대 확장자들)
 SIGNATURES = [
@@ -116,13 +118,13 @@ def main(argv: list[str] | None = None) -> int:
     mismatches = [r for r in records if r["status"] == "MISMATCH"]
 
     if args.json:
-        print(json.dumps({
+        print_json({
             "total": len(records),
             "match": sum(1 for r in records if r["status"] == "MATCH"),
             "mismatch": len(mismatches),
             "unknown": sum(1 for r in records if r["status"] == "UNKNOWN"),
             "records": records,
-        }, ensure_ascii=False, indent=2))
+        }, indent=2)
     else:
         for r in records:
             if r["status"] == "MISMATCH":

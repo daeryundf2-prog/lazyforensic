@@ -29,10 +29,12 @@ Pillow가 없으면 실행하지 않고 exit 3 + 안내로 종료한다(fail-clo
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from itertools import combinations
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from console_json import print_json  # noqa: E402
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff", ".tif"}
 
@@ -256,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         result["query"] = args.query
         result["matches"] = matches
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print_json(result, indent=2)
         else:
             if matches:
                 for m in matches:
@@ -268,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     pairs = find_pairs(records, args.threshold)
     result["similar_pairs"] = pairs
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result, indent=2)
     else:
         print(f"{len(records)}개 이미지 스캔, 유사 쌍 {len(pairs)}건 (pHash 거리 ≤ {args.threshold})")
         for p in pairs:
