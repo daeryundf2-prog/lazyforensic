@@ -51,7 +51,9 @@ def _search(tmp_path: Path, data: bytes, keywords: list[str], encoding: str | No
 
 
 def _candidates(found: dict) -> list[tuple[int, str, str]]:
-    return [(h["line"], h["keyword"], h["encoding"]) for u in found["uncertain"] for h in u["candidate_hits"]]
+    """(line, keyword, codec) for every reading of every per-line candidate."""
+    return [(h["line"], kw, r["encoding"]) for u in found["uncertain"] for h in u["candidate_hits"]
+            for r in h["readings"] for kw in r["keywords"]]
 
 
 def _hits(found: dict) -> list[tuple[int, str]]:
@@ -73,26 +75,37 @@ def test_bytes_valid_in_several_codecs_are_not_a_complete_zero_hit_search(tmp_pa
 
 @pytest.mark.parametrize("phrase", ["인수 기록", "봉인 상태 확인", "접수했습니다", "첨부파일 확인", "찜", "괜찮습니다",
                                     "2024-01-01 점검 완료", "됐습니다"])
-def test_ordinary_korean_cp949_stays_a_confirmed_hit(tmp_path, phrase):
+def test_ordinary_korean_cp949_is_a_candidate_until_the_operator_names_the_codec(tmp_path, phrase):
+    # D24: the same bytes also read naturally as EUC-JP/Big5 kanji; without a declaration the CP949 hit
+    # is a per-line candidate (never a confirmed hit, never a confirmed miss) until the codec is named.
     found = _search(tmp_path, phrase.encode("cp949"), [phrase])
-    assert found["status"] == "complete" and found["uncertain"] == []
-    assert _hits(found) == [(1, phrase)] and found["encodings"] == {"cp949": 1}
+    assert found["status"] == "partial" and _hits(found) == [] and found["encodings"] == {"cp949": 1}
+    assert (1, phrase, "cp949") in _candidates(found) and found["uncertain"][0]["lines"] == [[1, 1]]
+    explicit = _search(tmp_path, phrase.encode("cp949"), [phrase], "cp949")
+    assert explicit["status"] == "complete" and explicit["uncertain"] == []
+    assert _hits(explicit) == [(1, phrase)] and explicit["encodings"] == {"cp949": 1}
 
 
 def test_hits_on_an_uncertain_line_are_never_confirmed(tmp_path):
     # Shift-JIS '東京' also reads as CP949 '뱦떈': neither reading of that line is a confirmed hit.
     raw = "東京".encode("shift_jis")
     found = _search(tmp_path, raw + b"\n" + "표식".encode("cp949"), [raw.decode("cp949"), "東京", "표식"])
-    assert _hits(found) == [(2, "표식")]
-    assert sorted(_candidates(found)) == [(1, "東京", "shift_jis"), (1, raw.decode("cp949"), "cp949")]
+    assert _hits(found) == []
+    assert sorted(_candidates(found)) == [(1, "東京", "shift_jis"), (1, raw.decode("cp949"), "cp949"),
+                                          (2, "표식", "cp949")]
     # A CP949 syllable from the extension area keeps the file uncertain (BOM-less UTF-16 also fits).
     lone = _search(tmp_path, "뷁".encode("cp949"), ["뷁"])
     assert lone["status"] == "partial" and _hits(lone) == [] and (1, "뷁", "cp949") in _candidates(lone)
 
 
 def test_mixed_log_and_declared_codecs_keep_confirmed_hits(tmp_path):
-    mixed = _search(tmp_path, "기록".encode() + b"\n" + "표식".encode("cp949"), ["기록", "표식"])
-    assert mixed["status"] == "complete" and _hits(mixed) == [(1, "기록"), (2, "표식")]
+    # The UTF-8 line is unambiguous; the undeclared CP949 line is a candidate until the codec is named.
+    data = "기록".encode() + b"\n" + "표식".encode("cp949")
+    mixed = _search(tmp_path, data, ["기록", "표식"])
+    assert mixed["status"] == "partial" and _hits(mixed) == [(1, "기록")]
+    assert (2, "표식", "cp949") in _candidates(mixed) and mixed["encodings"] == {"mixed": 1}
+    named = _search(tmp_path, data, ["기록", "표식"], "cp949")
+    assert named["status"] == "complete" and _hits(named) == [(1, "기록"), (2, "표식")]
     declared = _search(tmp_path, b'<?xml version="1.0" encoding="euc-jp"?>\n' + "東京".encode("euc_jp"), ["東京"])
     assert declared["status"] == "complete" and _hits(declared) == [(2, "東京")]
 
@@ -115,7 +128,7 @@ def test_report_passes_the_confirmed_codec_to_the_keyword_step(tmp_path):
     assert (step["status"], step["total_hits"], step["encoding_requested"]) == ("complete", 1, "euc_jp")
     assert step["results"][0]["encoding_basis"] == "explicit"
     md = (out2 / "보고서초안.md").read_text(encoding="utf-8")
-    assert "지정 코덱 euc_jp로만 읽음" in md
+    assert "운영자 지정 코덱: euc_jp (명령 인자)" in md
     assert run_report(folder, "-o", tmp_path / "out3", "--keywords", "x", "--keyword-encoding", "no_such")[0] == 2
 
 

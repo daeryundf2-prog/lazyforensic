@@ -176,7 +176,9 @@ def _search(tmp_path: Path, data: bytes, keywords: list[str], encoding: str | No
 
 
 def _candidates(found: dict) -> list[tuple[int, str, str]]:
-    return [(h["line"], h["keyword"], h["encoding"]) for u in found["uncertain"] for h in u["candidate_hits"]]
+    """(line, keyword, codec) for every reading of every per-line candidate."""
+    return [(h["line"], kw, r["encoding"]) for u in found["uncertain"] for h in u["candidate_hits"]
+            for r in h["readings"] for kw in r["keywords"]]
 
 
 def _hits(found: dict) -> list[tuple[int, str]]:
@@ -193,10 +195,14 @@ def test_undeclared_shift_jis_is_not_a_complete_zero_hit_search(tmp_path):
 
 
 def test_shift_jis_line_in_korean_file_is_marked_uncertain(tmp_path):
-    found = _search(tmp_path, "東京".encode("shift_jis") + b"\n" + "표식".encode("euc_kr"), ["東京", "표식"])
-    assert found["status"] == "partial" and _hits(found) == [(2, "표식")]
-    assert _candidates(found) == [(1, "東京", "shift_jis")]
-    assert found["uncertain"][0]["lines"] == [[1, 1]]
+    data = "東京".encode("shift_jis") + b"\n" + "표식".encode("euc_kr")
+    found = _search(tmp_path, data, ["東京", "표식"])
+    # D24: the undeclared EUC-KR line also reads as EUC-JP kanji, so it is a candidate as well.
+    assert found["status"] == "partial" and _hits(found) == []
+    assert _candidates(found) == [(1, "東京", "shift_jis"), (2, "표식", "cp949")]
+    assert found["uncertain"][0]["lines"] == [[1, 2]]
+    named = _search(tmp_path, data, ["東京", "표식"], "cp949")
+    assert _hits(named) == [(2, "표식")] and named["encodings"] == {"cp949": 1}
 
 
 @pytest.mark.parametrize("word", ["한글", "자료", "기억", "문서"])
@@ -207,16 +213,17 @@ def test_bomless_utf16_without_ascii_is_uncertain_and_searched_both_ways(tmp_pat
     assert (1, word, codec) in _candidates(found)
 
 
-@pytest.mark.parametrize("data,keywords,expected,encoding", [
-    ("표식".encode("euc_kr"), ["표식"], [(1, "표식")], "cp949"),
-    ("x표식".encode("utf-16-le"), ["표식"], [(1, "표식")], "utf-16-le"),
-    ("x표식".encode("utf-16-be"), ["표식"], [(1, "표식")], "utf-16-be"),
-    (b"x" * (1024 * 1024) + "표식".encode(), ["표식"], [(1, "표식")], "utf-8"),
+@pytest.mark.parametrize("data,keywords,expected,encoding,named", [
+    ("표식".encode("euc_kr"), ["표식"], [(1, "표식")], "cp949", "cp949"),
+    ("x표식".encode("utf-16-le"), ["표식"], [(1, "표식")], "utf-16-le", None),
+    ("x표식".encode("utf-16-be"), ["표식"], [(1, "표식")], "utf-16-be", None),
+    (b"x" * (1024 * 1024) + "표식".encode(), ["표식"], [(1, "표식")], "utf-8", None),
     (b"x" * (1024 * 1024) + "기록".encode() + b"\n" + "표식".encode("cp949"), ["기록", "표식"],
-     [(1, "기록"), (2, "표식")], "mixed"),
+     [(1, "기록"), (2, "표식")], "mixed", "cp949"),
 ], ids=["euc-kr", "utf16le-ascii", "utf16be-ascii", "long-utf8", "long-mixed"])
-def test_decidable_encodings_stay_complete(tmp_path, data, keywords, expected, encoding):
-    found = _search(tmp_path, data, keywords)
+def test_decidable_encodings_stay_complete(tmp_path, data, keywords, expected, encoding, named):
+    # Undeclared CP949 is decidable once the operator names it (D24); the others decide from the bytes.
+    found = _search(tmp_path, data, keywords, named)
     assert found["status"] == "complete" and found["uncertain"] == []
     assert _hits(found) == expected and found["encodings"] == {encoding: 1}
 

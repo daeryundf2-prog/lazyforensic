@@ -38,6 +38,7 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -88,12 +89,22 @@ def event_instant(ev: dict) -> tuple[int, int] | None:
     return _parse_ns(ev.get("timestamp"))
 
 
-def order_events(events: list[dict]) -> list[dict]:
-    """정수 나노초로 시간순 정렬(같은 값은 입력 순서 유지)하고 구별할 수 없는 이웃을 동률로 표시한다.
+def _exact(ev: dict, instant: tuple[int, int]) -> tuple[Fraction, Fraction]:
+    """정수 나노초에 EXIF 소수초의 9자리 뒤 원문 자릿수(subsec_beyond_ns)를 더한 정확한 순간과 그 정밀도(ns)."""
+    extra = ev.get("subsec_beyond_ns") or ""
+    if isinstance(extra, str) and extra.isdigit() and isinstance(ev.get("instant_ns"), int):
+        scale = 10 ** len(extra)
+        return Fraction(instant[0]) + Fraction(int(extra), scale), Fraction(1, scale)
+    return Fraction(instant[0]), Fraction(instant[1])
 
-    두 이벤트를 더 거친 쪽 정밀도로 버림한 값이 같으면 선후를 알 수 없으므로 order_tie를 단다.
+
+def order_events(events: list[dict]) -> list[dict]:
+    """기록된 소수초 정밀도 전체로 시간순 정렬(같은 값은 입력 순서 유지)하고 구별할 수 없는 이웃을 동률로 표시한다.
+
+    두 이벤트를 더 거친 쪽 정밀도로 버림한 값이 같으면 선후를 알 수 없으므로 order_tie를 단다. EXIF 소수초가
+    9자리보다 길면 정수 나노초 뒤의 자릿수까지 비교한다 — '...2009'와 '...2001'은 동률이 아니다.
     """
-    keyed = [(event_instant(ev), ev) for ev in events]
+    keyed = [(_exact(ev, inst) if (inst := event_instant(ev)) else None, ev) for ev in events]
     keyed.sort(key=lambda kv: (kv[0] is None, kv[0][0] if kv[0] else 0))
     for (a, ev_a), (b, ev_b) in zip(keyed, keyed[1:]):
         if a and b:

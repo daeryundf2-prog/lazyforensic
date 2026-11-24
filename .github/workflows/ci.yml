@@ -149,11 +149,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest
           python -m pip install --require-hashes --only-binary=:all: -r requirements-install.txt
-      - name: D21 report tests with print tools and Pillow (print tools may not skip)
+      - name: D21/D24 report tests with print tools and Pillow (print tools may not skip)
         env:
           LF_REQUIRE_PRINT_TOOLS: "1"
         run: |
-          python -m pytest test/test_d21_report.py -v -rs
+          python -m pytest test/test_d21_report.py test/test_d24_report.py -v -rs
 
   node-syntax:
     runs-on: ubuntu-latest

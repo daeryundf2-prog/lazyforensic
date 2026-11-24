@@ -142,9 +142,15 @@ def test_mixed_utf8_and_cp949_lines_find_both_markers(tmp_path):
     item.write_bytes("기록".encode("utf-8") + b"\n" + "표식".encode("cp949"))
     res = keyword_report.search_file_result(item, ["기록", "표식"], 0)
     assert res["encoding"] == "mixed" and res["basis"] == "per_line"
-    assert [h["keyword"] for h in res["hits"]] == ["기록", "표식"]
+    # D24: the undeclared CP949 line also reads as EUC-JP kanji — a candidate, not a confirmed hit.
+    assert [h["keyword"] for h in res["hits"]] == ["기록"]
+    assert [(c["line"], c["keyword"], c["encoding"]) for c in res["uncertain"]["candidate_hits"]] == \
+        [(2, "표식", "cp949")]
     assert [s["encoding"] for s in res["segments"]] == ["utf-8", "cp949"]
     assert res["unsearched_lines"] == []
+    named = keyword_report.search_file_result(item, ["기록", "표식"], 0, "cp949")
+    assert [h["keyword"] for h in named["hits"]] == ["기록", "표식"] and named["uncertain"] is None
+    assert [s["encoding"] for s in named["segments"]] == ["utf-8", "cp949"]
 
 
 def test_undecodable_lines_are_reported_as_unsearched(tmp_path):
@@ -162,17 +168,17 @@ def test_binary_record_with_text_extension_is_not_searched_text(tmp_path):
     (folder / "single.txt").write_bytes("표식".encode("cp949") + b"\nother")  # single-codec control
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        keyword_report.main([str(folder), "기록", "표식", "--json"])
+        keyword_report.main([str(folder), "기록", "표식", "--json", "--encoding", "cp949"])
     report = json.loads(out.getvalue())
     assert report["files_searched"] == 2 and report["files_not_text"] == 1
     assert report["not_text"][0]["file"].endswith("numbers.txt")
     assert report["encodings"] == {"mixed": 1, "cp949": 1} and report["files_mixed_encoding"] == 1
     assert report["total_hits"] == 3 and report["status"] == "partial"
 
-    survey = case_survey.survey(folder, ["기록", "표식"], False)
+    survey = case_survey.survey(folder, ["기록", "표식"], False, keyword_encoding="cp949")
     kw = survey["steps"]["keywords"]["result"]
     assert (kw["files_searched"], kw["files_not_text"], kw["total_hits"]) == (2, 1, 3)
-    code, log = run_report(folder, "-o", tmp_path / "out", "--keywords", "기록,표식")
+    code, log = run_report(folder, "-o", tmp_path / "out", "--keywords", "기록,표식", "--keyword-encoding", "cp949")
     md = (tmp_path / "out" / "보고서초안.md").read_text(encoding="utf-8")
     row = next(line for line in md.splitlines() if line.startswith("| 키워드 검색 |"))
     assert "부분 완료" in row and "텍스트 파일 2개 검색" in row and "텍스트 아님(바이너리 기록) 1개" in row, row

@@ -15,6 +15,7 @@ from pathlib import Path
 
 # 보고서·timeline 병합과 같은 정수 나노초 정렬기를 쓴다 (datetime은 마이크로초까지라 900ns·100ns를 구별하지 못한다).
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import exif_audit  # noqa: E402
 import merge_timeline  # noqa: E402
 
 # 범주 → (카드 클래스, 배지 클래스, 배지 문구). 생성기(report_draft 등)가 내보내는 범주는 모두 여기 있어야 한다.
@@ -390,7 +391,8 @@ def generate_html(
         if cat not in CATEGORIES:
             cat = "unclassified"
         tag_cls, badge_cls, badge_label = CATEGORIES[cat]
-        time_str = escape_text(ev.get("timestamp", "-"))
+        # EXIF 사건은 기록된 소수초 원문 전체와 오프셋 판정을 보인다 (timestamp는 µs에서 절삭된 호환 값).
+        time_str = escape_text(exif_audit.recorded_time(ev) or ev.get("timestamp", "-"))
         desc = escape_text(ev.get("description", ""))
         details = escape_text(ev.get("details", ""))
         safe_cat = escape_text(cat)

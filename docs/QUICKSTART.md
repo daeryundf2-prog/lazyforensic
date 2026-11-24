@@ -74,11 +74,34 @@ lazyforensic report <증거 폴더>
 | `--case-info 사건정보.txt` | 사건번호·사건명·의뢰인·분석 목적·분석 담당을 1장에 채운다. 빈 양식은 `lazyforensic report --case-template 사건정보.txt` |
 | `--hashes 해시목록.txt` | 획득 로그·의뢰인이 준 해시표·`sha256sum` 결과와 증거 해시를 대조한다. 여러 파일 가능 |
 | `--keywords 계좌,송금` | 텍스트 파일에서 키워드를 찾아 건수를 싣는다 |
-| `--keyword-encoding euc_jp` | 키워드 검색에서 텍스트 파일을 이 코덱으로만 읽는다. '인코딩 불확실'로 보고된 파일의 코덱을 확인한 뒤 지정한다 |
+| `--keyword-encoding cp949` | 키워드 검색 코덱을 운영자가 지정한다. BOM·선언이 없는 줄을 이 코덱으로 읽는다(엄격한 UTF-8로만 읽히는 줄은 UTF-8). 아래 '키워드 검색 코덱' 참고 |
 | `-o 출력폴더` | 결과 폴더 위치를 바꾼다 (증거 폴더 안은 거부) |
 | `--hwpx` / `--no-hwpx` | 한글 초안 생성 및 검증을 켜거나 끈다. 기본값은 켜짐이다. |
 | `--docx` / `--no-docx` | Word 초안 생성 및 검증을 켜거나 끈다. 기본값은 켜짐이다. |
 | `--no-image-verify` | 큰 EWF의 미디어·논리 항목 해시 재계산을 건너뛴다 (결과는 "미확인") |
+
+### 키워드 검색 코덱 (CP949 로그)
+
+BOM이나 `encoding=`·`charset=` 선언이 없는 바이트는 여러 코덱으로 읽힐 수 있다. 짧은 CP949 한국어(`정상`, `진열 완료`)는 EUC-JP·Big5 한자로도 오류 없이 읽히고, EUC-JP `東京`은 CP949 `톺딸`로도 읽힌다. 바이트만으로는 어느 쪽이 원문인지 정할 수 없으므로, 해석에 따라 키워드가 보이거나 안 보이는 줄은 **후보**로만 남기고 확정 건수에 넣지 않는다(미검출로도 보지 않는다). 그 실행은 `부분 완료`가 되고, 보고서 8장과 `lazyforensic kw` 출력에 불확실한 파일·줄 수, 가능한 코덱, 다시 실행할 명령이 나온다.
+
+로그를 만든 프로그램이나 장비로 작성 코덱을 확인했으면 지정해서 다시 실행한다.
+
+```sh
+lazyforensic report 증거 --keywords 진열,완료 --keyword-encoding cp949
+```
+
+사건 전체가 같은 코덱이면 한 번만 정해 둔다. 명령 인자가 있으면 그것이 우선한다.
+
+```sh
+export LAZYFORENSIC_KEYWORD_ENCODING=cp949          # macOS·Linux
+set LAZYFORENSIC_KEYWORD_ENCODING=cp949             # Windows 명령 프롬프트
+$env:LAZYFORENSIC_KEYWORD_ENCODING = "cp949"        # Windows PowerShell
+```
+
+- 지정한 코덱은 자동 판정이 아니라 운영자 선택으로 기록된다. 선조사 JSON의 `encoding_requested`·`encoding_source`(`cli` 또는 `env`), 처리 영수증 `parameters`, 보고서 표의 `운영자 지정 코덱: cp949 (환경설정 LAZYFORENSIC_KEYWORD_ENCODING)`에 남는다.
+- 지정 코덱으로 해석되지 않고 엄격한 UTF-8로만 읽히는 줄(카카오톡 내보내기 등 UTF-8 파일)은 UTF-8로 읽는다.
+- 파일의 BOM·선언과 다른 코덱을 지정하면 지정 코덱으로 읽되 `지정 코덱과 파일 표지 충돌`로 기록하고, 그 파일의 히트와 미검출은 확정하지 않는다.
+- `base64_codec`처럼 텍스트 코덱이 아닌 이름과 없는 이름은 실행 전에 사용법 오류(종료 코드 2)로 멈춘다.
 
 ### EWF 이미지 한 개를 확인할 때
 

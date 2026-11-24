@@ -27,8 +27,9 @@ JSON(tags)에는 문자열 전체를 그대로 싣는다. 화면 출력만 발�
 - OffsetTimeOriginal이 없으면 촬영 시각의 시간대는 미기록이다. 형식이 맞지 않는
   값(예: +09:75)은 '형식 오류'로 원문과 함께 따로 표시한다. 두 경우 모두 정렬에서만
   KST를 가정하고 그 가정을 결과에 표시한다.
-- SubSecTimeOriginal은 9자리(나노초)까지 정렬에 쓴다. 더 긴 자릿수는 원문에 남기고
-  정렬에서는 버린다(subsec_truncated).
+- SubSecTimeOriginal의 9자리(나노초)까지는 정수 instant_ns에 담는다. 더 긴 자릿수는 원문에 남기고
+  subsec_beyond_ns에 따로 두어 시간순 비교에서 그 자릿수까지 쓴다(subsec_truncated는 정수가 절삭됐다는 표시).
+  기록 문자열끼리의 비교이며 장비 시계의 정확도를 뜻하지 않는다.
 """
 from __future__ import annotations
 
@@ -108,7 +109,8 @@ def capture_time(tags: dict) -> dict | None:
                               else "empty" if offset_present else "absent"),
             "instant_ns": seconds * 10**9 + int((digits + "0" * 9)[:9]),
             "precision_ns": 10 ** (9 - min(len(digits), 9)),
-            "subsec_truncated": len(digits) > 9}
+            "subsec_truncated": len(digits) > 9,
+            "subsec_beyond_ns": digits[9:] or None}
 
 
 def zone_note(shot: dict) -> str:
@@ -130,6 +132,7 @@ def event_fields(shot: dict) -> dict:
               "instant_ns": shot["instant_ns"], "precision_ns": shot["precision_ns"]}
     if shot["subsec_truncated"]:
         fields["subsec_truncated"] = True
+        fields["subsec_beyond_ns"] = shot["subsec_beyond_ns"]
     if not shot["offset"]:
         fields["timezone_assumed"] = "KST (정렬 전용)"
     return fields
@@ -252,7 +255,8 @@ def main(argv: list[str] | None = None) -> int:
             elif r.get("exif_present"):
                 t = r["tags"]
                 shot = r.get("capture_time")
-                when = (shot["timestamp"] + ("" if shot["offset"] else f" ({zone_note(shot)})")) if shot else "기록없음"
+                # 사람이 읽는 시각은 기록된 소수초 원문 전체와 오프셋 판정 (timestamp는 µs에서 절삭된 호환 값).
+                when = recorded_time(event_fields(shot)) if shot else "기록없음"
                 print(f"  {r['file']}: {excerpt(t.get('Make', '?'))} {excerpt(t.get('Model', '?'))} "
                       f"촬영 {when}"
                       + (" [GPS]" if r["has_gps"] else "")

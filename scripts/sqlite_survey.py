@@ -34,6 +34,11 @@ WAL은 SQLite가 열 수 있는지와 별개로 프레임 경계·salt·체크�
   저장 레코드가 아니므로 view_rows로 따로 센다. 조회하지 못한 뷰가 있으면(작성 앱 전용 함수 등)
   view_rows는 미확인(None)이고 조회한 뷰 소계만 visible_view_rows로 남긴다.
 - 내부 객체는 이름이 'sqlite_'로 시작하는 것만 문자 그대로 비교해 뺀다('sqliteLog'는 사용자 테이블).
+- 객체 유형은 SQLite가 밝힌 대로(PRAGMA table_list: table·view·virtual·shadow) 남긴다. FTS 같은 가상 테이블의
+  조회 결과는 virtual_rows(논리 문서 수), 그 모듈의 관리용 테이블(색인·설정·원문 저장) 행은 shadow_rows로 따로
+  센다 — 둘 다 저장 행 합계(total_rows)에 넣지 않는다. table_list가 없는 SQLite(3.37 미만)에서는 CREATE VIRTUAL
+  TABLE 선언과 '<가상 테이블>_<content·data·idx 등>' 이름 규칙으로 구별한다.
+- 컬럼 목록을 읽지 못하면(작성 앱 전용 함수를 쓰는 뷰 등) columns는 미확인(None)이고 사유는 columns_error다.
 - 손상된 DB는 integrity_check가 실패로 보고한다 — 복구는 별도 도구.
 """
 from __future__ import annotations
@@ -218,6 +223,51 @@ def _approved_alias(path: Path, allowed: set[Path]) -> Path | None:
     return None
 
 
+# 가상 테이블 모듈(FTS3/4/5·R*Tree)이 '<가상 테이블>_<접미사>'로 만드는 관리용(shadow) 테이블.
+# PRAGMA table_list(SQLite 3.37+)가 없을 때만 이 이름 규칙으로 구별한다.
+SHADOW_SUFFIXES = {"content", "segments", "segdir", "docsize", "stat", "data", "idx", "config",
+                   "node", "parent", "rowid"}
+
+
+def object_types(cur: sqlite3.Cursor) -> dict[str, str]:
+    """main 스키마 객체 이름 → SQLite가 밝힌 유형('table'·'view'·'virtual'·'shadow')."""
+    try:
+        listed = {r[1]: r[2] for r in cur.execute("PRAGMA table_list").fetchall() if r[0] == "main"}
+    except sqlite3.Error:
+        listed = {}
+    if listed:
+        return listed
+    master = cur.execute("SELECT name, type, sql FROM sqlite_master WHERE type IN ('table','view')").fetchall()
+    virtual = {n for n, t, sql in master
+               if t == "table" and (sql or "").lstrip().upper().startswith("CREATE VIRTUAL TABLE")}
+    out = {}
+    for name, ttype, _ in master:
+        if name in virtual:
+            out[name] = "virtual"
+        elif ttype == "table" and any(name.startswith(v + "_") and name[len(v) + 1:] in SHADOW_SUFFIXES
+                                      for v in virtual):
+            out[name] = "shadow"
+        else:
+            out[name] = ttype
+    return out
+
+
+def _group_total(rec: dict, tables: list[dict], kind: str, key: str, label: str) -> list[dict]:
+    """kind 객체의 행 수 합계를 rec[key]에 둔다. 하나라도 세지 못했으면 None, 센 소계는 visible_<key>."""
+    group = [t for t in tables if t["type"] == kind]
+    failed = [t["name"] for t in group if t["row_count"] is None]
+    subtotal = sum(t["row_count"] for t in group if t["row_count"] is not None)
+    if failed:
+        rec[key] = None
+        rec["visible_" + key] = subtotal
+        rec[key.replace("_rows", "_note")] = (
+            f"{label} {len(failed)}개 조회 실패({', '.join(failed)}) — 조회한 {len(group) - len(failed)}개 "
+            f"{label} 소계 {subtotal}행, {label} 조회 결과 미확인")
+    else:
+        rec[key] = subtotal
+    return group
+
+
 def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | None) -> None:
     cur = conn.cursor()
     rec["page_size"] = cur.execute("PRAGMA page_size").fetchone()[0]
@@ -234,8 +284,10 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
         "SELECT name, type FROM sqlite_master "
         "WHERE type IN ('table','view') AND lower(substr(name, 1, 7)) <> 'sqlite_' "
         "ORDER BY name").fetchall()
+    # FTS 같은 가상 테이블의 조회 결과(논리 문서)와 그 모듈의 관리용 테이블은 사용자 저장 행이 아니다.
+    kinds = object_types(cur)
     for name, ttype in rows:
-        entry: dict = {"name": name, "type": ttype}
+        entry: dict = {"name": name, "type": kinds.get(name, ttype)}
         ident = '"' + name.replace('"', '""') + '"'  # SQLite 식별자 인용 규칙
         try:
             entry["row_count"] = cur.execute(
@@ -246,8 +298,10 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
         try:
             entry["columns"] = [r[1] for r in cur.execute(
                 f'PRAGMA table_info({ident})').fetchall()]
-        except sqlite3.Error:
-            entry["columns"] = []
+        except sqlite3.Error as e:
+            # 조회 실패는 '컬럼 0개'가 아니다 — 미확인과 사유를 남긴다.
+            entry["columns"] = None
+            entry["columns_error"] = str(e)
         if sample and sample[0] == name:
             try:
                 entry["sample_rows"] = [
@@ -259,29 +313,31 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
     rec["tables"] = tables
     # 뷰는 테이블 행을 다시 보여 줄 뿐이므로 저장 레코드 합계에 넣지 않는다.
     # 집계하지 못한 저장 테이블이 하나라도 있으면 최종 합계는 미확인이고, 센 테이블의 소계만 남긴다.
+    # 조회하지 못한 가상 테이블(모듈 없음 등)도 같다 — 그 모듈이 사용자 레코드를 어디에 두는지 알 수 없다.
     stored = [t for t in tables if t["type"] == "table"]
-    failed = [t["name"] for t in stored if t["row_count"] is None]
+    failed = [t["name"] for t in tables if t["type"] in ("table", "virtual") and t["row_count"] is None]
     subtotal = sum(t["row_count"] for t in stored if t["row_count"] is not None)
     if failed:
         rec["total_rows"] = None
         rec["visible_rows"] = subtotal
+        counted = sum(1 for t in stored if t["row_count"] is not None)
         rec.setdefault("limitations", []).append(
-            f"테이블 {len(failed)}개 행 수 집계 실패({', '.join(failed)}) — 집계된 {len(stored) - len(failed)}개 "
+            f"테이블 {len(failed)}개 행 수 집계 실패({', '.join(failed)}) — 집계된 {counted}개 "
             f"테이블 소계 {subtotal}행, 최종 합계 미확인")
     else:
         rec["total_rows"] = subtotal
     # 조회하지 못한 뷰를 0행으로 더하지 않는다 — 조회한 뷰의 소계만 남기고 뷰 결과는 미확인이다.
     # 저장 행 합계(total_rows)와는 무관하므로 limitations(취득·집계 제한)에 넣지 않는다.
-    views = [t for t in tables if t["type"] == "view"]
-    view_failed = [t["name"] for t in views if t["row_count"] is None]
-    view_subtotal = sum(t["row_count"] for t in views if t["row_count"] is not None)
-    if view_failed:
-        rec["view_rows"] = None
-        rec["visible_view_rows"] = view_subtotal
-        rec["view_note"] = (f"뷰 {len(view_failed)}개 조회 실패({', '.join(view_failed)}) — 조회한 "
-                            f"{len(views) - len(view_failed)}개 뷰 소계 {view_subtotal}행, 뷰 조회 결과 미확인")
+    _group_total(rec, tables, "view", "view_rows", "뷰")
+    if _group_total(rec, tables, "virtual", "virtual_rows", "가상 테이블"):
+        shadow = [t for t in tables if t["type"] == "shadow"]
+        rec["shadow_tables"] = len(shadow)
+        rec["shadow_rows"] = sum(t["row_count"] for t in shadow if t["row_count"] is not None)
     else:
-        rec["view_rows"] = view_subtotal
+        rec.pop("virtual_rows")
+    unread = [f"{t['name']}({t['columns_error']})" for t in tables if t["columns"] is None]
+    if unread:
+        rec["columns_note"] = f"컬럼 미확인 {len(unread)}개 객체: " + ", ".join(unread)
 
 
 def _survey_working_copy(path: Path, rec: dict, sidecars: list[tuple[Path, Path]],
@@ -414,6 +470,29 @@ def rows_text(rec: dict) -> str:
     return f"총 {rec.get('total_rows')}행"
 
 
+def objects_text(rec: dict) -> str:
+    """저장 행 합계 밖의 객체 표기: 뷰 조회 결과, 가상 테이블(FTS 등) 조회 결과, 그 관리용(shadow) 테이블."""
+    tables = rec.get("tables") or []
+    n_views = sum(1 for t in tables if t["type"] == "view")
+    n_virtual = sum(1 for t in tables if t["type"] == "virtual")
+    n_shadow = sum(1 for t in tables if t["type"] == "shadow")
+    parts = []
+    if n_views and rec.get("view_rows") is None:
+        parts.append(f"뷰 {n_views}개 조회 결과 미확인(조회한 뷰 소계 {rec.get('visible_view_rows')}행, 저장 행 아님)")
+    elif n_views:
+        parts.append(f"뷰 {n_views}개 조회 결과 {rec['view_rows']}행(저장 행 아님)")
+    if n_virtual and rec.get("virtual_rows") is None:
+        parts.append(f"가상 테이블 {n_virtual}개 조회 결과 미확인(조회한 소계 {rec.get('visible_virtual_rows')}행, "
+                     "저장 행 합계와 별도)")
+    elif n_virtual:
+        parts.append(f"가상 테이블 {n_virtual}개 조회 결과 {rec['virtual_rows']}행(전문검색 문서 등 논리 레코드, "
+                     "저장 행 합계와 별도)")
+    if n_shadow:
+        parts.append(f"가상 테이블 관리용(shadow) 테이블 {n_shadow}개 {rec.get('shadow_rows')}행(색인·설정·원문 저장 — "
+                     "사용자 레코드 아님, 합계 제외)")
+    return "".join(", " + p for p in parts)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="SQLite 증거 DB 표면 조사 (읽기 전용)")
     ap.add_argument("target", help="DB 파일 또는 디렉터리")
@@ -441,24 +520,21 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             mark = "ok" if r["integrity_ok"] else "손상!"
             n_tables = sum(1 for t in r["tables"] if t["type"] == "table")
-            n_views = len(r["tables"]) - n_tables
-            line = f"{r['file']}: 테이블 {n_tables}개 {rows_text(r)}"
-            if n_views and r.get("view_rows") is None:
-                line += (f", 뷰 {n_views}개 조회 결과 미확인(조회한 뷰 소계 {r.get('visible_view_rows')}행, "
-                         f"저장 행 아님)")
-            elif n_views:
-                line += f", 뷰 {n_views}개 조회 결과 {r['view_rows']}행(저장 행 아님)"
+            line = f"{r['file']}: 테이블 {n_tables}개 {rows_text(r)}{objects_text(r)}"
             for s in r.get("sidecars", []):
                 line += f", {s['file']} 반영(작업 사본)"
             print(f"{line}, 무결성={mark}")
             for text in r.get("limitations", []):
                 print(f"  제한: {text}")
-            if r.get("view_note"):
-                print(f"  뷰: {r['view_note']}")
+            for key, label in (("view_note", "뷰"), ("virtual_note", "가상 테이블"), ("columns_note", "컬럼")):
+                if r.get(key):
+                    print(f"  {label}: {r[key]}")
             for t in r["tables"]:
                 count = t.get("row_count")
                 shown = f"{count}행" if count is not None else f"미확인({t.get('count_error', '')})"
-                print(f"  {t['name']} ({t['type']}): {shown}, 컬럼 {len(t.get('columns', []))}개")
+                cols = (f"컬럼 {len(t['columns'])}개" if t.get("columns") is not None
+                        else f"컬럼 미확인({t.get('columns_error', '')})")
+                print(f"  {t['name']} ({t['type']}): {shown}, {cols}")
                 for row in t.get("sample_rows", []):
                     print(f"    표본: {row}")
     broken = [r for r in records if r.get("is_sqlite") and not r.get("integrity_ok")]
