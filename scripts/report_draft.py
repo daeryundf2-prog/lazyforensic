@@ -50,6 +50,8 @@ import ewf_image  # noqa: E402
 import evidence_manifest  # noqa: E402
 import exif_audit  # noqa: E402
 import hash_reference  # noqa: E402
+import keyword_report  # noqa: E402
+import merge_timeline  # noqa: E402
 import report_docx  # noqa: E402
 import report_hwpx  # noqa: E402
 
@@ -110,16 +112,6 @@ def kst_from_ns(ns: int, digits: int = 9) -> str:
     secs, frac = divmod(ns, 10**9)
     dt = (EPOCH + timedelta(seconds=secs)).astimezone(KST)
     return dt.strftime("%Y-%m-%dT%H:%M:%S") + f".{frac:09d}"[:digits + 1] + "+09:00"
-
-
-def instant_ns(ev: dict) -> int:
-    """정렬용 정수 나노초. 파일 이벤트는 운영체제가 돌려준 mtime_ns를 그대로 쓴다."""
-    if "mtime_ns" in ev:
-        return ev["mtime_ns"]
-    dt = datetime.fromisoformat(ev["timestamp"])
-    if dt.tzinfo is None:  # EXIF 오프셋 미기록: 정렬에서만 KST로 가정 (보고서에 명시)
-        dt = dt.replace(tzinfo=KST)
-    return (dt - EPOCH) // timedelta(microseconds=1) * 1000
 
 
 def fmt_size(n: int) -> str:
@@ -342,14 +334,9 @@ def build_events(root: Path, inventory: list[dict], survey: dict, images: list[d
         shot = exif_audit.capture_time(r.get("tags") or {})
         if shot:
             name = rel(root, r["file"])
-            zone = f"UTC{shot['offset']} 기록" if shot["offset"] else "시간대 미기록"
-            ev = {"timestamp": shot["timestamp"], "category": "media", "source": "EXIF",
-                  "description": f"촬영 시각(카메라 기록값, {zone}): {name}", "file": name,
-                  "recorded": {"DateTimeOriginal": shot["raw"], "SubSecTimeOriginal": shot["subsec"],
-                               "OffsetTimeOriginal": shot["offset"]}}
-            if not shot["offset"]:
-                ev["timezone_assumed"] = "KST (정렬 전용)"
-            events.append(ev)
+            events.append({"timestamp": shot["timestamp"], "category": "media", "source": "EXIF",
+                           "description": f"촬영 시각(카메라 기록값, {exif_audit.zone_note(shot)}): {name}",
+                           "file": name, **exif_audit.event_fields(shot)})
     for img in images:
         acq = (img.get("acquisition") or {}).get("acquisition_date", "")
         m = re.match(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC$", acq)
@@ -358,8 +345,8 @@ def build_events(root: Path, inventory: list[dict], survey: dict, images: list[d
                            "source": "EWF 헤더", "description": f"이미지 획득 시각(이미지 기록값): {img['file']}",
                            "file": img["file"]})
 
-    events.sort(key=instant_ns)
-    return events
+    # 보고서·timeline --manifest·양식이 같은 정수 나노초 기준으로 정렬한다.
+    return merge_timeline.order_events(events)
 
 
 # ---------------------------------------------------------------- 보고서 본문
@@ -838,8 +825,12 @@ def findings_table(ctx: dict) -> list[str]:
             text = f"DB {r['db_files']}개, 무결성 이상 {r['broken']}개"
         if copies:
             text += f", -wal/-journal 반영 {len(copies) - unknown}개" + (f", 행 수 미확인 {unknown}개" if unknown else "")
+        if r.get("rows_unconfirmed"):
+            text += (f" (그중 {r['rows_unconfirmed']}개는 열 수 있었으나 마지막 커밋까지 취득했는지 확인 불가 — "
+                     "보이는 행 수와 사유는 한계 절)")
     rows.append(["SQLite 데이터베이스", why or text,
-                 "읽기 전용 구조 조사. -wal/-journal이 있으면 원본 대신 작업 사본에서 커밋 상태를 읽음"])
+                 "읽기 전용 구조 조사. -wal/-journal이 있으면 원본 대신 작업 사본에서 커밋 상태를 읽음. "
+                 "WAL 프레임 경계·체크섬과 부수 파일의 조사 범위를 따로 확인"])
     r, why = step_result(survey, "pii")
     rows.append(["개인정보 패턴", why or f"{r['total_pii']}건 (텍스트 파일 {r['files_scanned']}개 검사)",
                  "외부 전달 전 마스킹 검토 대상. 정규식 기반"])
@@ -856,8 +847,9 @@ def findings_table(ctx: dict) -> list[str]:
         if r:
             why = (("부분 완료 — " if r["status"] != "complete" else "")
                    + f"{r['total_hits']}건 ({', '.join(r['keywords'])}); 텍스트 파일 {r['files_searched']}개 검색, "
-                   f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개")
-        rows.append(["키워드 검색", why, "텍스트 파일 리터럴 검색. 판정 불가·읽기 실패 파일은 검색 수에서 제외"])
+                   f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개"
+                   + keyword_report.scope_note(r))
+        rows.append(["키워드 검색", why, "텍스트 파일 리터럴 검색. 판정 불가·읽기 실패·텍스트 아닌 파일은 검색 수에서 제외"])
     return table(["점검 항목", "결과", "비고"], rows)
 
 
@@ -969,11 +961,20 @@ def timeline_section(ctx: dict) -> list[str]:
         L.append("")
     if "EXIF" in by_src:
         naive = sum(1 for e in by_src["EXIF"] if datetime.fromisoformat(e["timestamp"]).tzinfo is None)
-        if naive:
-            L.append(f"EXIF 촬영 시각 {naive}건은 UTC 오프셋(OffsetTimeOriginal)이 기록되지 않아 시간대 미기록이다. "
-                     "시간순 정렬에서만 KST로 가정했다.")
+        malformed = [e for e in by_src["EXIF"] if e.get("offset_status") == "malformed"]
+        if naive - len(malformed):
+            L.append(f"EXIF 촬영 시각 {naive - len(malformed)}건은 UTC 오프셋(OffsetTimeOriginal)이 기록되지 않아 "
+                     "시간대 미기록이다. 시간순 정렬에서만 KST로 가정했다.")
+        if malformed:
+            raws = ", ".join(f"'{e['recorded']['OffsetTimeOriginal']}'" for e in malformed[:5])
+            L.append(f"EXIF 촬영 시각 {len(malformed)}건은 UTC 오프셋 기록이 형식 오류다(원문 {raws}). "
+                     "미기록과 구별해 events.json의 offset_status에 malformed로 남겼고, 시간순 정렬에서만 KST로 가정했다.")
         if naive < len(by_src["EXIF"]):
             L.append(f"EXIF 촬영 시각 {len(by_src['EXIF']) - naive}건은 기록된 UTC 오프셋으로 시간순을 정했다.")
+    ties = sum(1 for e in events if e.get("order_tie"))
+    if ties:
+        L.append(f"기록된 정밀도로는 선후를 구별할 수 없는 시각 {ties}건은 동률이다(events.json의 order_tie). "
+                 "표의 순서는 그 사이의 선후를 뜻하지 않는다.")
     while L and L[-1] == "":
         L.pop()
     return L
@@ -1030,6 +1031,13 @@ def limitations(ctx: dict) -> list[str]:
         _, why = step_result(ctx["survey"], key)
         if why:
             out.append(f"{name} 점검: {why}")
+    db, _ = step_result(ctx["survey"], "sqlite")
+    for rec in (db or {}).get("records", []):
+        if rec.get("limitations"):
+            seen = rec.get("visible_rows")
+            out.append(f"SQLite {report_docx.display_value(rel(ctx['root'], rec['file']))}: "
+                       + (f"보이는 행 {seen}행, " if seen is not None else "")
+                       + "최종 행 수 미확인 — " + "; ".join(rec["limitations"]))
     return out
 
 
