@@ -74,7 +74,8 @@ def capture_time(tags: dict) -> dict | None:
     소수초는 기록된 자릿수대로(최대 6자리) 싣고 원래 문자열은 subsec에 둔다.
     instant_ns: 정렬용 정수 나노초(UTC 기준). 소수초 원문을 9자리까지 쓰고, 오프셋이 유효하지
     않으면 KST로 가정한다. precision_ns는 기록된 소수 자릿수가 구별할 수 있는 최소 간격이다.
-    offset_raw·offset_status는 오프셋 원문과 판정(valid·absent·malformed)이다.
+    offset_present·offset_raw·offset_status는 오프셋 태그의 존재, 원문(공백 포함 그대로, 끝 NUL만 제거),
+    판정이다. 판정: valid(유효) · empty(태그는 있으나 값이 비었거나 공백) · malformed(형식 오류) · absent(태그 없음).
     """
     raw = (tags.get("DateTimeOriginal") or "").strip().rstrip("\x00")
     m = EXIF_DT_RE.match(raw)
@@ -82,8 +83,10 @@ def capture_time(tags: dict) -> dict | None:
         return None
     subsec = (tags.get("SubSecTimeOriginal") or "").strip().rstrip("\x00")
     digits = subsec if subsec.isdigit() else ""
-    offset_raw = (tags.get("OffsetTimeOriginal") or "").strip().rstrip("\x00")
-    om = OFFSET_RE.match(offset_raw)
+    offset_present = tags.get("OffsetTimeOriginal") is not None
+    offset_raw = str(tags["OffsetTimeOriginal"]).rstrip("\x00") if offset_present else None
+    offset_value = (offset_raw or "").strip()
+    om = OFFSET_RE.match(offset_value)
     tz = None
     if om and int(om.group(2)) <= 14 and int(om.group(3)) < 60:
         delta = timedelta(hours=int(om.group(2)), minutes=int(om.group(3)))
@@ -96,11 +99,13 @@ def capture_time(tags: dict) -> dict | None:
         return None
     spec = "seconds" if not digits else "milliseconds" if len(digits) <= 3 else "microseconds"
     seconds = (whole - EPOCH) // timedelta(seconds=1)
-    return {"timestamp": dt.isoformat(timespec=spec), "offset": offset_raw if tz else None,
+    return {"timestamp": dt.isoformat(timespec=spec), "offset": offset_value if tz else None,
             "subsec": subsec or None, "raw": raw,
             "timezone": "recorded" if tz else "not_recorded",
-            "offset_raw": offset_raw or None,
-            "offset_status": "valid" if tz else "malformed" if offset_raw else "absent",
+            "offset_present": offset_present,
+            "offset_raw": offset_raw,
+            "offset_status": ("valid" if tz else "malformed" if offset_value
+                              else "empty" if offset_present else "absent"),
             "instant_ns": seconds * 10**9 + int((digits + "0" * 9)[:9]),
             "precision_ns": 10 ** (9 - min(len(digits), 9)),
             "subsec_truncated": len(digits) > 9}
@@ -112,6 +117,8 @@ def zone_note(shot: dict) -> str:
         return f"UTC{shot['offset']} 기록"
     if shot.get("offset_status") == "malformed":
         return f"UTC 오프셋 형식 오류(원문 '{shot['offset_raw']}'), 정렬만 KST 가정"
+    if shot.get("offset_status") == "empty":
+        return f"UTC 오프셋 태그는 있으나 값이 비어 있음(원문 {shot['offset_raw']!r}), 정렬만 KST 가정"
     return "시간대 미기록, 정렬만 KST 가정"
 
 
@@ -119,7 +126,7 @@ def event_fields(shot: dict) -> dict:
     """타임라인 이벤트에 싣는 촬영 시각 원문·판정·정렬 기준 (보고서·timeline 공통)."""
     fields = {"recorded": {"DateTimeOriginal": shot["raw"], "SubSecTimeOriginal": shot["subsec"],
                            "OffsetTimeOriginal": shot["offset_raw"]},
-              "offset_status": shot["offset_status"],
+              "offset_status": shot["offset_status"], "offset_present": shot["offset_present"],
               "instant_ns": shot["instant_ns"], "precision_ns": shot["precision_ns"]}
     if shot["subsec_truncated"]:
         fields["subsec_truncated"] = True

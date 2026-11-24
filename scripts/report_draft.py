@@ -628,7 +628,8 @@ def render_report(ctx: dict) -> str:
             label = REF_RESULT_KO.get(r["result"], r["result"])
             target = r.get("file") or "-"
             how = {"image_media": "이미지 미디어 해시와 대조", "basename": "파일명 일치",
-                   "path_suffix": "경로 끝부분 일치", "path": "경로 일치"}.get(r.get("matched_by", ""),
+                   "path_suffix": "경로 끝부분 일치", "path": "경로 일치",
+                   "path_casefold": "경로 일치(대소문자만 다름)"}.get(r.get("matched_by", ""),
                                                                        r.get("note") or "-")
             if r.get("normalization") and r.get("matched_by"):
                 how += f" (유니코드 {r['normalization']} 정규화 후)"
@@ -963,9 +964,14 @@ def timeline_section(ctx: dict) -> list[str]:
     if "EXIF" in by_src:
         naive = sum(1 for e in by_src["EXIF"] if datetime.fromisoformat(e["timestamp"]).tzinfo is None)
         malformed = [e for e in by_src["EXIF"] if e.get("offset_status") == "malformed"]
-        if naive - len(malformed):
-            L.append(f"EXIF 촬영 시각 {naive - len(malformed)}건은 UTC 오프셋(OffsetTimeOriginal)이 기록되지 않아 "
-                     "시간대 미기록이다. 시간순 정렬에서만 KST로 가정했다.")
+        empty = [e for e in by_src["EXIF"] if e.get("offset_status") == "empty"]
+        if naive - len(malformed) - len(empty):
+            L.append(f"EXIF 촬영 시각 {naive - len(malformed) - len(empty)}건은 UTC 오프셋(OffsetTimeOriginal)이 "
+                     "기록되지 않아 시간대 미기록이다. 시간순 정렬에서만 KST로 가정했다.")
+        if empty:
+            L.append(f"EXIF 촬영 시각 {len(empty)}건은 UTC 오프셋 태그(OffsetTimeOriginal)는 있으나 값이 비어 있다"
+                     "(빈 문자열·공백). 태그 부재와 구별해 events.json의 offset_status에 empty로 남겼고, "
+                     "시간순 정렬에서만 KST로 가정했다.")
         if malformed:
             raws = ", ".join(f"'{e['recorded']['OffsetTimeOriginal']}'" for e in malformed[:5])
             L.append(f"EXIF 촬영 시각 {len(malformed)}건은 UTC 오프셋 기록이 형식 오류다(원문 {raws}). "

@@ -13,7 +13,8 @@ PC 아티팩트, `$MFT`, 이벤트 로그, DLP를 자동 수집하거나 합성�
 JSON 배열. 각 객체:
 
 - `timestamp` (문자열, 그대로 표시. 타임존 변환 없음)
-- `category`: `critical` | `file` | `web` | `chat` | `system`
+- `category`: `critical` | `file` | `media`(촬영 기록) | `web` | `chat` | `system`. 없거나 목록에 없는 값은 `미분류`로 중립 표시하고 다른 범주 필터에 넣지 않는다.
+- 정렬: `instant_ns`·`mtime_ns`가 있거나 시간대가 붙은 시각은 정수 나노초로 정렬하고(`merge_timeline`과 같은 기준), 시간대 표기가 섞이면 입력 순서를 유지한다.
 - `description`
 - `details` (선택)
 

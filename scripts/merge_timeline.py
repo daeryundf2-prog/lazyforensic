@@ -131,7 +131,7 @@ def events_from_manifest(path: str) -> list[dict]:
     out = []
     for f in files:
         ts = _norm_iso(f.get("mtime", ""))
-        ev = {"timestamp": ts or f.get("mtime", ""), "source": "파일시스템",
+        ev = {"timestamp": ts or f.get("mtime", ""), "source": "파일시스템", "category": "file",
               "description": f"파일 수정(기록값): {f['path']}",
               "file": f["path"], "sha256": f.get("sha256", "")[:16]}
         if isinstance(f.get("mtime_ns"), int):
@@ -151,7 +151,7 @@ def events_from_kakao(path: str) -> list[dict]:
         ts = _norm_iso(r.get("timestamp") or "")
         if ts is None:
             continue  # 시각 불명 메시지는 타임라인에 올리지 않는다
-        out.append({"timestamp": ts, "source": "카카오톡",
+        out.append({"timestamp": ts, "source": "카카오톡", "category": "chat",
                     "description": f"{r.get('sender', '?')}: "
                                    f"{str(r.get('message', ''))[:80]}",
                     "file": path})
@@ -166,14 +166,15 @@ def events_from_exif(path: str) -> list[dict]:
         shot = capture_time(r.get("tags") or {})
         if shot is None:
             continue
-        ev = {"timestamp": shot["timestamp"], "source": "EXIF",
+        ev = {"timestamp": shot["timestamp"], "source": "EXIF", "category": "media",
               "description": f"촬영(기록값, {zone_note(shot)}): {Path(r['file']).name}",
               "file": r["file"], **event_fields(shot)}
         if not shot["offset"]:
             # 오프셋이 없거나 형식이 맞지 않으면 KST를 가정하고, 가정했다고 남긴다.
             ev["timestamp"] = shot["timestamp"] + "+09:00"
-            ev["note"] = ("OffsetTimeOriginal 형식 오류 — KST로 가정" if shot["offset_status"] == "malformed"
-                          else "OffsetTimeOriginal 미기록 — KST로 가정")
+            ev["note"] = {"malformed": "OffsetTimeOriginal 형식 오류 — KST로 가정",
+                          "empty": "OffsetTimeOriginal 태그는 있으나 값이 비어 있음 — KST로 가정"}.get(
+                              shot["offset_status"], "OffsetTimeOriginal 미기록 — KST로 가정")
         out.append(ev)
     return out
 
@@ -209,29 +210,38 @@ def events_from_stt(path: str, anchors: dict[str, str]) -> tuple[list[dict], lis
 
 def _plaso_record_event(rec: dict, path: str) -> dict | None:
     """Plaso(json_line/CSV) 레코드 한 건을 통합 이벤트로 변환. 시각 없으면 None."""
-    ts = None
+    ts, instant = None, None
     # plaso json_line: timestamp는 epoch microseconds, datetime은 ISO 문자열
     raw_ts = rec.get("timestamp")
     if raw_ts is not None:
         try:
-            ts = datetime.fromtimestamp(int(raw_ts) / 1_000_000, tz=timezone.utc).isoformat()
-        except (ValueError, TypeError, OSError):
+            micros = int(raw_ts)
+            ts = datetime.fromtimestamp(micros / 1_000_000, tz=timezone.utc).isoformat()
+            instant = (micros * 1000, 1000)
+        except (ValueError, TypeError, OSError, OverflowError):
             ts = None
     if ts is None:
         for key in ("datetime", "date_time"):
             if rec.get(key):
-                ts = _norm_iso(str(rec[key]))
+                raw = str(rec[key]).strip()
+                # 시간대가 붙은 ISO는 원문 소수부(최대 9자리)를 그대로 두고 정수 나노초로 정렬한다.
+                # datetime을 거치면 마이크로초에서 잘려 900ns·100ns가 같은 시각이 된다.
+                instant = _parse_ns(raw)
+                ts = raw if instant else _norm_iso(raw)
                 if ts:
                     break
     if ts is None:
         return None
     desc = rec.get("message") or rec.get("display_name") or rec.get("filename") or "(항목)"
-    return {
+    ev = {
         "timestamp": ts,
         "source": f"plaso:{rec.get('parser') or rec.get('source') or 'unknown'}",
         "description": f"[{rec.get('timestamp_desc', 'event')}] {str(desc)[:80]}",
         "file": path,
     }
+    if instant:
+        ev["instant_ns"], ev["precision_ns"] = instant
+    return ev
 
 
 def events_from_plaso(path: str) -> tuple[list[dict], dict]:
