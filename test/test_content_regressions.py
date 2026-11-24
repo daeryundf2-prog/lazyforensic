@@ -135,6 +135,10 @@ def test_korean_keyword_found_in_each_encoding(tmp_path, encoding):
     item.write_bytes(TRUTH.encode(encoding))
     res = keyword_report.search_file_result(item, ["표식"], 0)
     assert res["undecodable"] is None and res["error"] is None
+    if encoding == "cp949":
+        # D24: undeclared CP949 also reads as EUC-JP/Big5 kanji — a line candidate until the codec is named.
+        assert res["hits"] == [] and [c["line"] for c in res["uncertain"]["candidate_hits"]] == [1]
+        res = keyword_report.search_file_result(item, ["표식"], 0, "cp949")
     assert [h["line"] for h in res["hits"]] == [1]
 
 
@@ -156,7 +160,9 @@ def test_undecodable_text_leaves_the_search_denominator(tmp_path):
     (folder / "d-broken.txt").write_bytes(b"\x80\xff" * 4)  # no BOM or NUL, not UTF-8, not CP949
     survey = case_survey.survey(folder, ["표식"], False)
     kw = survey["steps"]["keywords"]["result"]
-    assert (kw["files_searched"], kw["total_hits"], kw["files_undecodable"]) == (3, 3, 1)
+    assert (kw["files_searched"], kw["total_hits"], kw["files_undecodable"]) == (3, 2, 1)
+    # undeclared CP949 adds one candidate line (D24); the broken file was already uncertain (BOM-less UTF-16 fits)
+    assert (kw["files_encoding_uncertain"], kw["candidate_hits"]) == (2, 1)
     assert kw["status"] == "partial"
     assert kw["undecodable"][0]["file"].endswith("d-broken.txt")
     assert kw["encodings"] == {"utf-8": 1, "cp949": 1, "utf-16": 1}
@@ -165,7 +171,8 @@ def test_undecodable_text_leaves_the_search_denominator(tmp_path):
     with contextlib.redirect_stdout(out):
         keyword_report.main([str(folder), "표식", "--json"])
     report = json.loads(out.getvalue())
-    assert (report["files_searched"], report["total_hits"], report["files_undecodable"]) == (3, 3, 1)
+    assert (report["files_searched"], report["total_hits"], report["files_undecodable"]) == (3, 2, 1)
+    assert report["candidate_hits"] == 1
 
     code, log = run_report(folder, "-o", tmp_path / "out", "--keywords", "표식")
     md = (tmp_path / "out" / "보고서초안.md").read_text(encoding="utf-8")

@@ -87,8 +87,12 @@ def _run_step(name: str, fn) -> dict:
 
 
 def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidence_id=None,
-           manifest: dict | None = None, keyword_encoding: str | None = None) -> dict:
-    """manifest: 호출자가 이미 계산한 evidence_manifest 형식 dict (같은 파일을 두 번 해시하지 않도록)."""
+           manifest: dict | None = None, keyword_encoding: str | None = None,
+           keyword_encoding_source: str | None = None) -> dict:
+    """manifest: 호출자가 이미 계산한 evidence_manifest 형식 dict (같은 파일을 두 번 해시하지 않도록).
+    keyword_encoding_source: 운영자 지정 코덱의 출처('cli' 명령 인자, 'env' 환경설정). 코덱만 주면 'cli'."""
+    if keyword_encoding and not keyword_encoding_source:
+        keyword_encoding_source = "cli"
     started = utc_now_iso()
     root = root.resolve(strict=True)
     report: dict = {
@@ -135,7 +139,13 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
             # 검색 불가(읽기 실패·인코딩 판정 불가·텍스트 아님)는 '미검출'이 아니므로 검색 분모에서 뺀다.
             found = mod.search_files(by_ext(mod.TEXT_EXTS), keywords, 0, keyword_encoding)
             results = found["results"]
+            summary = mod.uncertain_summary(found)
             return {"keywords": keywords, "encoding_requested": keyword_encoding,
+                    "encoding_source": keyword_encoding_source,
+                    "operator_codec": (mod.operator_codec_note(keyword_encoding, keyword_encoding_source)
+                                       if keyword_encoding else None),
+                    # 출력물에 분석 PC의 절대 경로를 남기지 않는다 — 증거 폴더가 있는 폴더에서 실행할 명령이다.
+                    "rerun_commands": mod.rerun_commands(summary, root.name, keywords, "report"),
                     "files_searched": len(found["searched"]),
                     "files_undecodable": len(found["undecodable"]),
                     "files_read_failed": len(found["read_errors"]),
@@ -143,7 +153,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
                     "files_partially_searched": len(found["partial"]),
                     "files_mixed_encoding": len(found["mixed"]),
                     "encodings": found["encodings"],
-                    **mod.uncertain_summary(found),
+                    **summary,
                     "total_hits": sum(r["hit_count"] for r in results),
                     "status": found["status"],
                     "skipped": found["read_errors"], "undecodable": found["undecodable"],
@@ -306,6 +316,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         source_base=root, started_at=started, case_id=case_id,
         status="partial" if warnings else "complete", exit_code=None,
         warnings=warnings, parameters={"keywords": keywords, "keyword_encoding": keyword_encoding,
+                                       "keyword_encoding_source": keyword_encoding_source,
                                        "run_stt": run_stt},
         limitations=["Directory source has no single-file SHA-256; use manifest entries",
                      "Stages are independent reads, not an atomic acquisition snapshot",
@@ -351,6 +362,10 @@ def to_markdown(report: dict) -> str:
                          f"{_load('keyword_report').scope_note(r)})")
             for res in r["results"]:
                 lines.append(f"- {res['file']}: {res['hit_count']}히트")
+            if r.get("operator_codec"):
+                lines.append(f"- {r['operator_codec']}")
+            for cmd in r.get("rerun_commands") or []:
+                lines.append(f"- 작성 코덱 확인 후 재검색: `{cmd}`")
         elif key == "audio":
             for s in r["surveys"]:
                 if s["status"] == "ok":
@@ -384,10 +399,12 @@ def to_markdown(report: dict) -> str:
                          f"무결성 이상 {r['broken']}건")
             if r.get("rows_unconfirmed"):
                 lines[-1] += f", 최종 행 수 미확인 {r['rows_unconfirmed']}개"
-            rows_text = _load("sqlite_survey").rows_text
+            survey_mod = _load("sqlite_survey")
             for rec in r["records"]:
                 if rec.get("tables"):
-                    lines.append(f"- {rec['file']}: 테이블 {len(rec['tables'])}개, {rows_text(rec)}")
+                    n_tables = sum(1 for t in rec["tables"] if t["type"] == "table")
+                    lines.append(f"- {rec['file']}: 테이블 {n_tables}개, {survey_mod.rows_text(rec)}"
+                                 f"{survey_mod.objects_text(rec)}")
                 for text in rec.get("limitations", []):
                     lines.append(f"  - 제한: {text}")
         elif key == "videos":
@@ -419,7 +436,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keywords", default=None, help="쉼표 구분 키워드")
     ap.add_argument("--stt", action="store_true", help="로컬 STT 전사까지 실행")
     ap.add_argument("--keyword-encoding", default=None,
-                    help="키워드 검색에서 모든 텍스트 파일을 이 코덱으로만 읽는다(예: cp949, euc_jp) — 인코딩 불확실 재검색용")
+                    help="운영자가 확인한 코덱(예: cp949, euc_jp). BOM·선언 없는 줄을 이 코덱으로 읽는다. "
+                         "지정하지 않으면 환경변수 LAZYFORENSIC_KEYWORD_ENCODING")
     ap.add_argument("-o", "--output", default=None, help="JSON 리포트 경로")
     ap.add_argument("--markdown", default=None, help="마크다운 리포트 경로")
     args = ap.parse_args(argv)
@@ -435,7 +453,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     keywords = [k.strip() for k in args.keywords.split(",")] if args.keywords else []
-    report = survey(root, keywords, args.stt, keyword_encoding=args.keyword_encoding)
+    try:
+        encoding, source = _load("keyword_report").resolve_encoding(args.keyword_encoding)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    report = survey(root, keywords, args.stt, keyword_encoding=encoding, keyword_encoding_source=source)
 
     failed = [k for k, v in report["steps"].items() if v["status"] != "ok"]
     errors = report["scope"]["enumeration_errors"]

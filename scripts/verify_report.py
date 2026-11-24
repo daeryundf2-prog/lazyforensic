@@ -198,7 +198,7 @@ def main(argv=None):
                 md = companion.read_text(encoding="utf-8-sig")
                 # DOCX Markdown companions describe the main body only, excluding header stories.
                 body = read_document(report_path) if suffix == ".docx" else text
-                if body != report_docx.draft_text(md):
+                if body != report_docx.draft_text(md, docx=suffix == ".docx"):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
         except report_templates.PACKAGE_ERRORS as exc:
             text = ""

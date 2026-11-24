@@ -25,7 +25,6 @@ report_draft.py — 증거 폴더 하나로 한국어 포렌식 분석 보고서
 from __future__ import annotations
 
 import argparse
-import codecs
 import csv
 import hashlib
 import html
@@ -56,6 +55,7 @@ import keyword_report  # noqa: E402
 import merge_timeline  # noqa: E402
 import report_docx  # noqa: E402
 import report_hwpx  # noqa: E402
+import sqlite_survey  # noqa: E402
 
 UNK = "미확인"
 TABLE_LIMIT = 100        # 보고서 본문 표 최대 행 수 (전체는 CSV/JSON)
@@ -281,7 +281,7 @@ def compare_references(entries: list[dict], inventory: list[dict], images: list[
 # ---------------------------------------------------------------- 선조사·타임라인
 
 def run_survey(root: Path, inventory: list[dict], scope: dict, keywords: list[str],
-               keyword_encoding: str | None = None) -> dict:
+               keyword_encoding: str | None = None, keyword_encoding_source: str | None = None) -> dict:
     cs = _load_module("case_survey")
     manifest = {
         "manifest_version": 1, "tool": f"report_draft.py v{tool_version()}",
@@ -290,7 +290,8 @@ def run_survey(root: Path, inventory: list[dict], scope: dict, keywords: list[st
         "files": [{"path": f["path"], "sha256": f.get("sha256"), "size": f.get("size"),
                    "mtime": f.get("mtime")} for f in inventory],
     }
-    return cs.survey(root, keywords, False, manifest=manifest, keyword_encoding=keyword_encoding)
+    return cs.survey(root, keywords, False, manifest=manifest, keyword_encoding=keyword_encoding,
+                     keyword_encoding_source=keyword_encoding_source)
 
 
 def step_result(survey: dict, key: str):
@@ -855,8 +856,9 @@ def findings_table(ctx: dict) -> list[str]:
             why = (("부분 완료 — " if r["status"] != "complete" else "")
                    + f"{r['total_hits']}건 ({', '.join(r['keywords'])}); 텍스트 파일 {r['files_searched']}개 검색, "
                    f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개"
-                   + (f", 지정 코덱 {r['encoding_requested']}로만 읽음" if r.get("encoding_requested") else "")
-                   + keyword_report.scope_note(r))
+                   + (f", {r['operator_codec']}" if r.get("encoding_requested") else "")
+                   + keyword_report.scope_note(r)
+                   + ("; 재검색 명령은 8장" if r.get("rerun_commands") else ""))
         rows.append(["키워드 검색", why, "텍스트 파일 리터럴 검색. 판정 불가·읽기 실패·텍스트 아닌 파일은 검색 수에서 제외"])
     return table(["점검 항목", "결과", "비고"], rows)
 
@@ -1028,6 +1030,11 @@ def timeline_section(ctx: dict) -> list[str]:
     if ties:
         L.append(f"기록된 정밀도로는 선후를 구별할 수 없는 시각 {ties}건은 동률이다(events.json의 order_tie). "
                  "표의 순서는 그 사이의 선후를 뜻하지 않는다.")
+    beyond = sum(1 for e in events if e.get("subsec_beyond_ns"))
+    if beyond:
+        L.append(f"EXIF 소수초가 9자리보다 길게 기록된 촬영 시각 {beyond}건은 기록된 자릿수 전체로 선후를 비교했다"
+                 "(events.json의 instant_ns는 9자리에서 절삭한 정수이고 나머지 자릿수는 subsec_beyond_ns). "
+                 "기록 문자열의 비교이며 장비 시계의 정확도를 뜻하지 않는다.")
     while L and L[-1] == "":
         L.pop()
     return L
@@ -1091,9 +1098,27 @@ def limitations(ctx: dict) -> list[str]:
             out.append(f"SQLite {report_docx.display_value(rel(ctx['root'], rec['file']))}: "
                        + (f"보이는 행 {seen}행, " if seen is not None else "")
                        + "최종 행 수 미확인 — " + "; ".join(rec["limitations"]))
+        name = report_docx.display_value(rel(ctx['root'], rec['file']))
         if rec.get("view_note"):
-            out.append(f"SQLite {report_docx.display_value(rel(ctx['root'], rec['file']))}: {rec['view_note']} "
-                       "(뷰는 저장 행이 아니므로 저장 행 합계와 무관)")
+            out.append(f"SQLite {name}: {rec['view_note']} (뷰는 저장 행이 아니므로 저장 행 합계와 무관)")
+        if "virtual_rows" in rec:
+            special = [t for t in rec.get("tables", []) if t["type"] in ("virtual", "shadow")]
+            out.append(f"SQLite {name}: {sqlite_survey.objects_text({**rec, 'tables': special})[2:]}"
+                       + (f"; {rec['virtual_note']}" if rec.get("virtual_note") else "")
+                       + " — 저장 행 합계는 일반 테이블만 센 값이다.")
+        if rec.get("columns_note"):
+            out.append(f"SQLite {name}: {rec['columns_note']} — 조회 실패이며 컬럼이 없다는 뜻이 아니다.")
+    kw, _ = step_result(ctx["survey"], "keywords")
+    if kw and kw.get("files_encoding_uncertain"):
+        commands = "; ".join(f"`{c}`" for c in kw.get("rerun_commands") or [])
+        out.append(f"키워드 검색: 인코딩 불확실 파일 {kw['files_encoding_uncertain']}개·후보 줄 {kw['candidate_hits']}개"
+                   f"(가능한 코덱 {', '.join(kw.get('plausible_codecs') or [])}). 같은 바이트가 여러 코덱으로 "
+                   "자연스럽게 읽혀 그 줄의 키워드 유무를 확정하지 않았다(확정 건수에 넣지 않았고 미검출로도 보지 않는다)."
+                   + (f" 작성 코덱을 확인한 뒤 증거 폴더가 있는 폴더에서 그 코덱으로 다시 실행한다: {commands}"
+                      if commands else ""))
+    for c in (kw or {}).get("encoding_conflicts", []):
+        out.append(f"키워드 검색: {report_docx.display_value(rel(ctx['root'], c['file']))} — 지정 코덱 {c['requested']}이 "
+                   f"파일 표지({c['marker_label']})와 다르다. 지정 코덱으로 읽었으나 이 파일의 히트·미검출은 확정하지 않았다.")
     return out
 
 
@@ -1286,7 +1311,7 @@ def is_ewf_continuation(path: Path) -> bool:
 
 def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Path], keywords: list[str],
              skip_image_verify: bool, log=print, *, docx: bool = True, hwpx: bool = True,
-             keyword_encoding: str | None = None) -> dict:
+             keyword_encoding: str | None = None, keyword_encoding_source: str | None = None) -> dict:
     started = now_kst()
     root = root.resolve()
     case = load_case_info(case_info)
@@ -1332,7 +1357,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
         references = compare_references(entries, inventory, images)
 
     log("[4/7] 선조사 (시그니처·중복·EXIF·압축·PDF·DB·개인정보 패턴 등)")
-    survey = run_survey(root, inventory, scope, keywords, keyword_encoding)
+    survey = run_survey(root, inventory, scope, keywords, keyword_encoding, keyword_encoding_source)
     events = build_events(root, inventory, survey, images)
 
     log("[5/7] 분석 후 재해시")
@@ -1528,8 +1553,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="참조 해시 목록 (획득 로그·해시표·sha256sum 출력 등). 여러 개 가능")
     ap.add_argument("--keywords", help="쉼표로 구분한 키워드 (텍스트 파일 검색)")
     ap.add_argument("--keyword-encoding", metavar="코덱",
-                    help="키워드 검색에서 텍스트 파일을 이 코덱으로만 읽는다(예: cp949, euc_jp). "
-                         "인코딩 불확실로 보고된 파일의 코덱을 확인한 뒤 지정한다")
+                    help="운영자가 확인한 키워드 검색 코덱(예: cp949, euc_jp). BOM·선언 없는 줄을 이 코덱으로 읽는다. "
+                         "지정하지 않으면 환경변수 LAZYFORENSIC_KEYWORD_ENCODING. 인코딩 불확실로 보고된 파일의 "
+                         "작성 코덱을 확인한 뒤 지정한다")
     ap.add_argument("--hwpx", action=argparse.BooleanOptionalAction, default=True,
                     help="편집용 보고서초안.hwpx 생성 및 검증 (기본: 켜짐)")
     ap.add_argument("--docx", action=argparse.BooleanOptionalAction, default=True,
@@ -1574,12 +1600,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"참조 해시 목록을 찾을 수 없습니다: {h}", file=sys.stderr)
             return 2
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else []
-    if args.keyword_encoding:
-        try:
-            codecs.lookup(args.keyword_encoding)
-        except LookupError:
-            print(f"알 수 없는 인코딩: {args.keyword_encoding}", file=sys.stderr)
-            return 2
+    try:
+        keyword_encoding, keyword_encoding_source = keyword_report.resolve_encoding(args.keyword_encoding)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
     try:
         load_case_info(case_info)  # 형식 오류는 출력 폴더를 확보하기 전에 알린다.
     except CaseInfoError as exc:
@@ -1592,7 +1617,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"출력 폴더에 이전 결과가 있거나 다른 실행이 먼저 확보해 덮어쓰지 않고 새 폴더에 씁니다: {out_r}")
     try:
         res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify,
-                       docx=args.docx, hwpx=args.hwpx, keyword_encoding=args.keyword_encoding)
+                       docx=args.docx, hwpx=args.hwpx, keyword_encoding=keyword_encoding,
+                       keyword_encoding_source=keyword_encoding_source)
     except CaseInfoError as exc:
         print(exc, file=sys.stderr)
         return 2

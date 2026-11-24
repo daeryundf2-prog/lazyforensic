@@ -71,9 +71,22 @@ def row_text(row):
     return "| " + " | ".join(s.replace("|", r"\|") for s in row) + " |"
 
 
-def draft_text(md: str) -> str:
-    lines = []
+def docx_blocks(md: str):
+    """blocks() as written to the DOCX body. Word and LibreOffice merge directly adjacent tables into one
+    (the second table's rows would then repeat the first table's header on the next page), so an empty
+    paragraph separates them."""
+    previous = None
     for kind, value in blocks(md):
+        if kind == "table" and previous == "table":
+            yield "p", ""
+        yield kind, value
+        previous = kind
+
+
+def draft_text(md: str, *, docx: bool = False) -> str:
+    """Plain text of the draft body; docx=True follows the DOCX block sequence (table separators)."""
+    lines = []
+    for kind, value in (docx_blocks(md) if docx else blocks(md)):
         if kind == "table":
             lines.extend(row_text(row) for row in value)
         else:
@@ -125,8 +138,11 @@ def table(body, rows):
         word(grid, "gridCol", w=w)
     for i, row in enumerate(rows):
         tr = word(tbl, "tr")
+        row_props = word(tr, "trPr")
+        # A row (a 64-character hash wraps over several lines) never splits across pages.
+        word(row_props, "cantSplit")
         if i == 0:
-            word(word(tr, "trPr"), "tblHeader")
+            word(row_props, "tblHeader")
         for j, value in enumerate(row):
             tc = word(tr, "tc")
             props = word(tc, "tcPr")
@@ -139,7 +155,7 @@ def table(body, rows):
 def write_docx(path: Path, md: str) -> None:
     doc = ET.Element(W + "document")
     body = word(doc, "body")
-    for kind, value in blocks(md):
+    for kind, value in docx_blocks(md):
         if kind == "table":
             table(body, value)
         else:
