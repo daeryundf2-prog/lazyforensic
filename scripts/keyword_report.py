@@ -27,6 +27,9 @@ keyword_report.py — 증거형 키워드 검색 리포트
   어느 쪽인지 판정할 수 없다. 그 줄은 '인코딩 불확실'로 남기고 Shift-JIS로도 검색한다.
   후보 코덱의 히트는 확정 히트 수에 넣지 않고 candidate_hits로 따로 적는다.
   --encoding으로 코덱을 명시하면 그 코덱으로만 읽는다.
+- 선언 없이 고른 코덱(UTF-8·CP949)의 줄이 다른 코덱(UTF-8·CP949·EUC-JP·Big5·Shift-JIS)으로도 자연스럽게
+  읽히고 그 해석에서만 키워드가 보이면(예: CP949 '캡처'는 엄격한 UTF-8로도, EUC-JP '東京'은 CP949로도 읽힌다)
+  그 줄은 '인코딩 불확실'이다. 불확실한 줄의 히트는 어느 해석이든 확정 히트에 넣지 않고 후보로 적는다.
 - 파일 전체가 UTF-8이 아니면 줄마다 UTF-8 → CP949로 다시 판정한다. 줄마다 코덱이 다르면
   'mixed'로 표시하고 코덱 구간을 남긴다. 해석하지 못한 줄은 검색하지 않은 구간으로 적고
   그 파일은 부분 검색으로 센다. 한 줄 안에서 코덱이 섞인 경우는 구별하지 못한다.
@@ -246,7 +249,43 @@ def decode_lines(data: bytes) -> dict | None:
         else:
             segments.append({"first_line": i + 1, "last_line": i + 1, "encoding": k})
     return {"lines": lines, "encoding": "mixed" if len(used) > 1 else used.pop(),
-            "segments": segments, "unsearched_lines": _runs(bad)}
+            "segments": segments, "unsearched_lines": _runs(bad), "kinds": kinds}
+
+
+# 선언 없는 바이트를 다른 코덱으로 읽은 해석. 짧은 한국어 CP949('캡처')는 엄격한 UTF-8로도,
+# EUC-JP·Big5의 한자 몇 글자는 CP949로도 오류 없이 읽힌다 — 바이트만으로 원래 코덱을 정할 수 없다.
+ALT_CODECS = ("utf-8", "cp949", "euc_jp", "big5", "shift_jis")
+UNDECODABLE_FALLBACK = "UTF-8·CP949 어느 쪽으로도 해석되지 않음"
+
+
+def _keywords_in(text: str, keywords: list[str]) -> set[str]:
+    normalized = unicodedata.normalize("NFC", text)
+    return {kw for kw in keywords if unicodedata.normalize("NFC", kw) in normalized}
+
+
+def alternative_readings(raw_lines: list[bytes], chosen: list[tuple[str | None, str | None]],
+                         keywords: list[str], skip: dict[int, str]) -> dict[str, dict[int, str]]:
+    """{코덱: {줄 번호: 본문}} — 선택한 해석에 없는 키워드가 다른 코덱의 자연스러운 해석에서만 보이는 줄.
+
+    chosen은 줄마다 (선택 코덱, 본문)이고 해석하지 못한 줄은 (None, None)이다. 그런 줄은 어느 해석의
+    히트도 확정할 수 없다. skip은 이미 Shift-JIS 후보로 잡은 줄이다(중복 후보를 만들지 않는다)."""
+    out: dict[str, dict[int, str]] = {}
+    for n, (raw, (codec, text)) in enumerate(zip(raw_lines, chosen), start=1):
+        if raw.isascii():
+            continue
+        seen = _keywords_in(text, keywords) if text is not None else set()
+        for alt in ALT_CODECS:
+            if alt == codec or (alt == "shift_jis" and n in skip):
+                continue
+            try:
+                reading = raw.decode(alt).rstrip("\r")
+            except UnicodeDecodeError:
+                continue
+            if reading == (text or "").rstrip("\r") or not _plausible(reading):
+                continue
+            if _keywords_in(reading, keywords) - seen:
+                out.setdefault(alt, {})[n] = reading
+    return out
 
 
 def not_text_reason(text: str) -> str | None:
@@ -310,12 +349,12 @@ def search_file_result(path: Path, keywords: list[str], context: int,
             return {**empty, "undecodable": f"지정한 인코딩 '{encoding}'로 해석되지 않음: {e.reason}"}
     else:
         text, codec, basis = decode_text(data)
-    segments, unsearched, uncertain = None, [], None
-    if codec in ("cp949", None) and basis in ("strict", "UTF-8·CP949 어느 쪽으로도 해석되지 않음"):
+    segments, unsearched, uncertain, kinds = None, [], None, None
+    if codec in ("cp949", None) and basis in ("strict", UNDECODABLE_FALLBACK):
         per_line = decode_lines(data)
         if per_line is not None:
             text = "\n".join(per_line["lines"])
-            codec, basis = per_line["encoding"], "per_line"
+            codec, basis, kinds = per_line["encoding"], "per_line", per_line["kinds"]
             segments, unsearched = per_line["segments"], per_line["unsearched_lines"]
     reasons, candidates, lines, candidate_hits = [], [], [], []
     # 엄격한 CP949 해석이 확장 완성형(UHC 확장 영역)에 기대면 원래 한국어 텍스트라는 근거가 약하다.
@@ -328,6 +367,7 @@ def search_file_result(path: Path, keywords: list[str], context: int,
             lines = None
             candidate_hits += [{**h, "encoding": c} for c, t in found
                                for h in _find_hits(t.splitlines(), keywords, context)]
+    japanese: dict[int, str] = {}
     if text is not None and basis in ("strict", "per_line") and codec in ("cp949", "mixed"):
         japanese = shift_jis_lines(data)
         if japanese:
@@ -335,10 +375,42 @@ def search_file_result(path: Path, keywords: list[str], context: int,
             alt = [japanese.get(n, "") for n in range(1, numbers[-1] + 1)]
             reasons.append("CP949로 읽은 줄이 Shift-JIS로도 해석됨 — 어느 코덱인지 바이트만으로 판정 불가")
             candidates.append("shift_jis")
-            if lines is not None:
-                lines = _runs(numbers)
             candidate_hits += [{**h, "encoding": "shift_jis"} for h in
                                _find_hits(alt, keywords, context, set(numbers))]
+    # 선언 없이 고른 코덱(파일 전체 엄격 해석 또는 줄 단위 해석)은 줄마다 다른 코덱 해석과 대조한다.
+    # 다른 해석에서만 키워드가 보이는 줄은 코덱을 정할 수 없는 줄이다 — '미검출'로 확정하지 않는다.
+    doubtful = set(japanese)
+    fallback = not encoding and basis in ("strict", "per_line", UNDECODABLE_FALLBACK)
+    if fallback and codec not in ("utf-16-le", "utf-16-be"):
+        raw_lines = data.split(b"\n")
+        if kinds is not None:
+            chosen = [(None, None) if k == "undecodable" else (k, t) for k, t in zip(kinds, text.split("\n"))]
+        elif text is not None:
+            chosen = [(codec, t) for t in text.split("\n")]
+        else:
+            chosen = [(None, None)] * len(raw_lines)
+        for alt, readings in alternative_readings(raw_lines, chosen, keywords, japanese).items():
+            numbers = sorted(readings)
+            doubtful.update(numbers)
+            candidates.append(alt)
+            sparse = [readings.get(n, "") for n in range(1, numbers[-1] + 1)]
+            candidate_hits += [{**h, "encoding": alt} for h in _find_hits(sparse, keywords, context, set(numbers))]
+        if len(doubtful) > len(japanese):
+            reasons.append("선언 없는 바이트가 다른 코덱으로도 자연스럽게 읽히고 그 해석에서만 키워드가 보임 — "
+                           "어느 코덱인지 바이트만으로 판정 불가")
+    if lines is not None:
+        lines = _runs(sorted(doubtful))
+    hits: list[dict] = []
+    if text is not None and not not_text_reason(text):
+        # 줄 번호는 바이트의 줄바꿈(\n) 기준 — 다른 코덱 해석과 같은 줄을 가리켜야 한다.
+        split = text.split("\n") if fallback else text.splitlines()
+        for h in _find_hits(split, keywords, context):
+            if lines is None or h["line"] in doubtful:
+                # 코덱을 정할 수 없는 줄은 선택한 코덱의 히트도 확정 히트가 아니다.
+                line_codec = kinds[h["line"] - 1] if kinds is not None else codec
+                candidate_hits.append({**h, "encoding": line_codec})
+            else:
+                hits.append(h)
     uncertain = None
     if reasons:
         uncertain = {"reason": "; ".join(reasons),
@@ -349,7 +421,7 @@ def search_file_result(path: Path, keywords: list[str], context: int,
     reason = not_text_reason(text)
     if reason:
         return {**empty, "encoding": codec, "basis": basis, "not_text": reason, "uncertain": uncertain}
-    return {**empty, "hits": _find_hits(text.splitlines(), keywords, context), "encoding": codec,
+    return {**empty, "hits": hits, "encoding": codec,
             "basis": basis, "segments": segments, "unsearched_lines": unsearched, "uncertain": uncertain}
 
 

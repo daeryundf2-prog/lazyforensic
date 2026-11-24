@@ -87,7 +87,7 @@ def _run_step(name: str, fn) -> dict:
 
 
 def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidence_id=None,
-           manifest: dict | None = None) -> dict:
+           manifest: dict | None = None, keyword_encoding: str | None = None) -> dict:
     """manifest: 호출자가 이미 계산한 evidence_manifest 형식 dict (같은 파일을 두 번 해시하지 않도록)."""
     started = utc_now_iso()
     root = root.resolve(strict=True)
@@ -133,9 +133,10 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         def step_keywords():
             mod = _load("keyword_report")
             # 검색 불가(읽기 실패·인코딩 판정 불가·텍스트 아님)는 '미검출'이 아니므로 검색 분모에서 뺀다.
-            found = mod.search_files(by_ext(mod.TEXT_EXTS), keywords, 0)
+            found = mod.search_files(by_ext(mod.TEXT_EXTS), keywords, 0, keyword_encoding)
             results = found["results"]
-            return {"keywords": keywords, "files_searched": len(found["searched"]),
+            return {"keywords": keywords, "encoding_requested": keyword_encoding,
+                    "files_searched": len(found["searched"]),
                     "files_undecodable": len(found["undecodable"]),
                     "files_read_failed": len(found["read_errors"]),
                     "files_not_text": len(found["not_text"]),
@@ -304,7 +305,8 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
         evidence_id or str(root), "case_survey", TOOL_VERSION, root,
         source_base=root, started_at=started, case_id=case_id,
         status="partial" if warnings else "complete", exit_code=None,
-        warnings=warnings, parameters={"keywords": keywords, "run_stt": run_stt},
+        warnings=warnings, parameters={"keywords": keywords, "keyword_encoding": keyword_encoding,
+                                       "run_stt": run_stt},
         limitations=["Directory source has no single-file SHA-256; use manifest entries",
                      "Stages are independent reads, not an atomic acquisition snapshot",
                      "Embedded receipt does not hash its enclosing JSON"],
@@ -416,6 +418,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("root", help="증거 디렉터리")
     ap.add_argument("--keywords", default=None, help="쉼표 구분 키워드")
     ap.add_argument("--stt", action="store_true", help="로컬 STT 전사까지 실행")
+    ap.add_argument("--keyword-encoding", default=None,
+                    help="키워드 검색에서 모든 텍스트 파일을 이 코덱으로만 읽는다(예: cp949, euc_jp) — 인코딩 불확실 재검색용")
     ap.add_argument("-o", "--output", default=None, help="JSON 리포트 경로")
     ap.add_argument("--markdown", default=None, help="마크다운 리포트 경로")
     args = ap.parse_args(argv)
@@ -431,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     keywords = [k.strip() for k in args.keywords.split(",")] if args.keywords else []
-    report = survey(root, keywords, args.stt)
+    report = survey(root, keywords, args.stt, keyword_encoding=args.keyword_encoding)
 
     failed = [k for k, v in report["steps"].items() if v["status"] != "ok"]
     errors = report["scope"]["enumeration_errors"]
