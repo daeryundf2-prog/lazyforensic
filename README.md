@@ -103,7 +103,8 @@ export PATH="$PWD/bin:$PATH"              # 셸 설정에 추가하면 영구 �
 | `SHA256SUMS` | 위 네 파일의 SHA-256 |
 
 설치 스크립트는 받은 아카이브의 SHA-256을 `SHA256SUMS`, 스크립트에 박힌 값, (Windows) GitHub가 계산한 자산 digest와 모두 대조한다.
-하나라도 다르거나 릴리스 조회에 실패하면 **아무것도 바꾸지 않고 멈춘다.** main 브랜치로 대신 설치하지 않는다.
+릴리스 조회는 요청한 태그와 같은 태그로 응답해야 한다. 다른 태그(예: 이전 판)를 돌려주면 자산을 받기 전에 멈춘다.
+하나라도 다르거나 릴리스 조회·인증서 확인에 실패하면 **아무것도 바꾸지 않고 멈춘다.** main 브랜치로 대신 설치하지 않는다.
 기존 설치는 새 사본이 완성된 뒤에만 교체한다. Pillow는 `requirements-install.txt`에 적은 버전과 해시로만 설치한다(`pip --require-hashes`).
 검증 자산이 없는 이전 릴리스(v1.6.2 이하)는 설치를 거부하므로 이 변경 뒤 발행한 릴리스를 쓴다.
 
@@ -120,7 +121,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 설치가 끝나면 `%LOCALAPPDATA%\LazyForensic\install-receipt.json`(macOS·Linux는 `~/.lazyforensic/install-receipt.json`)에
 설치한 태그(`source.tag`), 아카이브 이름과 SHA-256(`source.sha256`), 대조한 근거(`source.verified_against`), Python·Pillow 버전이 남는다.
 같은 릴리스를 설치한 PC끼리는 `source.sha256`이 같다. 다른 경로(센터 공지 등)로 받은 아카이브 해시를 추가로 고정하려면 설치 전에
-`$env:LAZYFORENSIC_SHA256 = '<해시>'`를 지정한다. 압축을 푼 폴더에서 설치(`LAZYFORENSIC_SOURCE`)하면 영수증에 `kind: local`로 남고 해시 대조는 하지 않는다.
+`$env:LAZYFORENSIC_SHA256 = '<해시>'`를 지정한다. 릴리스에 붙은 설치 스크립트는 자기 태그만 설치한다. 다른 판은 그 릴리스의 설치 스크립트를 쓰거나,
+`LAZYFORENSIC_REF`와 그 아카이브의 `LAZYFORENSIC_SHA256`을 함께 지정해야 설치한다. 압축을 푼 폴더에서 설치(`LAZYFORENSIC_SOURCE`)하면 영수증에 `kind: local`로 남고 해시 대조는 하지 않는다.
 
 ## 법령 조회 (선택 — 한국법 MCP)
 

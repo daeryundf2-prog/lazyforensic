@@ -11,8 +11,8 @@
 # What it does:
 #   1. Downloads the release archive lazyforensic-<tag>.zip and checks its SHA-256 against the
 #      release's SHA256SUMS, GitHub's asset digest and (release installer) the value stamped below.
-#      Any mismatch or a failed release lookup stops before anything is changed. There is no
-#      fallback to the main branch.
+#      The release lookup must answer with the requested tag. Any mismatch or a failed release lookup
+#      stops before anything is changed. There is no fallback to the main branch.
 #   2. Finds Python 3.10+ (py launcher or python). If missing and winget exists,
 #      installs Python 3.12 for the current user.
 #   3. Replaces %LOCALAPPDATA%\LazyForensic\app (the old copy stays until the new one is complete).
@@ -23,7 +23,8 @@
 #
 # Environment overrides:
 #   LAZYFORENSIC_REF          release tag to install (default: the release this installer belongs to,
-#                             else the latest release)
+#                             else the latest release). A release installer installs another tag only
+#                             together with LAZYFORENSIC_SHA256; otherwise use that release's installer.
 #   LAZYFORENSIC_SHA256       expected SHA-256 of the release archive (an extra pin you got elsewhere)
 #   LAZYFORENSIC_SOURCE       local folder to install from instead of downloading (recorded as unverified)
 #   LAZYFORENSIC_RELEASE_API  GitHub API repository URL (mirrors and tests)
@@ -98,6 +99,10 @@ function Get-ReleaseArchive($tmp) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $ref = $env:LAZYFORENSIC_REF
     if (-not $ref) { $ref = $ReleaseTag }
+    # A release installer carries the SHA-256 of its own archive only. Another tag needs its own installer or a pin.
+    if ($ReleaseTag -and ($ref -cne $ReleaseTag) -and -not $env:LAZYFORENSIC_SHA256) {
+        throw "This installer is for release $ReleaseTag and has no stamped SHA-256 for $ref. Use the install.ps1 attached to release $ref, or set LAZYFORENSIC_SHA256 to its archive's SHA-256. Nothing was changed."
+    }
     $url = if ($ref) { "$Api/releases/tags/$ref" } else { "$Api/releases/latest" }
     try {
         $release = Invoke-RestMethod $url -UseBasicParsing
@@ -106,6 +111,8 @@ function Get-ReleaseArchive($tmp) {
     }
     $tag = [string]$release.tag_name
     if (-not $tag) { throw "Release lookup returned no tag ($url). Nothing was changed." }
+    # The answer must be the release that was asked for, before any asset is looked at.
+    if ($ref -and ($tag -cne $ref)) { throw "Release lookup for $ref returned release $tag. Nothing was changed." }
     $name = "lazyforensic-$tag.zip"
     $archiveAsset = $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
     $sumsAsset = $release.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
@@ -128,7 +135,8 @@ function Get-ReleaseArchive($tmp) {
     if ($archiveAsset.digest) {
         $pins += @{ source = "GitHub asset digest"; value = ([string]$archiveAsset.digest -replace '^sha256:', '').ToLowerInvariant() }
     }
-    if ($ReleaseArchiveSha256 -and $tag -eq $ReleaseTag) {
+    if ($ReleaseTag -and ($tag -ceq $ReleaseTag)) {
+        if (-not $ReleaseArchiveSha256) { throw "This release installer has no stamped SHA-256 for $name. Nothing was changed." }
         $pins += @{ source = "release installer"; value = $ReleaseArchiveSha256.ToLowerInvariant() }
     }
     if ($env:LAZYFORENSIC_SHA256) {

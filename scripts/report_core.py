@@ -7,6 +7,7 @@ CLI 오케스트레이션은 verify_report.py 가 유지한다.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from datetime import datetime
@@ -404,6 +405,223 @@ def check_hash_file_binding(report_text: str, evidence_pairs: dict[str, list[str
                     f"{owners[:2]} 임 — 정상 해시를 다른 파일 서술에 재사용했는지 확인하십시오"
                 )
     return violations
+
+
+def _evidence_documents(evidence_paths) -> list:
+    """--evidence 파일의 내용: JSON 문서(파일 전체 또는 JSONL 한 줄)는 객체로, 그 밖의 비어 있지 않은 줄은 문자열로."""
+    docs: list = []
+    for p in evidence_paths:
+        try:
+            text = Path(p).read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError):
+            continue
+        try:
+            docs.append(json.loads(text))
+            continue
+        except ValueError:
+            pass
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith(("{", "[")):
+                try:
+                    docs.append(json.loads(line))
+                    continue
+                except ValueError:
+                    pass
+            if line:
+                docs.append(line)
+    return docs
+
+
+PLACEHOLDER_RE = re.compile(r"\{\{[^{}\r\n\t]*\}\}")
+
+
+def unmeasured_placeholders(text: str, evidence_paths, *, display_name=None) -> list[str]:
+    """본문에 남은 중괄호 토큰 중 근거 파일의 측정값(JSON 문자열 값) 안에 있지 않은 것.
+
+    `{{year}}.txt` 같은 실제 파일명은 근거 파일에 그 값이 있으므로 면제된다. 같은 본문의 Markdown이
+    있다는 사실은 면제 근거가 아니다 — 그 Markdown도 같은 초안이다."""
+    values: set[str] = set()
+
+    def collect(node):
+        if isinstance(node, dict):
+            for item in node.values():
+                collect(item)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+        elif isinstance(node, str) and ("{{" in node or "}}" in node):
+            values.add(node)
+
+    for doc in _evidence_documents(evidence_paths):
+        if not isinstance(doc, str):
+            collect(doc)
+    forms = set()
+    for value in values:
+        for form in (value, value.replace("\\", "/").rsplit("/", 1)[-1]):
+            forms.update((form, form.replace("|", r"\|")))
+            if display_name is not None:
+                forms.add(display_name(form))
+    covered = [False] * len(text)
+    for form in forms:
+        start = text.find(form)
+        while form and start != -1:
+            covered[start:start + len(form)] = [True] * len(form)
+            start = text.find(form, start + 1)
+    left = "".join(" " if hit else ch for ch, hit in zip(text, covered))
+    if "{{" not in left and "}}" not in left:
+        return []
+    return sorted(set(PLACEHOLDER_RE.findall(left))) or [t for t in ("{{", "}}") if t in left]
+
+
+CLAIM_ID_RE = re.compile(r"[A-Za-z0-9]+(?:[._:/-][A-Za-z0-9]+)*")
+CLAIM_SPLIT_RE = re.compile(r"(?<=[.!?。])\s+")
+# 표시용 크기(743 B, 21.8 KB, 1,024 바이트)는 단위 글자가 식별자처럼 보이므로 주장 용어에서 뺀다.
+SIZE_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*(?:[KMGT]i?B|B|bytes?|바이트)(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def _evidence_records(doc) -> list:
+    """근거 문서를 측정 레코드로 나눈다.
+
+    JSON 객체는 ("slots", [(키 경로, 값)…]) 레코드 하나다. 스칼라 목록은 같은 키 경로의 값들이고, 바깥 객체의
+    값을 같은 키 경로로 물려받는다. 문장(공백이 든 문자열)은 ("words", 문장) 레코드다 — 문장 레코드끼리는
+    단어를 정렬해 대응 위치를 맞춘다. JSON이 아닌 근거 줄은 호출자가 문장 레코드로 만든다."""
+    out: list = []
+
+    def scalar(value):
+        return isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
+    def sentence(value):
+        return isinstance(value, str) and re.search(r"\s", value.strip()) is not None
+
+    def walk(node, path, context):
+        if isinstance(node, dict):
+            own, nested = [], []
+            for key, value in node.items():
+                slot = f"{path}.{key}" if path else str(key)
+                if scalar(value):
+                    own.append((slot, str(value)))
+                elif isinstance(value, list) and value and all(scalar(v) and not sentence(v) for v in value):
+                    own += [(slot, str(v)) for v in value]
+                elif isinstance(value, (dict, list)):
+                    nested.append((slot, value))
+            if own:
+                out.append(("slots", context + own))
+            for slot, value in nested:
+                walk(value, slot, context + own)
+        elif isinstance(node, list):
+            loose = [(path, str(v)) for v in node if scalar(v) and not sentence(v)]
+            if loose:
+                out.append(("slots", context + loose))
+            for value in node:
+                if sentence(value):
+                    out.append(("words", value))
+                elif isinstance(value, (dict, list)):
+                    walk(value, path, context)
+        elif sentence(node):
+            out.append(("words", node))
+        elif scalar(node):
+            out.append(("slots", context + [(path, str(node))]))
+
+    walk(doc, "", [])
+    return out
+
+
+def check_claim_binding(report_text: str, evidence_paths, extract_terms, procedural=()) -> dict:
+    """한 측정 레코드의 대상에 다른 레코드의 값을 붙인 주장을 찾는다.
+
+    인용 태그(<evidence>)가 원문 그대로여도 결론이 두 레코드의 값을 엇갈려 쓰면 그 주장은 'unbound'다.
+    예: '청색 표시는 상자 A에 있다'·'백색 표시는 상자 B에 있다'에서 '청색 표시는 상자 B에 있다'는 첫 레코드의
+    대상(청색)과 둘째 레코드의 값(B)을 같은 문장에 썼고, 첫 레코드에는 그 자리에 다른 값(A)이 있다.
+    대응 위치는 JSON 객체에서는 같은 키 경로, 문장 레코드끼리는 단어 정렬로 정한다. 여러 대상을 나열한 문장
+    (같은 위치의 값들)은 엇갈림이 아니다. 근거에 있는 식별 용어가 둘 이상인 문장만 판정하고, 과반 레코드에
+    나오는 용어·한두 자리 정수(순번)·표시용 크기(743 B)는 쓰지 않는다. 헤딩·굵은 소제목 줄과 '미확인'·'미측정'
+    문장은 판정하지 않는다. 이 검사는 용어의 위치만 본다 — 문장의 의미나 결론의 타당성을 판정하지 않는다."""
+    proc = {p.casefold() for p in procedural}
+    cache: dict[str, frozenset] = {}  # 같은 값(분류명·도구명 등)이 레코드마다 반복된다
+
+    def terms(text):
+        if text not in cache:
+            found = {t.casefold() for t in extract_terms(text)}
+            found |= {m.group(0).casefold() for m in CLAIM_ID_RE.finditer(text)}
+            cache[text] = frozenset(t for t in found - proc if not (t.isdigit() and len(t) <= 2))
+        return cache[text]
+
+    records = []  # (슬롯 → 값 용어) 또는 단어별 용어 목록, 그리고 전체 용어
+    for doc in _evidence_documents(evidence_paths):
+        for kind, value in ([("words", doc)] if isinstance(doc, str) else _evidence_records(doc)):
+            if kind == "words":
+                words = [frozenset(terms(w)) for w in value.split()]
+                records.append((None, words, set().union(*words)))
+            else:
+                slots: dict[str, set] = {}
+                for slot, text in value:
+                    slots.setdefault(slot, set()).update(terms(text))
+                records.append((slots, None, set().union(*slots.values())))
+    postings: dict[str, set[int]] = {}
+    for index, record in enumerate(records):
+        for term in record[2]:
+            postings.setdefault(term, set()).add(index)
+    # 레코드의 과반에 나오는 용어는 어느 대상인지 가르지 못한다.
+    limit = len(records) / 2
+    distinct = {t for t, ids in postings.items() if len(records) < 2 or len(ids) <= limit}
+
+    def aligned(a, b):
+        """두 레코드의 대응 위치마다 (a의 값 용어, b의 값 용어)."""
+        if a[0] is not None and b[0] is not None:
+            return [(a[0][k], b[0][k]) for k in a[0].keys() & b[0].keys()]
+        if a[1] is not None and b[1] is not None:
+            pairs = []
+            for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a[1], b=b[1], autojunk=False).get_opcodes():
+                if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+                    pairs += zip(a[1][i1:i2], b[1][j1:j2])
+            return pairs
+        return []
+
+    def crossing(used):
+        """(a 레코드의 대상 용어 t1, b 레코드의 값 용어 t2) 또는 None.
+
+        엇갈림: 두 용어가 한 레코드에 함께 나온 적이 없고, 주장이 t1 자리는 a에서, t2 자리는 b에서 가져왔으며
+        a의 t2 자리 값과 b의 t1 자리 값은 둘 다 따로 있는데 주장에 없다."""
+        if any(used <= record[2] for record in records):
+            return None
+        candidates = sorted({i for t in used for i in postings[t]})[:64]
+        for i in candidates:
+            a = records[i]
+            for j in candidates:
+                b = records[j]
+                if i == j or not (used - b[2]) or not (used - a[2]):
+                    continue
+                pairs = aligned(a, b)
+                for p1, (va1, vb1) in enumerate(pairs):
+                    if not vb1 or vb1 & used:
+                        continue
+                    for t1 in sorted(used & va1 - b[2]):
+                        for p2, (va2, vb2) in enumerate(pairs):
+                            if p2 == p1 or not va2 or va2 & used:
+                                continue
+                            for t2 in sorted(used & vb2 - a[2]):
+                                if not postings[t1] & postings[t2]:
+                                    return t1, t2
+        return None
+
+    body = EVIDENCE_TAG_RE.sub(" ", report_text)
+    claims = []
+    for line in body.splitlines():
+        line = re.sub(r"<[^>]+>", " ", line).strip()
+        if (not line or line.startswith("#") or re.fullmatch(r"\*\*[^*]+\*\*:?", line)
+                or "미확인" in line or "미측정" in line):
+            continue
+        for sentence in CLAIM_SPLIT_RE.split(line):
+            used = terms(SIZE_RE.sub(" ", sentence)) & distinct
+            if len(used) < 2:
+                continue
+            crossed = crossing(used)
+            claim = {"claim": sentence.strip()[:160], "terms": sorted(used), "status": "unbound" if crossed else "bound"}
+            if crossed:
+                claim["crossed"] = list(crossed)
+            claims.append(claim)
+    return {"records": len(records), "claims": claims}
 
 
 def run_forensic_health_check() -> dict:

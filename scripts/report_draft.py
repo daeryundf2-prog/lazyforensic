@@ -1183,7 +1183,7 @@ def write_timeline_html(events: list[dict], out_json: Path, out_html: Path, root
     return None if proc.returncode == 0 else (proc.stderr.strip()[-300:] or "타임라인 생성 실패")
 
 
-def write_drafts(out: Path, ctx: dict, integrity: Path, log=print) -> tuple[dict, dict]:
+def write_drafts(out: Path, ctx: dict, integrity: Path, log=print, measured: tuple[Path, ...] = ()) -> tuple[dict, dict]:
     paths = {"md": out / "보고서초안.md", "html": out / "보고서초안.html", "verify": out / "초안검증.json"}
     md = render_report(ctx)
     paths["md"].write_text(md, encoding="utf-8")
@@ -1202,7 +1202,8 @@ def write_drafts(out: Path, ctx: dict, integrity: Path, log=print) -> tuple[dict
     for fmt in ("docx", "hwpx"):
         if fmt not in paths:
             continue
-        format_result = run_verify(paths[fmt], [integrity], markdown=paths["md"])
+        # 편집용 형식의 중괄호 판정은 측정 기록(무결성·선조사·사건 목록)의 값과 대조한다 — 같은 본문의 Markdown은 근거가 아니다.
+        format_result = run_verify(paths[fmt], [integrity, *measured], markdown=paths["md"])
         verify[fmt] = format_result
         if format_result["exit_code"] or format_result["verdict"] == "ERROR":
             verify["verdict"] = "FAIL"
@@ -1313,7 +1314,7 @@ def generate(root: Path, out: Path, case_info: Path | None, hash_lists: list[Pat
     paths["survey"].write_text(json.dumps(survey_out, ensure_ascii=False, indent=2), encoding="utf-8")
     write_csv(paths["csv"], inventory)
     timeline_err = write_timeline_html(events, paths["events"], paths["timeline"], root.name)
-    draft_paths, verify = write_drafts(out, ctx, paths["integrity"], log)
+    draft_paths, verify = write_drafts(out, ctx, paths["integrity"], log, (paths["survey"], paths["events"]))
     paths.update(draft_paths)
 
     problems = []
@@ -1367,12 +1368,32 @@ def add_template(source: Path, result: dict):
     paths["verify"].write_text(json.dumps(verify, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+IN_PROGRESS = {"status": "in_progress",
+               "note": "실행 중이거나 중단된 실행의 폴더다. 완료된 산출물 목록이 아니다.",
+               "files": []}
+
+
+def _staged_listing(folder: Path, record: dict) -> Path:
+    """같은 폴더의 임시 파일에 완성된 목록을 쓰고 디스크까지 내린다. 목록 이름으로 게시하는 것은 호출자다."""
+    staged = folder / f".{RUN_LISTING}.{os.getpid()}-{os.urandom(4).hex()}.tmp"
+    with open(staged, "w", encoding="utf-8") as stream:
+        json.dump(record, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return staged
+
+
 def reserve_output_dir(out: Path) -> Path:
     """이번 실행 전용 출력 폴더를 원자적으로 확보한다.
 
-    산출물 목록 자리를 O_EXCL로 먼저 만든 실행만 그 폴더를 쓴다. 새 폴더는 exist_ok 없이 만들고,
+    산출물 목록 자리를 먼저 만든 실행만 그 폴더를 쓴다. 새 폴더는 exist_ok 없이 만들고,
     이미 있는 폴더는 비어 있을 때만 쓴다. 이전 결과가 있거나 같은 위치를 동시에 요청한 다른
-    실행이 먼저 확보했으면 `<이름>_2`, `<이름>_3` … 다음 번호로 넘어간다."""
+    실행이 먼저 확보했으면 `<이름>_2`, `<이름>_3` … 다음 번호로 넘어간다.
+
+    목록은 처음부터 완성된 `in_progress` 내용으로 나타난다: 임시 파일에 다 쓴 뒤 하드 링크로
+    배타적으로 게시한다(이미 있으면 실패). 하드 링크를 지원하지 않는 볼륨(FAT·exFAT 등)에서만
+    O_EXCL로 만든 뒤 쓴다 — 그 사이에 종료되면 빈 목록이 남고, 빈·깨진 목록도 미완료 폴더로 본다.
+    중단된 폴더는 지우거나 덮어쓰지 않는다. 다시 실행하면 다음 번호 폴더에 쓴다."""
     out.parent.mkdir(parents=True, exist_ok=True)
     candidate, n = out, 1
     while True:
@@ -1381,16 +1402,28 @@ def reserve_output_dir(out: Path) -> Path:
         except FileExistsError:
             pass  # 비어 있는 기존 폴더도 아래 자리 생성에 성공해야 쓴다.
         if candidate.is_dir() and not any(candidate.iterdir()):
+            listing = candidate / RUN_LISTING
+            staged = _staged_listing(candidate, IN_PROGRESS)
             try:
-                fd = os.open(candidate / RUN_LISTING, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+                os.link(staged, listing)
+                linked = True
             except FileExistsError:
-                pass
-            else:
-                with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                    json.dump({"status": "in_progress",
-                               "note": "실행 중이거나 중단된 실행의 폴더다. 완료된 산출물 목록이 아니다.",
-                               "files": []}, stream, ensure_ascii=False, indent=2)
+                linked = None
+            except OSError:
+                linked = False
+            finally:
+                staged.unlink()
+            if linked:
                 return candidate
+            if linked is False:
+                try:
+                    fd = os.open(listing, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+                except FileExistsError:
+                    pass
+                else:
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        json.dump(IN_PROGRESS, stream, ensure_ascii=False, indent=2)
+                    return candidate
         n += 1
         candidate = out.with_name(f"{out.name}_{n}")
 
@@ -1400,7 +1433,10 @@ def published_files(res: dict) -> list[Path]:
 
 
 def write_run_listing(out: Path, res: dict) -> Path:
-    """이번 실행이 게시한 파일과 SHA-256 — 폴더를 다시 훑지 않고 생성기가 쓴 경로만 싣는다."""
+    """이번 실행이 게시한 파일과 SHA-256 — 폴더를 다시 훑지 않고 생성기가 쓴 경로만 싣는다.
+
+    완성된 목록을 같은 폴더의 임시 파일에 쓴 뒤 os.replace로 한 번에 바꾼다. 어느 순간에 종료돼도
+    목록은 이전의 `in_progress`이거나 새 `complete`이며, 반쯤 쓴 목록은 남지 않는다."""
     listing = out / RUN_LISTING
     files = []
     for p in published_files(res):
@@ -1418,7 +1454,12 @@ def write_run_listing(out: Path, res: dict) -> Path:
     if foreign:
         record["not_from_this_run"] = foreign
         res["problems"].append(f"이 실행이 만들지 않은 파일 {len(foreign)}개가 출력 폴더에 있음 (산출물목록.json not_from_this_run)")
-    listing.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    staged = _staged_listing(out, record)
+    try:
+        os.replace(staged, listing)
+    except OSError:
+        staged.unlink(missing_ok=True)
+        raise
     return listing
 
 

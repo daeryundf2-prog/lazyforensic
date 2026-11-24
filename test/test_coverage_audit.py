@@ -139,6 +139,30 @@ class CoverageAuditTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertIn("하나도 추출하지 못했다", proc.stderr)
 
+    def test_ordinary_sentences_are_in_the_denominator(self):
+        # D17 F13: an observation written as an ordinary sentence next to a list item must count.
+        source = Path(self.tmp) / "observed.md"
+        source.write_text("- 합성시계의 기록을 확인했다.\n봉인 상태는 확인하지 못했다.\n", encoding="utf-8")
+        partial = Path(self.tmp) / "partial.md"
+        partial.write_text("합성시계의 기록을 확인했다.\n", encoding="utf-8")
+        receipt_path = Path(self.tmp) / "receipt.json"
+        proc = run_audit("--source", str(source), "--target", str(partial), "--json", str(receipt_path))
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("1/2 항목", proc.stdout)
+        self.assertIn("구조화 항목 1/1, 일반 문장 0/1", proc.stdout)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["verdict"], "FAIL")
+        self.assertEqual(receipt["denominator"]["sentenceItems"], 1)
+        self.assertIn("일반 문장", receipt["denominator"]["definition"])
+        missed, = receipt["missing"]
+        self.assertEqual((missed["sourceLine"], missed["kind"]), (2, "sentence"))
+        # Reflecting the second observation as well is what full coverage requires.
+        full = Path(self.tmp) / "full.md"
+        full.write_text("합성시계의 기록을 확인했다.\n봉인 상태는 확인하지 못했다(미확인).\n", encoding="utf-8")
+        proc = run_audit("--source", str(source), "--target", str(full), "--json", str(receipt_path))
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("구조화 항목 1/1, 일반 문장 1/1", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

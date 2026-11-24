@@ -57,4 +57,6 @@ python scripts/korean_morph_forensic.py --evidence audit.json --report "보고�
 - 금지문구(`명백히 입증`, `법원에 유효`, `유출 확정`, `Timestomping으로 단정`, `court-admissible`) 포함 시 `FAIL`
 - Chain of Custody/시각이 없으면 `미측정`/`미확인`으로 둔다. 빈칸을 추측으로 채우지 않는다.
 - High-Fidelity 모드(`--high-fidelity`)에서는 증거 파일 및 `<evidence>` 인용 태그가 필수이며 70% 미달 시 차단됩니다.
+- 결론 문장마다 대상과 값을 같은 근거 레코드(JSON 객체 하나, 관찰 문장 하나, 텍스트 한 줄)에서 가져온다. 원문을 그대로 인용해도 결론이 한 레코드의 대상에 다른 레코드의 값을 붙이면(그 레코드에는 그 자리에 다른 값이 있음) `주장-근거 결합 불일치`(`--high-fidelity`에서 `FAIL`)이고, 결과 JSON `claim_binding`에 문장별 `bound`/`unbound`와 엇갈린 두 용어(`crossed`)가 남는다.
+- `PASS`는 위 자동 검사 범위의 통과일 뿐이다. 결론의 의미·타당성은 사람이 검토한다.
 

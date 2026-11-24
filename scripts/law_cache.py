@@ -8,7 +8,8 @@
 - 같은 조(…조의…) 레코드가 있다.
 - 인용 앞에 법령명이 있으면 그 법령의 레코드다. 법령명이 없으면 캐시 안에서 그 조가 한 법령·한 판본에만 있다.
 - 인용에 시행일(판본)이 붙어 있으면 같은 시행일의 레코드다. 없으면 후보 판본이 하나뿐이다.
-- 항을 인용했으면 레코드에 그 항이 있다(항 번호 필드, 조문 식별자, 본문의 ①② 표기).
+- 항을 인용했으면 레코드에 그 항이 있다. 항 번호 필드·항 목록·조문 식별자가 있으면 그것만 쓰고, 없을 때만
+  본문의 항 시작 표지(첫머리나 공백 뒤 ①부터 차례로)를 쓴다. 인용부호 속 ‘②’ 같은 본문 예시는 근거가 아니다.
 """
 from __future__ import annotations
 
@@ -72,8 +73,24 @@ def _first(obj: dict, keys):
     return None
 
 
-def _paragraph_numbers(obj):
-    """레코드가 밝힌 항 번호 집합. 항 정보가 없으면 None."""
+def _text_paragraphs(text: str) -> set:
+    """본문에서 항 시작 표지만 항 번호로 복원한다.
+
+    항 표지는 본문 첫머리나 공백 뒤에 오고 뒤에 공백이 따르며 ①부터 차례로 이어진다. 인용부호·괄호에
+    붙은 원문자(예: ‘②’)와 순서를 벗어난 원문자는 본문 속 예시·참조라 항의 근거가 아니다."""
+    found, expected = set(), 1
+    for i, c in enumerate(text):
+        if CIRCLED.get(c) != expected:
+            continue
+        before = text[i - 1] if i else ""
+        after = text[i + 1] if i + 1 < len(text) else ""
+        if (not before or before.isspace() or before == ")") and (not after or after.isspace()):
+            found.add(expected)
+            expected += 1
+    return found
+
+
+def _explicit_paragraphs(obj) -> set:
     found = set()
     for key in PARAGRAPH_KEYS:
         value = obj.get(key)
@@ -83,14 +100,31 @@ def _paragraph_numbers(obj):
             found.add(int(m.group()))
         elif isinstance(value, str) and value.strip() in CIRCLED:
             found.add(CIRCLED[value.strip()])
+    return found
+
+
+def _paragraph_numbers(obj, identified=None):
+    """레코드가 밝힌 항 번호 집합. 항 정보가 없으면 None.
+
+    항 필드·항 목록·조문 식별자의 항(identified)이 있으면 그것만 쓴다. 구조 정보가 없을 때만 본문의
+    항 시작 표지에서 복원한다."""
+    found = _explicit_paragraphs(obj) | ({identified} if identified is not None else set())
     for item in obj.get("paragraphs") or ():
         if isinstance(item, int) and not isinstance(item, bool):
             found.add(item)
         elif isinstance(item, dict):
-            found |= _paragraph_numbers(item) or set()
+            # 항 목록의 한 항: 항 필드가 없으면 그 항 본문의 첫 표지만 본다.
+            own = _explicit_paragraphs(item)
+            text = (_first(item, TEXT_KEYS) or "") if not own else ""
+            lead = text.lstrip()[:2] if isinstance(text, str) else ""
+            if not own and lead[:1] in CIRCLED and (len(lead) == 1 or lead[1].isspace()):
+                own = {CIRCLED[lead[0]]}
+            found |= own
+    if found:
+        return found
     text = _first(obj, TEXT_KEYS)
-    if text:
-        found |= {CIRCLED[c] for c in text if c in CIRCLED}
+    if isinstance(text, str):
+        found = _text_paragraphs(text)
     return found or None
 
 
@@ -119,9 +153,7 @@ def records(obj) -> list[dict]:
                 break
         if (raw := _first(node, ARTICLE_KEYS)) and (parsed := parse_article(raw)):
             article, paragraph = parsed
-            paragraphs = _paragraph_numbers(node)
-            if paragraph is not None:
-                paragraphs = (paragraphs or set()) | {paragraph}
+            paragraphs = _paragraph_numbers(node, paragraph)
             add(ctx, article, paragraphs)
         for key, value in node.items():
             if key in CONTAINER_KEYS:
@@ -133,9 +165,7 @@ def records(obj) -> list[dict]:
                             continue
                         article, paragraph = parsed
                         detail = body if isinstance(body, dict) else {"text": body}
-                        paragraphs = _paragraph_numbers(detail)
-                        if paragraph is not None:
-                            paragraphs = (paragraphs or set()) | {paragraph}
+                        paragraphs = _paragraph_numbers(detail, paragraph)
                         add(ctx, article, paragraphs)
                 elif isinstance(value, list):
                     for item in value:

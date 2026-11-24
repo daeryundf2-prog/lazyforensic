@@ -11,8 +11,9 @@
 #
 # What it does:
 #   1. Downloads the release archive lazyforensic-<tag>.tar.gz and checks its SHA-256 against the
-#      release's SHA256SUMS and (release installer) the value stamped below. Any mismatch or a failed
-#      release lookup stops before anything is changed. There is no fallback to the main branch.
+#      release's SHA256SUMS and (release installer) the value stamped below. The release lookup must
+#      answer with the requested tag. Any mismatch or a failed release lookup stops before anything is
+#      changed. There is no fallback to the main branch.
 #   2. Finds Python 3.10+. On macOS with Homebrew and no suitable Python, runs
 #      `brew install python@3.12`.
 #   3. Copies LazyForensic to ~/.lazyforensic/app (replaces an older copy).
@@ -23,7 +24,8 @@
 #
 # Environment overrides:
 #   LAZYFORENSIC_REF          release tag to install (default: the release this installer belongs to,
-#                             else the latest release)
+#                             else the latest release). A release installer installs another tag only
+#                             together with LAZYFORENSIC_SHA256; otherwise use that release's installer.
 #   LAZYFORENSIC_SHA256       expected SHA-256 of the release archive (an extra pin you got elsewhere)
 #   LAZYFORENSIC_SOURCE       local folder to install from instead of downloading (recorded as unverified)
 #   LAZYFORENSIC_RELEASE_API  GitHub API repository URL (mirrors and tests)
@@ -55,10 +57,16 @@ asset_url() {  # asset_url <release.json> <asset name>
 
 fetch_release() {  # sets SRC and SOURCE_* from a verified release archive
   ref="${LAZYFORENSIC_REF:-$RELEASE_TAG}"
+  # A release installer carries the SHA-256 of its own archive only. Another tag needs its own installer or a pin.
+  if [ -n "$RELEASE_TAG" ] && [ "$ref" != "$RELEASE_TAG" ] && [ -z "${LAZYFORENSIC_SHA256:-}" ]; then
+    die "This installer is for release $RELEASE_TAG and has no stamped SHA-256 for $ref. Use the install.sh attached to release $ref, or set LAZYFORENSIC_SHA256 to its archive's SHA-256. Nothing was changed."
+  fi
   if [ -n "$ref" ]; then url="$API/releases/tags/$ref"; else url="$API/releases/latest"; fi
   curl -fsSL "$url" -o "$TMP/release.json" || die "Release lookup failed ($url). Nothing was changed. The installer does not fall back to the main branch; retry, or install from a verified local copy with LAZYFORENSIC_SOURCE."
   TAG="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$TMP/release.json" | head -n 1)"
   [ -n "$TAG" ] || die "Release lookup returned no tag ($url). Nothing was changed."
+  # The answer must be the release that was asked for, before any asset is looked at.
+  [ -z "$ref" ] || [ "$TAG" = "$ref" ] || die "Release lookup for $ref returned release $TAG. Nothing was changed."
   NAME="lazyforensic-$TAG.tar.gz"
   archive_url="$(asset_url "$TMP/release.json" "$NAME")"
   sums_url="$(asset_url "$TMP/release.json" SHA256SUMS)"
@@ -75,7 +83,8 @@ fetch_release() {  # sets SRC and SOURCE_* from a verified release archive
     [ "$expected" = "$actual" ] || die "SHA-256 of $NAME does not match $1: expected $expected, got $actual. Nothing was changed."
   }
   check_pin SHA256SUMS "$listed"
-  if [ -n "$RELEASE_ARCHIVE_SHA256" ] && [ "$TAG" = "$RELEASE_TAG" ]; then
+  if [ -n "$RELEASE_TAG" ] && [ "$TAG" = "$RELEASE_TAG" ]; then
+    [ -n "$RELEASE_ARCHIVE_SHA256" ] || die "This release installer has no stamped SHA-256 for $NAME. Nothing was changed."
     check_pin "release installer" "$RELEASE_ARCHIVE_SHA256"; SOURCE_CHECKS="$SOURCE_CHECKS,release installer"
   fi
   if [ -n "${LAZYFORENSIC_SHA256:-}" ]; then

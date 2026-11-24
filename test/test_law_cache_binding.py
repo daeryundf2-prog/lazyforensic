@@ -171,5 +171,24 @@ def test_article_mentioned_only_inside_another_articles_text_is_not_evidence(tmp
     assert result["law_cache"]["citations"][0]["status"] == "missing"
 
 
+@pytest.mark.parametrize(("label", "article", "status"), [
+    # D17 F7: a circled numeral quoted as an example inside the text is not a paragraph start.
+    ("circle in quotation", {"article": "제2조", "paragraphs": [1], "text": "① 표시 예시는 ‘②’이다."}, "unconfirmed"),
+    ("same text, no list", {"article": "제2조", "text": "① 표시 예시는 ‘②’이다."}, "unconfirmed"),
+    ("out of sequence", {"article": "제2조", "text": "① 합성 본문 ③ 합성 본문"}, "unconfirmed"),
+    ("no circle", {"article": "제2조", "paragraphs": [1], "text": "① 표시 예시"}, "unconfirmed"),
+    ("structured", {"article": "제2조", "paragraphs": [1, 2], "text": "합성 본문"}, "matched"),
+    ("paragraph starts", {"article": "제2조", "text": "제2조(정의) ① 합성 본문.\n② 합성 본문"}, "matched"),
+    ("paragraph items", {"article": "제2조", "paragraphs": [{"text": "① 합성"}, {"text": "② 합성"}]}, "matched"),
+])
+def test_circled_numeral_counts_only_as_a_paragraph_start(tmp_path, label, article, status):
+    cache = {"law_name": "합성법", "law_id": "SYN", "articles": [article]}
+    _, result = verify_with_cache(tmp_path, "합성법 제2조 제2항을 검토한다.\n", json.dumps(cache, ensure_ascii=False).encode())
+    item, = result["law_cache"]["citations"]
+    assert item["status"] == status, (label, item)
+    if status == "unconfirmed":
+        assert "제2항" in item["reason"] and result["verdict"] == "WARN", result
+
+
 if __name__ == "__main__":
     unittest.main()

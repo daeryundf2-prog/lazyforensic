@@ -21,6 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WINDOWS = os.name == "nt"
 TAG = "v0.0.0-synthetic"
+OLD = "v0.0.0-older"  # another published release of the same synthetic repository
 
 pytestmark = pytest.mark.skipif(not (shutil.which("git") and (ROOT / ".git").exists()),
                                 reason="release assets are built with git archive from this checkout")
@@ -37,6 +38,13 @@ def load_builder():
 def assets(tmp_path_factory):
     out = tmp_path_factory.mktemp("assets")
     load_builder().build(TAG, out, ref="HEAD")
+    return out
+
+
+@pytest.fixture(scope="module")
+def older(tmp_path_factory):
+    out = tmp_path_factory.mktemp("older")
+    load_builder().build(OLD, out, ref="HEAD")
     return out
 
 
@@ -76,30 +84,47 @@ def test_pillow_requirement_is_hash_pinned():
 
 
 class Release:
-    """Fake GitHub API + download host. Tests change `files` or `api_up` between installs."""
+    """Fake GitHub API + download host. Tests change `files`, `answer` or `api_up` between installs.
 
-    def __init__(self, assets: Path):
+    `files`/`digests` are the assets of TAG; `others` holds further releases by tag. `answer` names the
+    release the API returns when TAG (or latest) is requested — a stale mirror or a swapped response."""
+
+    def __init__(self, assets: Path, others: dict | None = None, tls: tuple | None = None):
         self.files = {p.name: p.read_bytes() for p in assets.iterdir()}
         self.digests = {name: "sha256:" + sha256(data) for name, data in self.files.items()}
+        self.others = {tag: {p.name: p.read_bytes() for p in folder.iterdir()} for tag, folder in (others or {}).items()}
+        self.answer = TAG
         self.api_up = True
         release = self
+
+        def assets_of(tag):
+            if tag == TAG:
+                return release.files, release.digests
+            files = release.others[tag]
+            return files, {name: "sha256:" + sha256(data) for name, data in files.items()}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
 
             def do_GET(self):
-                host = f"http://127.0.0.1:{self.server.server_port}"
-                if self.path in ("/repos/sample/releases/latest", f"/repos/sample/releases/tags/{TAG}"):
+                scheme = "https" if tls else "http"
+                host = f"{scheme}://127.0.0.1:{self.server.server_port}"
+                requested = self.path.rsplit("/", 1)[-1] if self.path.startswith("/repos/sample/releases/tags/") else None
+                if self.path == "/repos/sample/releases/latest" or requested == TAG or requested in release.others:
                     if not release.api_up:
                         return self.reply(503, b"{}")
-                    body = {"tag_name": TAG, "assets": [
-                        {"name": name, "browser_download_url": f"{host}/download/{TAG}/{name}",
-                         "digest": release.digests[name]} for name in sorted(release.files)]}
+                    tag = release.answer if requested in (None, TAG) else requested
+                    files, digests = assets_of(tag)
+                    body = {"tag_name": tag, "assets": [
+                        {"name": name, "browser_download_url": f"{host}/download/{tag}/{name}",
+                         "digest": digests[name]} for name in sorted(files)]}
                     return self.reply(200, json.dumps(body, indent=2).encode())
-                name = self.path.rsplit("/", 1)[-1]
-                if self.path.startswith(f"/download/{TAG}/") and name in release.files:
-                    return self.reply(200, release.files[name])
+                parts = self.path.split("/")
+                if len(parts) == 4 and parts[1] == "download" and (parts[2] == TAG or parts[2] in release.others):
+                    files, _ = assets_of(parts[2])
+                    if parts[3] in files:
+                        return self.reply(200, files[parts[3]])
                 self.reply(404, b"not found")
 
             def reply(self, code, data):
@@ -109,7 +134,12 @@ class Release:
                 self.wfile.write(data)
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.api = f"http://127.0.0.1:{self.server.server_port}/repos/sample"
+        if tls:
+            import ssl
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*tls)
+            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+        self.api = f"{'https' if tls else 'http'}://127.0.0.1:{self.server.server_port}/repos/sample"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self):
@@ -145,12 +175,12 @@ def tree(folder: Path):
 
 
 @pytest.fixture
-def installer(tmp_path, assets):
+def installer(tmp_path, assets, older):
     profile = tmp_path / "profile"
     temp = tmp_path / "tmp"
     profile.mkdir()
     temp.mkdir()
-    release = Release(assets)
+    release = Release(assets, {OLD: older})
     env = dict(os.environ, HOME=str(profile), TMPDIR=str(temp), TEMP=str(temp), TMP=str(temp),
                LAZYFORENSIC_RELEASE_API=release.api, PIP_NO_INDEX="1", PIP_NO_CACHE_DIR="1",
                NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
@@ -163,19 +193,26 @@ def installer(tmp_path, assets):
         root = local / "LazyForensic"
         # The "irm | iex" path: no script file, so the release download branch runs. Print the
         # exception message unwrapped so the assertions do not depend on console width.
-        env["LF_STAMPED_INSTALLER"] = str(assets / "install.ps1")
+        stamped = assets / "install.ps1"
         command = ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
                    "try { Get-Content -Raw -Encoding UTF8 $env:LF_STAMPED_INSTALLER | Invoke-Expression } "
                    "catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"]
-        feed = {"stdin": subprocess.DEVNULL}
     else:
         env["SHELL"] = "/bin/sh"
         root = profile / ".lazyforensic"
         command = ["sh"]
-        feed = {"input": (assets / "install.sh").read_text(encoding="ascii")}  # the "curl | sh" path
+        stamped = assets / "install.sh"
 
-    def run():
-        return subprocess.run(command, env=env, cwd=tmp_path, capture_output=True, text=True,
+    def run(script=None, **overrides):
+        """Run the stamped release installer (or `script`) with extra environment variables."""
+        script = Path(script or stamped)
+        run_env = dict(env, **overrides)
+        if WINDOWS:
+            run_env["LF_STAMPED_INSTALLER"] = str(script)
+            feed = {"stdin": subprocess.DEVNULL}
+        else:
+            feed = {"input": script.read_text(encoding="ascii")}  # the "curl | sh" path
+        return subprocess.run(command, env=run_env, cwd=tmp_path, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=600, **feed)
 
     with restore_user_path() if WINDOWS else nullcontext():
@@ -225,4 +262,78 @@ def test_release_install_is_verified_reproducible_and_fails_closed(installer, as
     release.api_up = False
     proc = run()
     assert proc.returncode != 0 and "does not fall back to the main branch" in proc.stdout + proc.stderr
+    assert tree(root) == installed
+
+
+def self_signed_certificate(folder: Path):
+    """A throwaway certificate no client trusts (generated per run; nothing is stored in the repository)."""
+    candidates = [shutil.which("openssl"), str(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git/usr/bin/openssl.exe")]
+    openssl = next((c for c in candidates if c and Path(c).exists()), None)
+    if openssl is None:
+        pytest.skip("openssl is needed to make an untrusted test certificate")
+    cert, key = folder / "cert.pem", folder / "key.pem"
+    subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(key), "-out", str(cert),
+                    "-days", "2", "-subj", "/CN=127.0.0.1"], check=True, capture_output=True)
+    return cert, key
+
+
+def test_release_answer_must_be_the_requested_tag_and_every_failure_keeps_the_install(installer, assets, older):
+    # D17 F6: the requested tag and the answered tag must agree before any asset is used; each refusal
+    # leaves the existing app tree and receipt byte-identical.
+    release, root, run = installer
+    ext = "zip" if WINDOWS else "tar.gz"
+    archive, old_archive = f"lazyforensic-{TAG}.{ext}", older / f"lazyforensic-{OLD}.{ext}"
+    expected = sha256((assets / archive).read_bytes())
+    proc = run()
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    installed = tree(root)
+    original = dict(release.files)
+
+    def refused(proc, message):
+        assert proc.returncode != 0 and message in proc.stdout + proc.stderr, proc.stdout + proc.stderr
+        assert tree(root) == installed
+
+    # 1. Only SHA256SUMS changes.
+    release.files["SHA256SUMS"] = original["SHA256SUMS"].replace(expected.encode(), b"0" * 64)
+    refused(run(), "does not match SHA256SUMS")
+
+    # 2. Another genuine archive is served under this release's name, with matching SHA256SUMS and digest.
+    other = old_archive.read_bytes()
+    release.files[archive] = other
+    release.files["SHA256SUMS"] = original["SHA256SUMS"].replace(expected.encode(), sha256(other).encode())
+    release.digests[archive] = "sha256:" + sha256(other)
+    refused(run(), "does not match release installer")
+    release.files, release.digests[archive] = dict(original), "sha256:" + expected
+
+    # 3. The lookup for TAG answers with an older, self-consistent release.
+    release.answer = OLD
+    refused(run(), f"Release lookup for {TAG} returned release {OLD}")
+    # The repository installer asked for TAG explicitly is held to the same rule.
+    refused(run(ROOT / ("install.ps1" if WINDOWS else "install.sh"), LAZYFORENSIC_REF=TAG),
+            f"Release lookup for {TAG} returned release {OLD}")
+    release.answer = TAG
+
+    # Policy: a release installer installs another tag only with an independent pin for that archive.
+    refused(run(LAZYFORENSIC_REF=OLD), f"This installer is for release {TAG}")
+    refused(run(LAZYFORENSIC_REF=OLD, LAZYFORENSIC_SHA256="0" * 64), "does not match LAZYFORENSIC_SHA256")
+    proc = run(LAZYFORENSIC_REF=OLD, LAZYFORENSIC_SHA256=sha256(old_archive.read_bytes()))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    receipt = json.loads((root / "install-receipt.json").read_text(encoding="utf-8"))["source"]
+    assert (receipt["tag"], receipt["archive"], receipt["sha256"]) == (OLD, old_archive.name, sha256(old_archive.read_bytes()))
+    assert "LAZYFORENSIC_SHA256" in receipt["verified_against"] and "release installer" not in receipt["verified_against"]
+
+
+def test_untrusted_release_host_certificate_keeps_the_install(installer, assets, tmp_path):
+    # D17 F6, case 4: the release host presents a certificate that does not verify.
+    certificate = self_signed_certificate(tmp_path)
+    release, root, run = installer
+    proc = run()
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    installed = tree(root)
+    secure = Release(assets, tls=certificate)
+    try:
+        proc = run(LAZYFORENSIC_RELEASE_API=secure.api)
+    finally:
+        secure.close()
+    assert proc.returncode != 0 and "Release lookup failed" in proc.stdout + proc.stderr, proc.stdout + proc.stderr
     assert tree(root) == installed
