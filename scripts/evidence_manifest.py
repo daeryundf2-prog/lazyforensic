@@ -111,6 +111,16 @@ def inside(root: Path, target: Path) -> bool:
     return target_r == root_r or root_r in target_r.parents
 
 
+PARTIAL_SCOPE_EXIT = 1  # report·scan·manifest 공통: 열거 실패로 조사 범위가 부분이면 이 종료 코드 (docs/EXIT_CODES.md)
+
+
+def partial_scope_message(errors: list[dict]) -> str:
+    """열거 실패로 범위가 부분일 때 세 명령이 표준 오류에 같은 형식으로 남기는 한 줄."""
+    shown = ", ".join(e["path"] for e in errors[:3]) + (f" 외 {len(errors) - 3}개" if len(errors) > 3 else "")
+    return (f"조사 범위 미확인(부분 결과): 열거하지 못한 폴더 {len(errors)}개 ({shown}) — "
+            f"그 아래 파일 수를 알 수 없습니다. 종료 코드 {PARTIAL_SCOPE_EXIT}")
+
+
 def build_manifest(root: Path) -> dict:
     walk = walk_evidence(root)
     files = []
@@ -226,8 +236,8 @@ def main(argv: list[str] | None = None) -> int:
     if manifest["enumeration_errors"]:
         for e in manifest["enumeration_errors"]:
             print(f"열거 실패: {e['path']} ({e['error']})", file=sys.stderr)
-        print("일부 폴더를 열지 못해 전체 파일 수는 미확인입니다 (부분 매니페스트).", file=sys.stderr)
-        return 1
+        print(partial_scope_message(manifest["enumeration_errors"]), file=sys.stderr)
+        return PARTIAL_SCOPE_EXIT
     return 0
 
 

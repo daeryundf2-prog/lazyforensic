@@ -10,9 +10,10 @@
 PowerShell을 연다(관리자 권한 필요 없음). 아래 한 줄을 붙여 넣고 Enter.
 
 ```powershell
-irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.ps1 | iex
+irm https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.ps1 | iex
 ```
 
+- 최신 릴리스의 프로그램 압축 파일을 받아 SHA-256을 릴리스의 `SHA256SUMS` 등과 대조한 뒤에만 설치한다. 다르거나 릴리스 조회에 실패하면 아무것도 바꾸지 않고 멈춘다([설치 파일 확인](../README.md#설치-파일-확인)).
 - Python 3.10 이상이 없으면 winget으로 Python 3.12를 사용자 계정에 설치한다.
 - 프로그램은 `%LOCALAPPDATA%\LazyForensic`에 들어가고, `lazyforensic` 명령이 PATH에 추가된다.
 - 끝나면 **PowerShell 창을 새로 연다.**
@@ -22,7 +23,7 @@ irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.
 터미널을 열고 아래 한 줄을 붙여 넣는다.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.sh | sh
+curl -fsSL https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.sh | sh
 ```
 
 - Python 3.10 이상이 필요하다. 없으면 Homebrew가 있을 때 자동 설치하고, 없으면
@@ -31,8 +32,9 @@ curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/i
 
 ### 인터넷이 없는 분석 PC
 
-인터넷 되는 PC에서 [Releases](https://github.com/daeryundf2-prog/lazyforensic/releases)의 소스 zip을 받아
-분석 PC로 옮기고 압축을 푼 폴더에서 실행한다.
+인터넷 되는 PC에서 [Releases](https://github.com/daeryundf2-prog/lazyforensic/releases)의 `lazyforensic-<태그>.zip`(macOS는 `.tar.gz`)과
+`SHA256SUMS`를 받아 `Get-FileHash`(macOS는 `shasum -a 256`)로 해시가 `SHA256SUMS`와 같은지 확인한 뒤
+분석 PC로 옮기고 압축을 푼 폴더에서 실행한다. 이 경로는 설치 영수증에 `kind: local`로 남는다.
 
 - Windows: `powershell -ExecutionPolicy Bypass -File install.ps1`
 - macOS: `sh install.sh`
@@ -60,7 +62,7 @@ lazyforensic report <증거 폴더>
 
 - 증거 폴더에는 E01·Ex01 물리 이미지, L01·Lx01 논리 증거의 모든 세그먼트나 이미지에서 내보낸 파일을 그대로 둔다.
 - 결과는 증거 폴더 **옆**의 `<폴더명>_분석결과`에 생긴다. 증거 폴더에는 아무것도 쓰지 않는다.
-- 결과 폴더에서 한글용 `보고서초안.hwpx` 또는 Word용 `보고서초안.docx`를 열어 편집한다. 다시 실행하면 이전 결과를 덮어쓰지 않고 `<폴더명>_분석결과_2`처럼 새 폴더에 쓴다. 각 결과 폴더의 `산출물목록.json`에 그 실행이 만든 파일과 SHA-256이 있다.
+- 결과 폴더에서 한글용 `보고서초안.hwpx` 또는 Word용 `보고서초안.docx`를 열어 편집한다. 다시 실행하거나 같은 위치로 두 보고서를 동시에 실행해도 이전·다른 결과를 덮어쓰지 않고 `<폴더명>_분석결과_2`처럼 새 폴더에 쓴다. 각 결과 폴더의 `산출물목록.json`에 그 실행이 게시한 파일과 SHA-256이 있다.
 - 브라우저에서 보려면 `보고서초안.html`을 연다.
 
 ### 있으면 더 채워지는 것 (선택)

@@ -1,34 +1,56 @@
 # LazyForensic installer for Windows (PowerShell 5.1+).
 #
-# One-line install (PowerShell, normal user, no admin):
-#   irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.ps1 | iex
+# One-line install (PowerShell, normal user, no admin). The installer attached to a release installs
+# exactly that release:
+#   irm https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.ps1 | iex
 #
 # Offline install (analysis PC without internet): copy an extracted release folder
 # to the PC, then in that folder run:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # What it does:
-#   1. Finds Python 3.10+ (py launcher or python). If missing and winget exists,
+#   1. Downloads the release archive lazyforensic-<tag>.zip and checks its SHA-256 against the
+#      release's SHA256SUMS, GitHub's asset digest and (release installer) the value stamped below.
+#      Any mismatch or a failed release lookup stops before anything is changed. There is no
+#      fallback to the main branch.
+#   2. Finds Python 3.10+ (py launcher or python). If missing and winget exists,
 #      installs Python 3.12 for the current user.
-#   2. Copies LazyForensic to %LOCALAPPDATA%\LazyForensic\app (replaces an older copy).
-#   3. Creates the venv %USERPROFILE%\.lfenv and installs Pillow (photo EXIF checks).
-#      Without internet this step is skipped; the report still works.
-#   4. Puts %LOCALAPPDATA%\LazyForensic\bin (only lazyforensic.cmd) on the user PATH.
+#   3. Replaces %LOCALAPPDATA%\LazyForensic\app (the old copy stays until the new one is complete).
+#   4. Creates the venv %USERPROFILE%\.lfenv and installs Pillow from requirements-install.txt
+#      (pip --require-hashes). Without internet this step is skipped; the report still works.
+#   5. Puts %LOCALAPPDATA%\LazyForensic\bin (only lazyforensic.cmd) on the user PATH and writes
+#      %LOCALAPPDATA%\LazyForensic\install-receipt.json (archive tag, name and SHA-256).
 #
 # Environment overrides:
-#   LAZYFORENSIC_REF     tag or branch to download (default: latest release, else main)
-#   LAZYFORENSIC_SOURCE  local folder to install from instead of downloading
+#   LAZYFORENSIC_REF          release tag to install (default: the release this installer belongs to,
+#                             else the latest release)
+#   LAZYFORENSIC_SHA256       expected SHA-256 of the release archive (an extra pin you got elsewhere)
+#   LAZYFORENSIC_SOURCE       local folder to install from instead of downloading (recorded as unverified)
+#   LAZYFORENSIC_RELEASE_API  GitHub API repository URL (mirrors and tests)
 #
 # This file is ASCII on purpose: "irm | iex" and Windows PowerShell 5.1 both read it safely.
 
 $ErrorActionPreference = "Stop"
 $Repo = "daeryundf2-prog/lazyforensic"
+# Stamped by .github/workflows/release-assets.yml into the installer attached to a release.
+$ReleaseTag = ""
+$ReleaseArchiveSha256 = ""
+$Api = if ($env:LAZYFORENSIC_RELEASE_API) { $env:LAZYFORENSIC_RELEASE_API.TrimEnd("/") } else { "https://api.github.com/repos/$Repo" }
 $InstallRoot = Join-Path $env:LOCALAPPDATA "LazyForensic"
 $AppDir = Join-Path $InstallRoot "app"
 $BinDir = Join-Path $InstallRoot "bin"
 $VenvDir = Join-Path $env:USERPROFILE ".lfenv"
 
 function Say($msg) { Write-Host "[LazyForensic] $msg" }
+
+# .NET instead of Get-FileHash / Expand-Archive: those come from script modules that Windows PowerShell
+# may fail to load when started from PowerShell 7 (inherited PSModulePath).
+function Get-Sha256($path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($path)
+    try { return ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
 
 function Test-Python($exe, $extra) {
     try {
@@ -71,68 +93,128 @@ function Find-Python {
     return $null
 }
 
-# 1. Python
-$py = Find-Python
-if (-not $py) {
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Say "Python 3.10+ not found. Installing Python 3.12 for this user with winget..."
-        winget install -e --id Python.Python.3.12 --scope user --accept-package-agreements --accept-source-agreements
-        $py = Find-Python
+function Get-ReleaseArchive($tmp) {
+    # Returns the extracted source folder and what the archive was checked against.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $ref = $env:LAZYFORENSIC_REF
+    if (-not $ref) { $ref = $ReleaseTag }
+    $url = if ($ref) { "$Api/releases/tags/$ref" } else { "$Api/releases/latest" }
+    try {
+        $release = Invoke-RestMethod $url -UseBasicParsing
+    } catch {
+        throw "Release lookup failed ($url): $($_.Exception.Message.TrimEnd('.')). Nothing was changed. The installer does not fall back to the main branch; retry, or install from a verified local copy with LAZYFORENSIC_SOURCE."
     }
-    if (-not $py) {
-        Say "Python 3.10+ is required. Install it from https://www.python.org/downloads/windows/"
-        Say "(check 'Add python.exe to PATH'), then run this installer again."
-        exit 1
+    $tag = [string]$release.tag_name
+    if (-not $tag) { throw "Release lookup returned no tag ($url). Nothing was changed." }
+    $name = "lazyforensic-$tag.zip"
+    $archiveAsset = $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+    $sumsAsset = $release.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
+    if (-not $archiveAsset -or -not $sumsAsset) {
+        throw "Release $tag has no $name with SHA256SUMS, so it cannot be verified. Nothing was changed."
     }
-}
-Say "Python $($py.version): $($py.path)"
+    $zip = Join-Path $tmp $name
+    $sums = Join-Path $tmp "SHA256SUMS"
+    Say "Downloading $name ($Repo $tag)..."
+    Invoke-WebRequest $archiveAsset.browser_download_url -OutFile $zip -UseBasicParsing
+    Invoke-WebRequest $sumsAsset.browser_download_url -OutFile $sums -UseBasicParsing
+    $actual = Get-Sha256 $zip
 
-# 2. Program files
+    $listed = @()
+    foreach ($line in [System.IO.File]::ReadAllLines($sums)) {
+        if ($line -match '^([0-9A-Fa-f]{64}) [ *](.+)$' -and $Matches[2] -eq $name) { $listed += $Matches[1].ToLowerInvariant() }
+    }
+    if ($listed.Count -ne 1) { throw "SHA256SUMS of $tag does not list $name exactly once. Nothing was changed." }
+    $pins = @(@{ source = "SHA256SUMS"; value = $listed[0] })
+    if ($archiveAsset.digest) {
+        $pins += @{ source = "GitHub asset digest"; value = ([string]$archiveAsset.digest -replace '^sha256:', '').ToLowerInvariant() }
+    }
+    if ($ReleaseArchiveSha256 -and $tag -eq $ReleaseTag) {
+        $pins += @{ source = "release installer"; value = $ReleaseArchiveSha256.ToLowerInvariant() }
+    }
+    if ($env:LAZYFORENSIC_SHA256) {
+        $pins += @{ source = "LAZYFORENSIC_SHA256"; value = $env:LAZYFORENSIC_SHA256.Trim().ToLowerInvariant() }
+    }
+    foreach ($pin in $pins) {
+        if ($pin.value -ne $actual) {
+            throw "SHA-256 of $name does not match $($pin.source): expected $($pin.value), got $actual. Nothing was changed."
+        }
+    }
+    Say "Verified $name SHA-256 $actual ($((($pins | ForEach-Object { $_.source }) -join ', ')))"
+    $extract = Join-Path $tmp "extract"
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $extract)
+    $src = (Get-ChildItem $extract -Directory | Where-Object { Test-Path (Join-Path $_.FullName "scripts\report_draft.py") } | Select-Object -First 1).FullName
+    if (-not $src) { throw "Downloaded archive does not contain LazyForensic. Nothing was changed." }
+    return @{ path = $src; record = [ordered]@{ kind = "release"; tag = $tag; archive = $name; sha256 = $actual; verified_against = @($pins | ForEach-Object { $_.source }) } }
+}
+
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("lazyforensic-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
+    # 1. Program files: verify before anything on this PC changes.
     if ($env:LAZYFORENSIC_SOURCE) {
         $src = (Resolve-Path $env:LAZYFORENSIC_SOURCE).Path
+        $source = [ordered]@{ kind = "local"; path = $src; sha256 = $null; verified_against = @() }
     } elseif ($PSCommandPath -and (Test-Path (Join-Path (Split-Path -Parent $PSCommandPath) "scripts\report_draft.py"))) {
         $src = Split-Path -Parent $PSCommandPath
+        $source = [ordered]@{ kind = "local"; path = $src; sha256 = $null; verified_against = @() }
     } else {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $ref = $env:LAZYFORENSIC_REF
-        if (-not $ref) {
-            try {
-                $ref = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing).tag_name
-            } catch { $ref = "main" }
-        }
-        $zip = Join-Path $tmp "lazyforensic.zip"
-        Say "Downloading $Repo ($ref)..."
-        Invoke-WebRequest "https://github.com/$Repo/archive/$ref.zip" -OutFile $zip -UseBasicParsing
-        Expand-Archive -Path $zip -DestinationPath $tmp
-        $src = (Get-ChildItem $tmp -Directory | Where-Object { Test-Path (Join-Path $_.FullName "scripts\report_draft.py") } | Select-Object -First 1).FullName
-        if (-not $src) { throw "Downloaded archive does not contain LazyForensic." }
+        $fetched = Get-ReleaseArchive $tmp
+        $src = $fetched.path
+        $source = $fetched.record
     }
+
+    # 2. Python
+    $py = Find-Python
+    if (-not $py) {
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            Say "Python 3.10+ not found. Installing Python 3.12 for this user with winget..."
+            winget install -e --id Python.Python.3.12 --scope user --accept-package-agreements --accept-source-agreements
+            $py = Find-Python
+        }
+        if (-not $py) {
+            Say "Python 3.10+ is required. Install it from https://www.python.org/downloads/windows/"
+            Say "(check 'Add python.exe to PATH'), then run this installer again."
+            exit 1
+        }
+    }
+    Say "Python $($py.version): $($py.path)"
+
+    # 3. Replace the app only after the new copy is complete.
     if ((Resolve-Path $src).Path -ne $AppDir) {
-        if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
-        New-Item -ItemType Directory -Path $AppDir -Force | Out-Null
-        Get-ChildItem -Force $src | Where-Object { $_.Name -ne ".git" } | Copy-Item -Destination $AppDir -Recurse -Force
+        $staged = Join-Path $InstallRoot "app.new"
+        $previous = Join-Path $InstallRoot "app.old"
+        foreach ($d in @($staged, $previous)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
+        New-Item -ItemType Directory -Path $staged -Force | Out-Null
+        Get-ChildItem -Force $src | Where-Object { $_.Name -ne ".git" } | Copy-Item -Destination $staged -Recurse -Force
+        if (Test-Path $AppDir) { Move-Item -LiteralPath $AppDir -Destination $previous }
+        Move-Item -LiteralPath $staged -Destination $AppDir
+        if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
     }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 Say "Installed to $AppDir"
 
-# 3. venv + Pillow
+# 4. venv + Pillow (hash-pinned)
 $venvPy = Join-Path $VenvDir "Scripts\python.exe"
 if (-not (Test-Path $venvPy)) {
     Say "Creating Python environment $VenvDir"
     & $py.path -m venv $VenvDir
     if ($LASTEXITCODE -ne 0) { throw "python -m venv failed" }
 }
-& $venvPy -m pip install --disable-pip-version-check -q "pillow>=10.0,<12"
+$requirements = Join-Path $AppDir "requirements-install.txt"
+& $venvPy -m pip install --disable-pip-version-check -q --require-hashes --only-binary=:all: -r $requirements
 if ($LASTEXITCODE -ne 0) {
     Say "WARNING: Pillow install failed (offline?). Photo EXIF checks will be skipped; reports still work."
 }
+$pillow = $null
+try {
+    $version = & $venvPy -c "import PIL; print(PIL.__version__)" 2>$null
+    if ($LASTEXITCODE -eq 0) { $pillow = "$version".Trim() }
+} catch { }
 
-# 4. Command on PATH
+# 5. Command on PATH
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 # cmd.exe decodes batch files using the active code page. Keep the shim ASCII
 # and expand its Unicode location at runtime.
@@ -148,6 +230,17 @@ if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDi
 
 & (Join-Path $BinDir "lazyforensic.cmd") report --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Self-test failed: lazyforensic report --help" }
+
+# Install receipt: what was installed, from which verified archive.
+$receipt = [ordered]@{
+    installed_at = (Get-Date).ToUniversalTime().ToString("o")
+    installer = if ($ReleaseTag) { "release $ReleaseTag" } else { "repository" }
+    source = $source
+    python = $py.version
+    requirements_sha256 = if (Test-Path -LiteralPath $requirements) { Get-Sha256 $requirements } else { $null }
+    pillow = $pillow
+}
+[System.IO.File]::WriteAllText((Join-Path $InstallRoot "install-receipt.json"), ($receipt | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding $false))
 
 Say "Done. Open a NEW PowerShell or cmd window and run:"
 Say "    lazyforensic report D:\path\to\evidence-folder"

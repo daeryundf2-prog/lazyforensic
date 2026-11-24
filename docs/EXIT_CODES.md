@@ -28,15 +28,31 @@
 | `audio_fingerprint.py` | 지표 완료 | — | 인자 오류 | fpcalc 없음 | — |
 | `parse_ntfs_artifacts.py` | 파싱 완료 | 일반 오류 | — | BYO 도구 없음 | — |
 | `exif_audit.py` / `image_similarity.py` | 감사 완료 | — | 인자 오류 | exiftool 등 없음 | — |
-| `evidence_manifest.py` | 생성 완료 | 검증 실패 | 인자 오류 | — | — |
+| `report_draft.py` (`lazyforensic report`) | 초안 작성, 문제 없음 | 해시 불일치·판독 오류·**조사 범위 미확인**·초안 검증 FAIL (초안은 작성됨) | 인자 오류·출력 폴더가 증거 안 | — | — |
+| `case_survey.py` (`lazyforensic scan`) | 단계 호출 완료, 열거 완전 | **조사 범위 미확인** | 인자 오류·출력 경로가 증거 안 | — | — |
+| `evidence_manifest.py` (`lazyforensic manifest`) | 생성 완료 | 검증 실패, **조사 범위 미확인**(부분 매니페스트) | 인자 오류 | — | — |
 | `case_envelope.py` | 생성 완료 | — | 인자 오류 | — | — |
 | `check_tool.py` | 도구 발견 | — | 하나 이상 미발견 (설치 안내만 출력) | — | — |
 | `setup_forensic_env.py` | 설정 완료 | 단계 실패 | — | — | — |
 | `setup_korean_law.mjs --check` | 빌드+키 OK | 빌드 실패 | — | — | 미빌드/키 없음 |
+| `setup_korean_law.mjs` (설치) | 고정 커밋·잠금 파일로 빌드 완료 | 기존 체크아웃이 고정 커밋·잠금 파일과 다름, 클론·빌드 실패 | — | — | — |
 | `analyze_deepfake_evidence.py` | 분석 완료 | 파일 없음 | FFT 플롯 실패 | — | — |
 | `local_only_audit.py` | UNGATED 없음 | UNGATED 지점 발견 | — | — | — |
 
 표에 없는 나머지 `scripts/*.py`는 `0`(성공)/`2`(사용법 오류) 관례를 따른다.
+
+## 조사 범위 미확인 (부분 범위)
+
+증거 폴더 안의 폴더를 열지 못하면(권한 거부 등) 그 아래 파일 수를 알 수 없다. 같은 트리에 대해
+`report`·`scan`·`manifest`는 모두 다음과 같이 동작한다.
+
+- 종료 코드 `1` (`evidence_manifest.PARTIAL_SCOPE_EXIT`). 정상 트리에서는 `0`.
+- 표준 오류에 같은 형식의 한 줄: `조사 범위 미확인(부분 결과): 열거하지 못한 폴더 N개 (…) — 그 아래 파일 수를 알 수 없습니다. 종료 코드 1`.
+- 기계 판독 기록: `report`는 `무결성검증.json`의 `scope.status = "partial"`(전체 수 `null`),
+  `scan`은 `scope.complete = false`와 `processing_receipt`의 `Incomplete scope` 경고·`exit_code: 1`,
+  `manifest`는 `complete = false`와 `enumeration_errors`.
+
+종료 코드 `1`은 해시 불일치 등 다른 문제와 같은 코드이므로, 원인은 위 기록과 표준 오류 줄로 구별한다.
 
 ## 연동 지침
 

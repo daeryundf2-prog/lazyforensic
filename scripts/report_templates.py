@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import posixpath
 import re
@@ -23,6 +24,7 @@ UNKNOWN = "미확인"
 OUTPUT_NAME = "양식초안.docx"
 DIGEST_SUFFIX = ".본문.sha256"
 FORM_MARKER = b"\nLazyForensic filled report form v2"
+TEMPLATE_LINE = "template-sha256 "  # second line of the reference file: SHA-256 of the input blank form
 TOKEN = re.compile(r"\{\{([^{}\r\n\t]*)\}\}")
 WORD = report_docx.W[1:-1]
 STORY_MIME = {kind: f"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"
@@ -348,9 +350,18 @@ def digest_path(path):
     return path.with_suffix(DIGEST_SUFFIX)
 
 
+def input_record(path, data):
+    """입력 빈 양식의 이름·바이트 수·SHA-256 — 같은 본문의 다른 양식 패키지를 구별한다."""
+    return {"name": Path(path).name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
 def write_form(source, destination, fields):
-    """Publish only complete packages. Derive the parity reference from the input form."""
-    with ZipFile(source) as blank:
+    """Publish only complete packages. Derive the parity reference from the input form.
+
+    The input form is read once; its SHA-256 is bound into the reference file."""
+    blank_bytes = Path(source).read_bytes()
+    template_sha256 = hashlib.sha256(blank_bytes).hexdigest()
+    with ZipFile(io.BytesIO(blank_bytes)) as blank:
         with TemporaryDirectory(dir=destination.parent) as temp:
             staged = Path(temp) / "draft"
             digest = Path(temp) / "expected"
@@ -361,7 +372,7 @@ def write_form(source, destination, fields):
                 if len(comment) > 65535:
                     raise ValueError("양식 표시를 추가할 ZIP 주석 공간이 없습니다")
                 filled.comment = comment
-                if source.suffix.lower() == ".hwpx":
+                if Path(source).suffix.lower() == ".hwpx":
                     import report_hwpx_forms
                     expected = report_hwpx_forms.write_parts(blank, filled, fields)
                 else:
@@ -372,13 +383,35 @@ def write_form(source, destination, fields):
                         if part.filename in stories:
                             data = fill_story(data, fields)
                         filled.writestr(part, data)
-            digest.write_text(expected + "\n", encoding="ascii")
+            digest.write_text(f"{expected}\n{TEMPLATE_LINE}{template_sha256}\n", encoding="ascii")
             digest.replace(digest_path(destination))
             staged.replace(destination)
 
 
-def check_form(path, reference, errors, warnings=None):
-    stored = reference.read_text(encoding="ascii").strip()
+def read_reference(reference):
+    """Return (body digest, input form SHA-256 or None for references written before the binding)."""
+    lines = reference.read_text(encoding="ascii").split("\n")
+    template = next((line[len(TEMPLATE_LINE):].strip() for line in lines[1:] if line.startswith(TEMPLATE_LINE)), None)
+    return lines[0].strip(), template
+
+
+def template_residue(data, suffix):
+    """Braces left after every token of the blank form is projected: tokens the writer cannot replace.
+
+    Measured values inserted into the form are absent here, so a file literally named {{year}}.txt
+    never counts, while a token in alternative text or a comment does."""
+    with ZipFile(io.BytesIO(data)) as blank:
+        if suffix.lower() == ".hwpx":
+            import report_hwpx_forms
+            text = report_hwpx_forms.form_content(blank, {})[1]
+        else:
+            text = word_content(blank, {})[1]
+    return sorted({line.strip() for line in text.splitlines() if "{{" in line or "}}" in line})
+
+
+def verify_form(path, reference, errors, warnings=None):
+    """Check the saved form against its reference. Returns (text, body matched, bound input form SHA-256)."""
+    stored, template = read_reference(reference)
     with ZipFile(path) as package:
         legacy = not package.comment.endswith(FORM_MARKER)
         if path.suffix.lower() == ".hwpx":
@@ -393,6 +426,11 @@ def check_form(path, reference, errors, warnings=None):
     if stored != digest:
         if not legacy:
             errors.append("양식 원본과 측정값으로 계산한 본문 SHA-256 불일치 (표·해시·본문 대조)")
-        elif warnings is not None:
+            return text, False, template
+        if warnings is not None:
             warnings.append("이전 양식 대조 파일 형식으로 확인했습니다. 강화된 표 구조 검증에는 새 초안이 필요합니다.")
-    return text
+    return text, True, template
+
+
+def check_form(path, reference, errors, warnings=None):
+    return verify_form(path, reference, errors, warnings)[0]

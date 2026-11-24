@@ -12,8 +12,9 @@ C2 분리: 정규식/상수 테이블은 report_patterns.py, 스캔·추출·로
 알려진 한계 (docs/GAPS.md):
 - 해시 grounding 은 파일 단위 집합 비교다. 해시 A를 파일 B 서술에 붙이는
   '해시-파일 결합 오류'는 잡지 못한다.
-- 법령 조문은 korean_law MCP 응답과의 자동 대조가 불가능하다. 출처 표기 없는
-  조문 인용을 경고(WARN)로 알릴 뿐이다. 조문 텍스트 자체의 진위는 검증하지 않는다.
+- 법령 조문은 --law-cache 로 받은 korean_law MCP 응답 캐시의 조문 레코드(법령·시행일·조·항)와만
+  대조한다. 캐시가 없으면 출처 표기 없는 조문 인용을 경고(WARN)로 알릴 뿐이다. 조문 텍스트 자체의
+  진위는 검증하지 않는다.
 """
 from __future__ import annotations
 import argparse
@@ -99,6 +100,7 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
     )
 
 
+import law_cache
 import report_docx
 import report_hwpx
 import report_templates
@@ -112,8 +114,11 @@ def main(argv=None):
     parser.add_argument("--evidence", nargs="*", default=[], help="Evidence files (audit json, audit_trail.jsonl, timeline json, etc.) for hash grounding")
     parser.add_argument("--timeline", help="Timeline events.json for timestamp grounding (optional)")
     parser.add_argument("--template-digest", type=Path, help="양식 본문 대조용 SHA-256 파일")
+    parser.add_argument("--template-source", type=Path,
+                        help="양식 초안을 만든 빈 양식 (.docx/.hwpx). 이름·크기·SHA-256을 기록하고, "
+                             "남은 자리표시자를 양식 원본의 토큰과 삽입된 측정값으로 구별한다")
     parser.add_argument("--claim-ledger", help="Optional path to claim-ledger.md for Section 6 verification")
-    parser.add_argument("--law-cache", help="korean_law MCP 응답 캐시 JSON (법령대조 근거파일, 스켈레톤 — 자동대조 미완성)")
+    parser.add_argument("--law-cache", help="korean_law MCP 응답 캐시 JSON — 역직렬화한 조문 레코드(법령·시행일·조·항)와 인용을 대조")
     parser.add_argument("--allow-historical", action="store_true", help="역사적 부처명 인용 허용 (오류 대신 경고 처리)")
     parser.add_argument("--morph-grounding", action="store_true", help="Kiwi 형태소 기반 증거-보고서 용어 일치도 검증 (Section 5.2)")
     parser.add_argument("--high-fidelity", action="store_true", help="Local High-Fidelity gate: require evidence files and <evidence> tags plus morpheme overlap (no Vertex API)")
@@ -142,6 +147,8 @@ def main(argv=None):
 
     errors = []
     warnings = []
+    input_template = None
+    recorded_template = None
     readers = {".docx": ("WordprocessingML", report_docx.read_docx), ".hwpx": ("OWPML", report_hwpx.read_hwpx)}
     suffix = report_path.suffix.lower()
     if suffix in readers:
@@ -149,14 +156,28 @@ def main(argv=None):
         fmt = suffix[1:].upper()
         lossy = False
         reference = args.template_digest or report_templates.digest_path(report_path)
-        is_form = (args.template_digest is not None or reference.exists()
+        is_form = (args.template_digest is not None or args.template_source is not None or reference.exists()
                    or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
+        # 자리표시자 판정 근거: 양식 본문이 '빈 양식 + 측정값'과 일치하면 빈 양식에서 치환되지 않는 토큰만,
+        # Markdown 초안과 같은 본문이면 판정 대상 없음(측정값만 있음), 그 밖에는 저장된 본문 전체를 본다.
+        residue = None
         try:
             if not is_form:
                 with ZipFile(report_path) as package:
                     is_form = package.comment.endswith(report_templates.FORM_MARKER)
             if is_form:
-                text = report_templates.check_form(report_path, reference, errors, warnings)
+                blank = None
+                if args.template_source is not None:
+                    blank = args.template_source.read_bytes()
+                    input_template = report_templates.input_record(args.template_source, blank)
+                text, matched, recorded_template = report_templates.verify_form(report_path, reference, errors, warnings)
+                if blank is not None:
+                    if recorded_template is None:
+                        warnings.append("대조 파일에 입력 양식 SHA-256이 없어 지정한 빈 양식이 이 초안을 만든 양식인지 확인하지 못함")
+                    if recorded_template not in (None, input_template["sha256"]):
+                        errors.append("지정한 빈 양식(--template-source)이 이 초안을 만든 양식과 다름 (SHA-256 불일치)")
+                    elif matched:
+                        residue = report_templates.template_residue(blank, args.template_source.suffix)
             elif suffix == ".docx":
                 with ZipFile(report_path) as package:
                     text = report_templates.form_text(package)
@@ -171,13 +192,18 @@ def main(argv=None):
                 body = read_document(report_path) if suffix == ".docx" else text
                 if body != report_docx.draft_text(md):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
+                elif not is_form:
+                    residue = []
         except report_templates.PACKAGE_ERRORS as exc:
             text = ""
             errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
-        if "{{" in text or "}}" in text:
-            errors.append("치환되지 않은 자리표시자가 있습니다")
-    elif args.template_digest:
-        parser.error("--template-digest는 DOCX·HWPX 양식 초안에 사용합니다.")
+        if residue:
+            errors.append(f"치환되지 않은 자리표시자가 있습니다 (빈 양식에 남은 토큰: {residue[:3]})")
+        elif residue is None and ("{{" in text or "}}" in text):
+            errors.append("치환되지 않은 자리표시자가 있습니다"
+                          + (" — 측정값과 구별하려면 --template-source로 빈 양식을 지정하세요" if is_form else ""))
+    elif args.template_digest or args.template_source:
+        parser.error("--template-digest·--template-source는 DOCX·HWPX 양식 초안에 사용합니다.")
     elif args.markdown:
         parser.error("--markdown은 DOCX·HWPX 초안 검증에 사용합니다.")
     else:
@@ -293,40 +319,21 @@ def main(argv=None):
         preview = ", ".join(citations[:3]) + (f" 외 {len(citations) - 3}" if len(citations) > 3 else "")
         warnings.append(f"조문 인용({preview})이 있으나 korean_law MCP 출처 표기 없음 — MCP 응답과 대조 전까지 미확인으로 둘 것")
 
-    # 5-0) --law-cache 실대조: korean_law MCP 응답캐시(JSON)를 기반으로 조문 실존 여부를 대조한다.
+    # 5-0) --law-cache 실대조: 역직렬화한 캐시의 조문 레코드(법령·시행일·조·항)와 인용을 구조로 대조한다.
+    law_check = None
     if args.law_cache:
         try:
-            cache_path = Path(args.law_cache)
-            cache_text = cache_path.read_text(encoding="utf-8", errors="replace")
-            json.loads(cache_text)  # 유효한 JSON 형식 검증
-            clean_cache = re.sub(r"\s+", "", cache_text)
+            law_check = law_cache.check(text, Path(args.law_cache), STATUTE_BOUNDS)
+            cache_name = law_check["cache"]
+            by_status: dict[str, list[str]] = {"matched": [], "missing": [], "unconfirmed": []}
+            for item in law_check["citations"]:
+                label = item["citation"] if item["status"] != "unconfirmed" else f"{item['citation']}: {item['reason']}"
+                if label not in by_status[item["status"]]:
+                    by_status[item["status"]].append(label)
 
-            missing_citations = []
-            matched_citations = []
-
-            for cit in citations:
-                clean_cit = re.sub(r"\s+", "", cit)
-                if clean_cit in clean_cache:
-                    matched_citations.append(cit)
-                    continue
-
-                m = re.search(r"제\s*(\d+)\s*(?:조(?:의\s*(\d+))?)", cit)
-                found = False
-                if m:
-                    art_token = f"제{m.group(1)}조"
-                    if m.group(2):
-                        art_token += f"의{m.group(2)}"
-                    if art_token in clean_cache:
-                        found = True
-                if found:
-                    matched_citations.append(cit)
-                else:
-                    missing_citations.append(cit)
-
-            if missing_citations:
-                missing_str = ", ".join(missing_citations)
+            if by_status["missing"]:
                 msg = (
-                    f"조문 인용({missing_str})이 법령 캐시({cache_path.name})에 존재하지 않음 — "
+                    f"조문 인용({', '.join(by_status['missing'])})이 법령 캐시({cache_name})에 존재하지 않음 — "
                     f"원문 대조 전까지 미확인 유지"
                 )
                 # B2-1: 조건부 FAIL 승격 — strict와 함께일 때만 errors, 기본은 WARN 유지(오탐 방지).
@@ -334,8 +341,12 @@ def main(argv=None):
                     errors.append(msg + " — 허위 조문 날조로 차단 (FAIL)")
                 else:
                     warnings.append(msg + " (WARN)")
-            elif matched_citations:
-                # 모든 조문이 캐시와 일치하면 출처 미표기 경고(WARN)를 정상 그라운딩으로 해제
+            if by_status["unconfirmed"]:
+                warnings.append(
+                    f"조문 인용({'; '.join(by_status['unconfirmed'])})을 법령 캐시({cache_name})의 법령·판본·항까지 "
+                    "특정하지 못함 — 원문 대조 전까지 미확인 유지 (WARN)")
+            if by_status["matched"] and not by_status["missing"] and not by_status["unconfirmed"]:
+                # 모든 조문이 캐시 레코드와 일치하면 출처 미표기 경고(WARN)를 정상 그라운딩으로 해제
                 # 단, --strict에서는 인간 대조를 위해 WARN 유지(오탐 방지).
                 if not getattr(args, "strict", False):
                     warnings = [w for w in warnings if not ("조문 인용" in w and "korean_law MCP 출처 표기 없음" in w)]
@@ -543,6 +554,12 @@ def main(argv=None):
         "warnings": warnings,
         "verdict": "FAIL" if errors else ("WARN" if warnings else "PASS"),
     }
+    if input_template is not None:
+        result["input_template"] = input_template
+    if recorded_template is not None:
+        result["recorded_template_sha256"] = recorded_template
+    if law_check is not None:
+        result["law_cache"] = law_check
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

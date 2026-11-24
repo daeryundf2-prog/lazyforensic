@@ -171,6 +171,9 @@ def exercise(work):
             with (ROOT / "install.sh").open("rb") as installer:
                 run(["sh"], stdin=installer)
         run([str(venv_python), "-c", "import sys; print(ascii(sys.executable), sys.version)"])
+        receipt = read_json(install / "install-receipt.json")
+        assert receipt["source"]["kind"] == "local" and receipt["source"]["sha256"] is None, receipt
+        assert receipt["requirements_sha256"] == hashlib.sha256((app / "requirements-install.txt").read_bytes()).hexdigest()
         # Print diagnostics before reports so a late failure cannot trim them from the log tail.
         print(log.read_bytes().decode("utf-8", errors="replace"), flush=True)
         help_start = log.stat().st_size
@@ -187,8 +190,12 @@ def exercise(work):
             if fmt:
                 form = out / f"양식초안.{fmt}"
                 sidecar = out / ("양식초안.본문.sha256" if fmt == "docx" else "양식초안.hwpx.본문.sha256")
+                blank = app / f"templates/report_form.{fmt}"
+                assert read_json(out / "초안검증.json")["template"]["input_template"]["sha256"] == \
+                    hashlib.sha256(blank.read_bytes()).hexdigest()
                 run([str(venv_python), str(app / "scripts/verify_report.py"), str(form),
-                     "--template-digest", str(sidecar), "--evidence", str(out / "무결성검증.json"), "--strict"])
+                     "--template-digest", str(sidecar), "--template-source", str(blank),
+                     "--evidence", str(out / "무결성검증.json"), "--strict"])
             else:
                 # The survey records its evidence root relative to its parent.
                 survey = work / "survey.json"
