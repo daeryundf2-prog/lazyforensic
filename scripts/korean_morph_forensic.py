@@ -66,6 +66,8 @@ FORENSIC_DOMAIN_TERMS = [
 ]
 
 CONTENT_TAGS = {"NNG", "NNP", "NR", "SL", "SH", "SN"}
+# 정규식 폴백에서 내용 형태소로 치지 않는 존재·부정 용언(있다·있지·없는·않았다·아니다…)
+EXISTENCE_PREDICATE_RE = re.compile(r"^(?:있|없|않|아니|아닌|아님)[가-힣]*$")
 
 _KIWI_INSTANCE = None
 
@@ -147,6 +149,11 @@ def extract_forensic_morphemes(text: str, min_len: int = 2) -> list[str]:
         # "SHA-256" and report "sha-256" both survive)
         if w.lower() in known_terms_lower:
             fallback_tokens.append(w)
+            continue
+
+        # 존재·부정 용언(있다·없다·않다·아니다와 활용형)은 Kiwi에서 VV/VA/VX/VCN이라 내용 형태소가 아니다.
+        # 폴백도 같게 뺀다. 남기면 참인 부정문('…에 있지 않다')이 증거에 없는 용어 때문에 점수가 깎인다.
+        if EXISTENCE_PREDICATE_RE.match(w):
             continue
 
         stripped_pred = re.sub(predicates, "", w)

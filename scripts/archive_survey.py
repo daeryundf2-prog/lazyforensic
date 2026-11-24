@@ -30,10 +30,12 @@ import argparse
 import hashlib
 import importlib.util
 import io
+import re
 import sys
 import tarfile
 import zipfile
 from pathlib import Path
+from xml.parsers import expat
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from console_json import print_json  # noqa: E402
@@ -118,6 +120,87 @@ def _audit_member(sig, name: str, ext: str, head: bytes, size: int, comp_size: i
             "signature": status, "flags": flags}
 
 
+# 문서 패키지(HWPX·OOXML)의 알려진 XML 구성원은 확장자가 .xml이 아니다. 선두 '<?xml'만 보고 확장자와
+# 대조하면 정상 양식(Contents/content.hpf 등)이 시그니처 불일치로 오른다. 이 경로의 구성원은 XML 루트
+# 요소를 읽어 패키지 규격의 루트와 대조한다. 같으면 정상, 다르면 그 차이를 '구조불일치'로 남긴다.
+KNOWN_PACKAGE_XML = (
+    ("hwpx", re.compile(r"Contents/content\.hpf"),
+     {"{http://www.idpf.org/2007/opf/}package", "{http://www.idpf.org/2007/opf}package"}),
+    ("hwpx", re.compile(r"META-INF/container\.rdf"), {"{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF"}),
+    ("ooxml", re.compile(r"(?:.*/)?_rels/[^/]*\.rels"),
+     {"{http://schemas.openxmlformats.org/package/2006/relationships}Relationships"}),
+)
+ROOT_READ_CAP = 1024 * 1024  # 루트 요소는 문서 첫머리에 있다 — 이만큼 읽어 못 찾으면 판정 불가
+
+
+def _package_kind(z: zipfile.ZipFile, names: set) -> str | None:
+    """mimetype 구성원(HWPX)이나 [Content_Types].xml(OOXML)로 패키지 종류를 정한다."""
+    if "mimetype" in names:
+        info = z.getinfo("mimetype")
+        if info.file_size <= 64 and not info.flag_bits & 1:
+            if z.read(info).strip().startswith(b"application/hwp+zip"):
+                return "hwpx"
+    if "[Content_Types].xml" in names:
+        return "ooxml"
+    return None
+
+
+def _xml_root(stream) -> tuple[str | None, int]:
+    """첫 요소의 '{네임스페이스}이름'과 읽은 바이트 수. XML이 아니거나 DTD가 있으면 (None, 읽은 바이트)."""
+    parser = expat.ParserCreate(namespace_separator="}")
+    found: list[str] = []
+
+    class Done(Exception):
+        pass
+
+    def start(name, attrs):
+        found.append("{" + name if "}" in name else name)
+        raise Done
+
+    def reject(*args):
+        raise ValueError("DTD")
+
+    parser.StartElementHandler = start
+    parser.StartDoctypeDeclHandler = reject
+    read = 0
+    try:
+        while read < ROOT_READ_CAP:
+            chunk = stream.read(min(64 * 1024, ROOT_READ_CAP - read))
+            read += len(chunk)
+            parser.Parse(chunk, not chunk)
+            if not chunk:
+                break
+    except Done:
+        return found[0], read
+    except (expat.ExpatError, ValueError):
+        pass
+    return None, read
+
+
+def _check_package_member(member: dict, kind: str | None, z: zipfile.ZipFile, info) -> int:
+    """알려진 패키지 XML 구성원이면 루트 요소로 판정을 고친다. 읽은 바이트 수를 돌려준다."""
+    if kind is None or member["detected"] not in ("XML", "UNKNOWN") or "error" in member:
+        return 0
+    for owner, pattern, roots in KNOWN_PACKAGE_XML:
+        if owner != kind or not pattern.fullmatch(info.filename):
+            continue
+        try:
+            with z.open(info) as stream:
+                root, read = _xml_root(stream)
+        except (OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError):
+            root, read = None, 0
+        member["flags"] = [f for f in member["flags"] if not f.startswith("시그니처불일치(")]
+        member["package_member"] = {"package": kind, "expected_root": sorted(roots), "root": root}
+        if root in roots:
+            member.update(detected="XML", signature="MATCH")
+        else:
+            member["signature"] = "MISMATCH"
+            member["flags"].append(f"구조불일치({'XML 루트 ' + root if root else 'XML 아님'}, "
+                                   f"기대 {sorted(roots)[0]})")
+        return read
+    return 0
+
+
 def audit_zip(path: Path, sig) -> dict:
     rec = {"file": str(path), "type": "zip", "members": [], "status": "complete", "warnings": []}
     budget = READ_TOTAL_CAP
@@ -126,6 +209,7 @@ def audit_zip(path: Path, sig) -> dict:
             raise ValueError("Container size limit exceeded")
         with zipfile.ZipFile(path) as z:
             infos = z.infolist()
+            kind = _package_kind(z, {i.filename for i in infos})
             if len(infos) > MEMBER_CAP:
                 rec["status"] = "partial"
                 rec["warnings"].append("Member count limit exceeded")
@@ -149,6 +233,8 @@ def audit_zip(path: Path, sig) -> dict:
                         error = str(exc)
                 member = _audit_member(sig, info.filename, Path(info.filename).suffix.lower(),
                                        head, info.file_size, info.compress_size, encrypted)
+                if sha and not capped:
+                    budget -= _check_package_member(member, kind, z, info)
                 if capped:
                     member["flags"].append("읽기상한(해시생략)")
                 if error:

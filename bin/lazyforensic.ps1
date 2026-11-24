@@ -41,6 +41,8 @@ lazyforensic - 증거 선조사 CLI 래퍼 (로컬 전용, Windows)
   lazyforensic kw <폴더> "키워드"     증거형 키워드 리포트
   lazyforensic archive <파일|폴더>    zip/tar 내부 감사
   lazyforensic pdf <파일|폴더>        PDF 구조 감사
+  lazyforensic printcheck <인쇄본.pdf> --docx 보고서초안.docx [--expect 문자열]
+                                     인쇄본 PDF에 한글이 실제로 그려졌는지 확인 (Poppler)
   lazyforensic db <파일|폴더>         SQLite 표면 조사 (읽기전용)
   lazyforensic vcheck <파일|폴더>     영상 손상 감지 (ffmpeg)
   lazyforensic vfp <영상> [--compare B]  영상 지문 (ffmpeg)
@@ -74,6 +76,7 @@ switch ($cmd) {
     "kw"       { $script = "keyword_report.py" }
     "archive"  { $script = "archive_survey.py" }
     "pdf"      { $script = "pdf_audit.py" }
+    "printcheck" { $script = "print_check.py" }
     "db"       { $script = "sqlite_survey.py" }
     "vcheck"   { $script = "video_integrity.py" }
     "vfp"      { $script = "video_fingerprint.py" }

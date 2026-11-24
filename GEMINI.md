@@ -53,7 +53,7 @@ ROLE ENVELOPE: mayFinalizeRun=false; mayModifyGlobalRunState=false; mustReturn=S
 - 증거 오디오는 명시적 `--upload-audio` 동의 없이 외부로 보내지 않는다.
 - **근거-결론 분리**: 모든 수치·해시·시각·조문은 스크립트 stdout / MCP 응답에만 근거한다. 근거 없으면 `미확인`으로 둔다. 추측으로 빈칸을 채우지 않는다.
 - **커버리지 주장은 감사 수신증으로만**: "전수/100% 커버리지" 류의 감사 결론은 `node scripts/coverage_audit.mjs --source <원문파일> --target <산출물…> --json <수신증.json>` 출력으로만 뒷받침한다. 감사 전에 원문을 반드시 파일로 저장하고, 원문 없는 감사(자체 생성 키워드 목록과의 대조)는 하지 않는다 — 도구가 `--source` 부재 시 실행을 거부한다. 수신증에는 항목별 원문 행 → 산출 위치 매핑이 남는다. 분모는 수신증 `denominator`에 적힌 대로 구조화 항목(표 행·목록 항목)과 일반 문장 전부다. 비율을 쓸 때는 "구조화 항목 a/b, 일반 문장 c/d"처럼 종류별로 옮기고, 일반 문장까지 반영되지 않았으면 전체 반영이라고 쓰지 않는다.
-- **부모 검증**: `forensic-report` 초안은 `Model: "pro"`가 `python scripts/verify_report.py <보고서> --evidence <audit.json> --morph-grounding --high-fidelity --strict`로 재검증한다. `FAIL`(종료 코드 1)이면 제출 금지. `PASS`는 자동 검사 범위(금지 문구·근거 해시·`<evidence>` 인용 원문·용어와 근거 레코드의 결합) 안에서 문제가 없다는 뜻이다. 결론의 의미·타당성은 판정하지 않으므로 결론마다 대상·속성·값이 같은 근거 레코드에 있는지 사람이 확인한다. 정확한 원문을 인용해도 결론이 다른 대상의 값을 쓰면 `주장-근거 결합 불일치`로 실패한다.
+- **부모 검증**: `forensic-report` 초안은 `Model: "pro"`가 `python scripts/verify_report.py <보고서> --evidence <audit.json> --morph-grounding --high-fidelity --strict`로 재검증한다. `FAIL`(종료 코드 1)이면 제출 금지. `PASS`는 자동 검사 범위(금지 문구·근거 해시·`<evidence>` 인용 원문·용어와 근거 레코드의 결합) 안에서 문제가 없다는 뜻이다. 결론의 의미·타당성은 판정하지 않으므로 결론마다 대상·속성·값이 같은 근거 레코드에 있는지 사람이 확인한다. 정확한 원문을 인용해도 결론이 다른 대상의 값을 쓰면 `주장-근거 결합 불일치`로 실패한다. 부정·비교 문장(‘상자 B에 있지 않다’·‘A보다 먼저’)은 용어 위치로 참·거짓을 가릴 수 없어 `주장-근거 결합 판정 불가(사람 검토)` 경고(WARN)로 남는다 — 이 경고는 사람이 근거 레코드와 대조해 해소한다.
 - **High-Fidelity 비파라메트릭 모드**: 포렌식 보고서 작성 시 `verify_report.py`에 `--high-fidelity`를 강제하며, 원본 증거와 `<evidence>` 태그 누락 또는 형태소 커버리지 70% 미달 시 즉시 차단한다.
 
 ## 스킬 라우팅

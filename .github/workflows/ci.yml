@@ -129,6 +129,32 @@ jobs:
           for f in 보고서초안.html 보고서초안.md 파일해시목록.csv 무결성검증.json; do test -f "$RUNNER_TEMP/결과/$f"; done
           grep -q TEST-2026-001 "$RUNNER_TEMP/결과/보고서초안.md"
 
+  # 인쇄본 확인: 보고서 DOCX → LibreOffice PDF → Poppler로 그린 쪽에서 한글 글자 확인.
+  # 한글 글꼴이 있을 때는 통과하고, 라틴 글꼴만 보이게 한 변환은 같은 텍스트 층이어도 실패해야 한다.
+  print-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Poppler, LibreOffice Writer and a Korean font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer fonts-noto-cjk fonts-dejavu-core
+      - name: Install pytest and the hash-pinned Pillow
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-install.txt
+      - name: D21 report tests with print tools and Pillow (print tools may not skip)
+        env:
+          LF_REQUIRE_PRINT_TOOLS: "1"
+        run: |
+          python -m pytest test/test_d21_report.py -v -rs
+
   node-syntax:
     runs-on: ubuntu-latest
     steps:

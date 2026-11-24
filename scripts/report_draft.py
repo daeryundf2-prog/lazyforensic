@@ -702,11 +702,11 @@ def render_report(ctx: dict) -> str:
     if any("entry_verification" in img for img in images):
         steps.append("논리 증거는 항목별 바이트에서 계산한 해시를 각 항목의 저장값과 대조했다.")
     if refs is not None:
-        steps.append("제공된 참조 해시 목록의 항목을 파일 경로·파일명으로 증거와 짝지어 같은 알고리즘의 해시를 대조했다. "
-                     "원시 이미지(.raw/.dd 등) 항목은 이름이 같은 EWF의 미디어 해시와 대조했다.")
+        steps.append("제공된 참조 해시 목록의 항목을 파일 경로·파일명으로 증거와 짝지어 같은 알고리즘의 해시를 대조했다."
+                     + raw_media_method(refs))
     steps.append("확장자와 파일 시그니처 대조, 정확 중복, 이미지 EXIF·유사도, 압축 파일 내부, PDF 구조, "
                  "SQLite 구조, 개인정보 패턴, 영상·오디오 상태를 자동 점검했다(도구가 없는 항목은 미수행으로 표시).")
-    steps.append("파일 수정 시각·EXIF 촬영 시각·이미지 획득 기록을 모아 타임라인을 만들었다.")
+    steps.append(timeline_method(ctx["events"]))
     if post["unreadable"] or post.get("unlisted_folders"):
         steps.append("분석을 마친 뒤 대조 가능한 파일을 다시 해시했다. 열기·열거에 실패한 항목은 3장에 기록했다.")
     else:
@@ -766,6 +766,9 @@ def render_report(ctx: dict) -> str:
         ["초안검증.json", "이 초안에 대한 verify_report.py 결과"],
         [RUN_LISTING, "이번 실행이 이 폴더에 만든 파일 전체와 SHA-256 (다른 실행의 파일이 섞이지 않았는지 확인)"],
     ])
+    a("")
+    a("인쇄본(PDF)은 이 도구가 만들지 않는다. DOCX를 PDF로 바꿨다면 `lazyforensic printcheck 인쇄본.pdf --docx 보고서초안.docx`로 "
+      "한글이 실제로 그려졌는지 확인한 뒤 쓴다. PDF에서 글자가 복사된다고 인쇄된 모양까지 맞는 것은 아니다.")
     a("")
     a(f"- 작성일: {ctx['environment']['finished'][:10]}")
     a(f"- 작성 기관: {case.get('organization') or UNK}")
@@ -918,6 +921,46 @@ def findings_details(ctx: dict) -> list[str]:
     return L
 
 
+TIMELINE_SOURCE_METHOD = {"파일시스템(mtime)": "파일 수정 시각", "EXIF": "EXIF 촬영 시각",
+                          "EWF 헤더": "이미지 획득 기록", "E01 헤더": "이미지 획득 기록"}
+
+
+def raw_media_method(refs: list[dict]) -> str:
+    """원시 이미지 참조를 EWF 미디어 해시와 실제로 대조한 경우에만 그 절차와 대상 EWF를 적는다."""
+    media = [r for r in refs if r.get("matched_by") == "image_media" or r["result"] == "not_verified"]
+    if not media:
+        return ""
+    names = ", ".join(f"`{n}`" for n in sorted({r["file"] for r in media}))
+    return f" 원시 이미지(.raw/.dd 등) 항목 {len(media)}건은 이름이 같은 EWF({names})의 미디어 해시와 대조했다."
+
+
+def timeline_method(events: list[dict]) -> str:
+    """타임라인에 실제로 들어간 시각 출처만 적는다."""
+    sources = {e["source"] for e in events}
+    used = list(dict.fromkeys([label for src, label in TIMELINE_SOURCE_METHOD.items() if src in sources]
+                              + sorted(sources - TIMELINE_SOURCE_METHOD.keys())))
+    if not used:
+        return "시각 정보를 얻은 항목이 없어 타임라인은 만들지 않았다."
+    return f"{'·'.join(used)}을 모아 타임라인을 만들었다."
+
+
+def exif_limitation(events: list[dict]) -> str:
+    """EXIF 시간대 한계. 지역 시간대 이름과 숫자 오프셋을 구별하고, 이 사건 사진의 오프셋 상태를 파일 수로 적는다."""
+    text = ("EXIF 값은 편집할 수 있는 기록값이다. EXIF 촬영 시각에는 지역 시간대 이름(예: Asia/Seoul)이 없고, "
+            "UTC 오프셋은 OffsetTimeOriginal 태그가 있을 때만 숫자(+09:00 등)로 기록된다.")
+    shots = [e for e in events if e["source"] == "EXIF"]
+    if shots:
+        states = Counter(e.get("offset_status")
+                         or ("valid" if datetime.fromisoformat(e["timestamp"]).tzinfo else "absent") for e in shots)
+        parts = [f"{label} {states[key]}건" for key, label in (("valid", "유효한 오프셋"), ("empty", "빈 오프셋 태그"),
+                                                              ("malformed", "형식 오류 오프셋"), ("absent", "오프셋 태그 없음"))
+                 if states[key]]
+        text += f" 이 사건의 촬영 시각 {len(shots)}건: {', '.join(parts)}."
+        if states["valid"] < len(shots):
+            text += " 유효한 오프셋이 없는 촬영 시각은 시간순 정렬에서만 KST로 가정했다."
+    return text + " EXIF가 없다고 해서 변조를 뜻하지는 않는다."
+
+
 def timeline_section(ctx: dict) -> list[str]:
     events = ctx["events"]
     L: list[str] = []
@@ -1030,7 +1073,7 @@ def limitations(ctx: dict) -> list[str]:
         "이 보고서는 자동 생성 초안이다. 법원·수사기관 제출 적격을 보증하지 않으며, 분석관 검토 없이 쓰지 않는다.",
         "파일 수정 시각은 운영체제가 기록한 값이다. 복사·내보내기·압축 해제 과정에서 바뀔 수 있고, "
         "$MFT·$SI/$FN 수준의 시각 검증은 하지 않았다.",
-        "EXIF 값은 편집할 수 있는 기록값이며, 시간대가 기록되지 않는다. EXIF가 없다고 해서 변조를 뜻하지는 않는다.",
+        exif_limitation(ctx["events"]),
         "삭제 파일 복구·카빙·파일시스템 해석(NTFS/FAT 등)·메모리·레지스트리·메신저 DB 분석은 하지 않았다. "
         "EWF 판독 범위는 획득 기록, 미디어·논리 파일 해시 대조다.",
         "참조 해시 대조는 파일 경로·파일명으로 짝을 짓는다. 이름이 같은 파일이 여러 개면 대조를 보류한다.",

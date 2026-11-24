@@ -478,6 +478,14 @@ CLAIM_ID_RE = re.compile(r"[A-Za-z0-9]+(?:[._:/-][A-Za-z0-9]+)*")
 CLAIM_SPLIT_RE = re.compile(r"(?<=[.!?。])\s+")
 # 표시용 크기(743 B, 21.8 KB, 1,024 바이트)는 단위 글자가 식별자처럼 보이므로 주장 용어에서 뺀다.
 SIZE_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?\s*(?:[KMGT]i?B|B|bytes?|바이트)(?![A-Za-z0-9])", re.IGNORECASE)
+# 부정·비교 관계는 용어의 위치로 참·거짓을 가릴 수 없다. 예: 두 상자 중 청색이 A에만 있으면 '청색 표시는 상자 B에
+# 있지 않다'는 참이지만 청색(A 레코드)과 B(다른 레코드)를 엇갈려 쓴 모양이다. 반대로 '청색 표시는 상자 A에 있지
+# 않다'는 거짓인데 용어는 한 레코드에 있다. 이런 문장은 PASS/FAIL 대신 사람 검토로 넘긴다.
+CLAIM_NEGATION_RE = re.compile(r"않|없[다었는음고이으어기지]|아니|아닌|아님|미검출|미발견|부재|"
+                               r"(?<![가-힣])못(?=\s|[하했한함])|(?<![a-z])(?:not|never|none|without)(?![a-z])")
+CLAIM_COMPARISON_RE = re.compile(r"\S보다(?:\s|$)|(?<![가-힣])(?:더|덜)\s|\d\S*\s*(?:이상|이하|초과|미만)|"
+                                 r"(?:와|과|랑)\s*(?:같|다르|다른|동일|일치|차이)|서로\s*(?:같|다르|다른)|"
+                                 r"이전|이후|먼저|나중|앞서|뒤에")
 
 
 def _evidence_records(doc) -> list:
@@ -536,7 +544,11 @@ def check_claim_binding(report_text: str, evidence_paths, extract_terms, procedu
     대응 위치는 JSON 객체에서는 같은 키 경로, 문장 레코드끼리는 단어 정렬로 정한다. 여러 대상을 나열한 문장
     (같은 위치의 값들)은 엇갈림이 아니다. 근거에 있는 식별 용어가 둘 이상인 문장만 판정하고, 과반 레코드에
     나오는 용어·한두 자리 정수(순번)·표시용 크기(743 B)는 쓰지 않는다. 헤딩·굵은 소제목 줄과 '미확인'·'미측정'
-    문장은 판정하지 않는다. 이 검사는 용어의 위치만 본다 — 문장의 의미나 결론의 타당성을 판정하지 않는다."""
+    문장은 판정하지 않는다. 이 검사는 용어의 위치만 본다 — 문장의 의미나 결론의 타당성을 판정하지 않는다.
+
+    부정('있지 않다'·'없다')이나 비교('보다'·'이후'·'와 같다')가 있는 문장은 위치가 맞아도 거짓일 수 있고
+    엇갈려도 참일 수 있다. 이런 문장은 'review'(사람 검토)로 두고 relation에 부정·비교를 적는다. 위치 대조
+    결과는 position('same-record' 또는 'crossed'와 crossed 용어)으로 함께 남긴다."""
     proc = {p.casefold() for p in procedural}
     cache: dict[str, frozenset] = {}  # 같은 값(분류명·도구명 등)이 레코드마다 반복된다
 
@@ -620,8 +632,18 @@ def check_claim_binding(report_text: str, evidence_paths, extract_terms, procedu
             claim = {"claim": sentence.strip()[:160], "terms": sorted(used), "status": "unbound" if crossed else "bound"}
             if crossed:
                 claim["crossed"] = list(crossed)
+            relation = _claim_relation(sentence)
+            if relation:
+                claim.update(status="review", relation=relation, position="crossed" if crossed else "same-record")
             claims.append(claim)
     return {"records": len(records), "claims": claims}
+
+
+def _claim_relation(sentence: str) -> list[str]:
+    """문장의 부정·비교 표현. 위치 대조로 참·거짓을 가릴 수 없는 관계라 사람 검토 대상이다."""
+    text = re.sub(r"(?:다음|아래|위|이|그|별지|별첨|표\s*\d*)\s*(?:와|과)\s*같", " ", sentence.casefold())
+    patterns = (("부정", CLAIM_NEGATION_RE), ("비교", CLAIM_COMPARISON_RE))
+    return [name for name, pattern in patterns if pattern.search(text)]
 
 
 def run_forensic_health_check() -> dict:
