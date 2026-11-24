@@ -6,7 +6,7 @@
 ## 동료에게 보낼 안내 (그대로 복사)
 
 1. PowerShell을 열고 한 줄 실행 (관리자 권한 필요 없음):
-   `irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.ps1 | iex`
+   `irm https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.ps1 | iex`
 2. PowerShell 창을 새로 열고 실행: `lazyforensic report D:\사건\증거폴더`
    - 사건 정보를 채우려면 먼저 `lazyforensic report --case-template 사건정보.txt`로 양식을 만들고
      값을 적은 뒤 `--case-info 사건정보.txt`를 붙인다.

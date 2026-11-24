@@ -35,6 +35,12 @@ case_survey.py — 증거 디렉터리 통합 선조사 파이프라인
     python scripts/case_survey.py case/ --keywords "계좌,송금" --stt -o survey.json
     python scripts/case_survey.py case/ --markdown survey.md
 
+종료 코드:
+    0 = 모든 단계를 호출했고 폴더 열거가 완전함 (단계별 실패는 표준 오류와 processing_receipt에 기록)
+    1 = 폴더 열거 실패로 조사 범위 미확인 — report·manifest와 같은 코드, 표준 오류 한 줄,
+        receipt의 "Incomplete scope" 경고와 exit_code 1
+    2 = 사용법 오류 (폴더 없음, 출력 경로가 증거 폴더 안)
+
 알려진 한계:
 - 각 단계의 한계는 개별 스크립트와 docs/GAPS.md를 따른다.
 - 이 리포트는 '표면 조사'다 — 카빙·MFT·메모리 분석은 BYO 도구 영역.
@@ -290,6 +296,9 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
 
     warnings = [f"Incomplete stage: {name}" for name, stage in report["steps"].items()
                 if incomplete(stage)]
+    if not report["scope"]["complete"]:
+        warnings.insert(0, f"Incomplete scope: {len(report['scope']['enumeration_errors'])} folder(s) "
+                           "could not be enumerated; total file count unknown")
     report["processing_receipt"] = build_receipt(
         evidence_id or str(root), "case_survey", TOOL_VERSION, root,
         source_base=root, started_at=started, case_id=case_id,
@@ -424,6 +433,9 @@ def main(argv: list[str] | None = None) -> int:
     report = survey(root, keywords, args.stt)
 
     failed = [k for k, v in report["steps"].items() if v["status"] != "ok"]
+    errors = report["scope"]["enumeration_errors"]
+    code = mod.PARTIAL_SCOPE_EXIT if errors else 0
+    report["processing_receipt"]["exit_code"] = code
     out = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         Path(args.output).write_text(out, encoding="utf-8")
@@ -432,9 +444,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.output and not args.markdown:
         print_json(report, indent=2)
 
-    print(f"선조사 완료 — 단계 {len(report['steps'])}개 중 실패 {len(failed)}개"
+    print(f"선조사 단계 호출 완료 — 단계 {len(report['steps'])}개 중 실패 {len(failed)}개"
           + (f" ({', '.join(failed)})" if failed else ""), file=sys.stderr)
-    return 0
+    if errors:
+        print(mod.partial_scope_message(errors), file=sys.stderr)
+    return code
 
 
 if __name__ == "__main__":

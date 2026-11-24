@@ -19,8 +19,8 @@ report_draft.py — 증거 폴더 하나로 한국어 포렌식 분석 보고서
 원칙 (fail-closed): 측정하지 않은 값은 "미확인"으로 남긴다. 의견·결론·법적 판단은 쓰지 않는다.
 증거 폴더에는 아무것도 쓰지 않는다 (출력 폴더가 증거 폴더 안이면 거부).
 
-종료 코드: 0 = 초안 작성 완료(불일치 없음), 1 = 해시 불일치·판독 오류 또는 초안 검증 FAIL
-           (초안은 그래도 작성됨), 2 = 사용법 오류
+종료 코드: 0 = 초안 작성 완료(불일치 없음), 1 = 해시 불일치·판독 오류·조사 범위 미확인(폴더 열거 실패,
+           scan·manifest와 같은 코드) 또는 초안 검증 FAIL (초안은 그래도 작성됨), 2 = 사용법 오류
 """
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ import html
 import importlib.util
 import io
 import json
+import os
 import platform
 import re
 import shutil
@@ -1144,11 +1145,14 @@ def write_csv(path: Path, inventory: list[dict]) -> None:
     path.write_text(buf.getvalue(), encoding="utf-8-sig", newline="")
 
 
-def run_verify(draft: Path, evidence: list[Path], markdown: Path | None = None) -> dict:
+def run_verify(draft: Path, evidence: list[Path], markdown: Path | None = None,
+               template_source: Path | None = None) -> dict:
     cmd = [sys.executable, str(SCRIPTS / "verify_report.py"), str(draft), "--evidence",
            *[str(p) for p in evidence], "--json"]
     if markdown is not None:
         cmd.extend(["--markdown", str(markdown)])
+    if template_source is not None:
+        cmd.extend(["--template-source", str(template_source)])
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         res = json.loads(proc.stdout)
@@ -1332,12 +1336,18 @@ def add_template(source: Path, result: dict):
                                           integrity_rows(result["post"], result["images"], result["references"],
                                                          result["reference_sources"], result["scope"]),
                                           result["events"], TABLE_LIMIT)
+    record = None
     try:
+        record = report_templates.input_record(source, source.read_bytes())
         report_templates.write_form(source, draft, fields)
-        checked = run_verify(draft, [paths["integrity"]])
         paths["template"] = draft
+        paths["template_reference"] = report_templates.digest_path(draft)
+        # 검증기는 빈 양식을 따로 읽어 이름·크기·SHA-256을 싣고, 초안 대조 파일에 묶인 SHA-256과 맞춘다.
+        checked = run_verify(draft, [paths["integrity"]], template_source=source)
     except report_templates.PACKAGE_ERRORS as exc:
         checked = {"verdict": "FAIL", "exit_code": 1, "errors": [f"양식을 채울 수 없음: {exc}"], "warnings": []}
+    if record is not None:
+        checked.setdefault("input_template", record)
 
     verify = result["verify"]
     verify["template"] = checked
@@ -1351,30 +1361,58 @@ def add_template(source: Path, result: dict):
     paths["verify"].write_text(json.dumps(verify, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def fresh_output_dir(out: Path) -> Path:
-    """이전 실행의 결과가 있는 폴더에는 쓰지 않는다 — 다른 사건의 양식·영수증이 섞이지 않게 새 폴더를 고른다."""
-    if not out.exists() or (out.is_dir() and not any(out.iterdir())):
-        return out
-    n = 2
-    while (candidate := out.with_name(f"{out.name}_{n}")).exists():
+def reserve_output_dir(out: Path) -> Path:
+    """이번 실행 전용 출력 폴더를 원자적으로 확보한다.
+
+    산출물 목록 자리를 O_EXCL로 먼저 만든 실행만 그 폴더를 쓴다. 새 폴더는 exist_ok 없이 만들고,
+    이미 있는 폴더는 비어 있을 때만 쓴다. 이전 결과가 있거나 같은 위치를 동시에 요청한 다른
+    실행이 먼저 확보했으면 `<이름>_2`, `<이름>_3` … 다음 번호로 넘어간다."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    candidate, n = out, 1
+    while True:
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            pass  # 비어 있는 기존 폴더도 아래 자리 생성에 성공해야 쓴다.
+        if candidate.is_dir() and not any(candidate.iterdir()):
+            try:
+                fd = os.open(candidate / RUN_LISTING, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    json.dump({"status": "in_progress",
+                               "note": "실행 중이거나 중단된 실행의 폴더다. 완료된 산출물 목록이 아니다.",
+                               "files": []}, stream, ensure_ascii=False, indent=2)
+                return candidate
         n += 1
-    return candidate
+        candidate = out.with_name(f"{out.name}_{n}")
+
+
+def published_files(res: dict) -> list[Path]:
+    return sorted({p for p in res["paths"].values() if p.is_file()})
 
 
 def write_run_listing(out: Path, res: dict) -> Path:
-    """이번 실행이 출력 폴더에 만든 파일 전부와 SHA-256 — 결과 묶음의 경계를 고정한다."""
+    """이번 실행이 게시한 파일과 SHA-256 — 폴더를 다시 훑지 않고 생성기가 쓴 경로만 싣는다."""
     listing = out / RUN_LISTING
     files = []
-    for p in sorted(out.rglob("*")):
-        if p.is_file() and p != listing:
-            _, _, sha256 = hash_file(p)
-            files.append({"path": p.relative_to(out).as_posix(), "size": p.stat().st_size, "sha256": sha256})
-    listing.write_text(json.dumps({
+    for p in published_files(res):
+        _, _, sha256 = hash_file(p)
+        files.append({"path": p.relative_to(out).as_posix(), "size": p.stat().st_size, "sha256": sha256})
+    listed = {out / f["path"] for f in files} | {listing}
+    foreign = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file() and p not in listed)
+    record = {
+        "status": "complete",
         "tool": f"LazyForensic {tool_version()} report_draft.py", "evidence_root": res["root_name"],
         "analysis_started": res["started"], "output_folder": out.name,
-        "note": "이 폴더는 이번 실행 전용이다. 아래 목록에 없는 파일은 이 실행의 산출물이 아니다.",
+        "note": "이 폴더는 이번 실행 전용이다. 아래 목록은 이번 실행이 게시한 파일이며, 목록에 없는 파일은 이 실행의 산출물이 아니다.",
         "files": files,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }
+    if foreign:
+        record["not_from_this_run"] = foreign
+        res["problems"].append(f"이 실행이 만들지 않은 파일 {len(foreign)}개가 출력 폴더에 있음 (산출물목록.json not_from_this_run)")
+    listing.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     return listing
 
 
@@ -1422,7 +1460,6 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
     requested = out.resolve()
-    out_r = fresh_output_dir(requested)
     if args.template:
         if args.template.suffix.lower() not in (".docx", ".hwpx") or not args.template.is_file():
             print("읽을 수 있는 DOCX 또는 HWPX 양식을 지정하세요 (--template)", file=sys.stderr)
@@ -1437,10 +1474,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"참조 해시 목록을 찾을 수 없습니다: {h}", file=sys.stderr)
             return 2
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else []
+    try:
+        load_case_info(case_info)  # 형식 오류는 출력 폴더를 확보하기 전에 알린다.
+    except CaseInfoError as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     print(f"LazyForensic {tool_version()} — 보고서 초안 생성 (로컬 전용, 증거 폴더는 읽기만 함)")
+    out_r = reserve_output_dir(requested)
     if out_r != requested:
-        print(f"출력 폴더에 이전 결과가 있어 덮어쓰지 않고 새 폴더에 씁니다: {out_r}")
+        print(f"출력 폴더에 이전 결과가 있거나 다른 실행이 먼저 확보해 덮어쓰지 않고 새 폴더에 씁니다: {out_r}")
     try:
         res = generate(root_r, out_r, case_info, hash_lists, keywords, args.no_image_verify,
                        docx=args.docx, hwpx=args.hwpx)
@@ -1472,6 +1515,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"초안 검증: {v.get('verdict')}" + (f" — {v['errors'][0]}" if v.get("errors") else ""))
     if res["timeline_error"]:
         print(f"타임라인: {res['timeline_error']}")
+    if res["scope"]["status"] != "complete":
+        print(evidence_manifest.partial_scope_message(res["scope"]["unlisted_folders"]), file=sys.stderr)
     if res["problems"]:
         print("확인 필요: " + "; ".join(res["problems"]))
         return 1

@@ -20,16 +20,16 @@
 
 기관 양식이 있으면 `--template 양식.hwpx` 또는 `--template 양식.docx`로 제목과 절 순서를 유지한 초안을 만들 수 있다. [양식 사용법과 자리표시자 목록](docs/REPORT_TEMPLATES.md)
 
-설치 한 줄, 실행 한 줄. 자세한 안내는 [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+설치 한 줄, 실행 한 줄. 자세한 안내는 [`docs/QUICKSTART.md`](docs/QUICKSTART.md). 설치 파일을 직접 확인하는 방법은 아래 [설치 파일 확인](#설치-파일-확인).
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.ps1 | iex
+irm https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.ps1 | iex
 ```
 
 ```sh
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/daeryundf2-prog/lazyforensic/main/install.sh | sh
+curl -fsSL https://github.com/daeryundf2-prog/lazyforensic/releases/latest/download/install.sh | sh
 ```
 
 ```text
@@ -92,6 +92,36 @@ export PATH="$PWD/bin:$PATH"              # 셸 설정에 추가하면 영구 �
 `bin/lazyforensic`은 `~/.lfenv/bin/python`을 자동으로 우선 사용하므로 별도 활성화가
 없다. 진단만 하려면 `sh bootstrap.sh --check`.
 
+### 설치 파일 확인
+
+릴리스마다 다음 자산이 붙는다(`.github/workflows/release-assets.yml`).
+
+| 자산 | 내용 |
+| :--- | :--- |
+| `lazyforensic-<태그>.zip` / `.tar.gz` | 그 태그의 프로그램 전체 (Windows / macOS·Linux) |
+| `install.ps1` / `install.sh` | 그 태그와 아카이브 SHA-256이 박힌 설치 스크립트. 그 릴리스만 설치한다 |
+| `SHA256SUMS` | 위 네 파일의 SHA-256 |
+
+설치 스크립트는 받은 아카이브의 SHA-256을 `SHA256SUMS`, 스크립트에 박힌 값, (Windows) GitHub가 계산한 자산 digest와 모두 대조한다.
+하나라도 다르거나 릴리스 조회에 실패하면 **아무것도 바꾸지 않고 멈춘다.** main 브랜치로 대신 설치하지 않는다.
+기존 설치는 새 사본이 완성된 뒤에만 교체한다. Pillow는 `requirements-install.txt`에 적은 버전과 해시로만 설치한다(`pip --require-hashes`).
+검증 자산이 없는 이전 릴리스(v1.6.2 이하)는 설치를 거부하므로 이 변경 뒤 발행한 릴리스를 쓴다.
+
+동료가 직접 확인하는 순서 (Windows, `v1.7.0`은 설치할 태그로 바꾼다):
+
+```powershell
+$base = "https://github.com/daeryundf2-prog/lazyforensic/releases/download/v1.7.0"
+Invoke-WebRequest "$base/install.ps1" -OutFile install.ps1
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
+(Get-FileHash install.ps1 -Algorithm SHA256).Hash.ToLower()   # SHA256SUMS의 install.ps1 줄, 릴리스 페이지의 sha256과 같아야 한다
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+설치가 끝나면 `%LOCALAPPDATA%\LazyForensic\install-receipt.json`(macOS·Linux는 `~/.lazyforensic/install-receipt.json`)에
+설치한 태그(`source.tag`), 아카이브 이름과 SHA-256(`source.sha256`), 대조한 근거(`source.verified_against`), Python·Pillow 버전이 남는다.
+같은 릴리스를 설치한 PC끼리는 `source.sha256`이 같다. 다른 경로(센터 공지 등)로 받은 아카이브 해시를 추가로 고정하려면 설치 전에
+`$env:LAZYFORENSIC_SHA256 = '<해시>'`를 지정한다. 압축을 푼 폴더에서 설치(`LAZYFORENSIC_SOURCE`)하면 영수증에 `kind: local`로 남고 해시 대조는 하지 않는다.
+
 ## 법령 조회 (선택 — 한국법 MCP)
 
 법령·판례 인용 검증용 MCP 서버가 번들되어 있다. **키가 없으면 서버가 조용히 비활성**되고
@@ -100,7 +130,7 @@ export PATH="$PWD/bin:$PATH"              # 셸 설정에 추가하면 영구 �
 1. 국가법령정보센터(law.go.kr) 오픈API에서 **서비스 인증키**를 발급받는다.
 2. 빌드 (최초 1회 — `node_modules` **약 680MB** 생성, 네트워크에 따라 수 분):
    ```bash
-   node scripts/setup_korean_law.mjs   # npm install --ignore-scripts + build + 검증
+   node scripts/setup_korean_law.mjs   # 고정 커밋 확인 + npm ci --ignore-scripts + build + 빌드 입력 기록
    ```
 3. 키 설정:
    ```bash
@@ -117,6 +147,9 @@ export PATH="$PWD/bin:$PATH"              # 셸 설정에 추가하면 영구 �
 > 상태 확인: `node scripts/setup_korean_law.mjs --check` — 빌드/키 유무를 출력한다.
 > 미빌드 상태에서는 법령 조회를 시도하지 않고 exit 78로 종료한다(fail-closed).
 > 경량 배포 시 `node_modules`는 제외된다(`.gitattributes` export-ignore).
+> 재현성: 고정 커밋(`KOREAN_LAW_MCP_REF`, 기본 40자리 커밋)으로 받고 커밋된 `package-lock.json`대로 `npm ci`로 설치한다.
+> 이미 있는 `korean-law-mcp/`는 커밋이 고정값과 같고 추적 파일(잠금 파일 포함)이 바뀌지 않았을 때만 다시 빌드하며, 다르면 차이를 보여 주고 멈춘다.
+> 빌드에 쓴 커밋·잠금 파일 SHA-256·Node·npm 버전은 `korean-law-mcp/.lazyforensic-build.json`에 남고 `--check`가 출력한다.
 
 ## 5분 워크플로 (실측 예시)
 
