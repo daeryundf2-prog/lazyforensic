@@ -173,7 +173,7 @@ def content_package():
 def write_hwpx(path: Path, md: str) -> None:
     version = ET.Element("hv:HCFVersion", {"xmlns:hv": HWP + "2011/version", "tagetApplication": "WORDPROCESSOR",
                          "major": "5", "minor": "1", "micro": "1", "buildNumber": "0", "os": "1",
-                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.6.2"})
+                         "xmlVersion": "1.5", "application": "LazyForensic", "appVersion": "1.7.0"})
     container = ET.Element("container", xmlns=CONTAINER)
     roots = add(container, "rootfiles")
     for name, mime in (("Contents/content.hpf", "application/hwpml-package+xml"), ("Preview/PrvText.txt", "text/plain")):
