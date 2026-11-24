@@ -10,8 +10,8 @@ v1.1.0: 에이전트 없이 쓰는 `lazyforensic report`(보고서 초안·무�
 - 보고서 서식은 일반적인 분석 보고서 구성을 따른 기본안이다. 기관의 DOCX·HWPX 양식에 자리표시자를 넣어 같은 형식으로 초안을 만들 수 있다. [양식 사용법](REPORT_TEMPLATES.md) Markdown·HTML과 편집용 DOCX·HWPX를 만든다. HWPX의 글꼴, 긴 해시의 줄바꿈, 여러 쪽에 걸친 표는 사용하는 한글 버전에서 확인한다.
 - 삭제 파일 복구, 카빙, 파일시스템(NTFS/FAT/APFS) 해석, 레지스트리·브라우저·메신저 DB 분석은 하지 않는다. 증거 폴더에 있는 파일 그대로만 본다.
 - 파일 수정 시각은 분석 PC에서 본 `os.stat`의 정수 나노초(`st_mtime_ns`)를 KST로 환산한 값이다. 파일시스템 자체의 시각 해상도(FAT 2초, NTFS 100 ns 등)는 확인하지 않는다. `events.json`의 timestamp와 `타임라인.html`은 마이크로초까지만 표시하고 원값은 mtime·mtime_ns에 남긴다. 복사·내보내기로 바뀐 시각을 원래 시각과 구별하지 못한다.
-- EXIF 촬영 시각은 DateTimeOriginal에 SubSecTimeOriginal·OffsetTimeOriginal을 붙여 싣는다. 오프셋이 없거나 형식이 맞지 않는 사진(`offset_status` absent/malformed)은 정렬에서만 KST로 가정한다. 보고서·`timeline`·양식은 같은 정수 나노초 기준으로 정렬하고, 기록된 정밀도로 선후를 가릴 수 없는 이웃은 동률(`order_tie`)로 표시한다. 소수초는 9자리까지만 비교한다.
-- 참조 해시 대조는 원문 전체 경로 → 유니코드 정규형(NFC)을 맞춘 전체 경로 → 파일명 순으로 짝을 짓는다. 한 단계에서 후보가 여러 개면 대조를 보류하고, 이름이 바뀐 파일은 '증거에 없음'으로 나온다(해시 값만으로 역추적하지 않음).
+- EXIF 촬영 시각은 DateTimeOriginal에 SubSecTimeOriginal·OffsetTimeOriginal을 붙여 싣는다. 오프셋 태그가 없거나(`offset_status` absent), 있으나 비었거나(empty), 형식이 맞지 않는 사진(malformed)은 정렬에서만 KST로 가정한다. 보고서·`timeline`·양식·독립 HTML 타임라인은 같은 정수 나노초 기준으로 정렬하고, 기록된 정밀도로 선후를 가릴 수 없는 이웃은 동률(`order_tie`)로 표시한다. 소수초는 9자리까지만 비교한다.
+- 참조 해시 대조는 원문 전체 경로 → 유니코드 정규형(NFC)을 맞춘 전체 경로 → 대소문자만 다른 전체 경로 → 경로 끝부분 → 파일명 순으로 짝을 짓는다. 한 단계에서 후보가 여러 개면 대조를 보류하고, 이름이 바뀐 파일은 '증거에 없음'으로 나온다(해시 값만으로 역추적하지 않음).
 - 초안 검증은 `verify_report.py`의 정적 검사(근거 없는 해시·금지 문구·해시-파일 결합)다. 문장의 사실 여부를 판단하지 않는다.
 
 ## EWF 판독 (`scripts/ewf_image.py`)
@@ -89,7 +89,7 @@ PostToolUse 감사 로그는 `<cwd>/.lazyforensic/audit_trail.jsonl` 단일 파�
 - `scripts/audio_survey.py`의 RMS 발화 구간은 '후보'다 — 배경소음이 크면 무음도 발화로 잡힌다.
 - `scripts/exif_audit.py`의 EXIF는 자유롭게 편집 가능하다. '기록된 값'이지 '진실'이 아니며, EXIF 부재는 메신저 경유 흔적일 뿐 조작 증거가 아니다.
 - `scripts/osint_username.py`는 sherlock BYO다. 조회 닉네임이 외부 사이트에 노출되므로 의뢰인 동의 없이 쓰지 않는다.
-- `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다. 인코딩은 BOM → XML/HTML 선언 → 엄격한 UTF-8 → 엄격한 CP949 순으로 정하고, 어느 것으로도 해석되지 않는 파일은 '인코딩 판정 불가'로 따로 세어 검색 수에서 뺀다. 파일 전체가 UTF-8이 아니면 줄마다 다시 판정해 섞인 인코딩(`mixed`)과 해석하지 못한 줄 구간을 기록한다. 한 줄 안에서 섞인 인코딩과, 한글만 든 BOM 없는 UTF-16처럼 다른 인코딩으로도 해석되는 입력은 구별하지 못한다. 제어 문자가 1%를 넘는 파일은 텍스트가 아닌 것으로 보고 검색 수에서 뺀다.
+- `scripts/keyword_report.py`는 리터럴 검색이다. 유의어·OCR 오류·이미지 속 글자는 못 잡는다. 인코딩은 BOM → XML/HTML 선언 → 엄격한 UTF-8 → 엄격한 CP949 순으로 정하고, 어느 것으로도 해석되지 않는 파일은 '인코딩 판정 불가'로 따로 세어 검색 수에서 뺀다. 파일 전체가 UTF-8이 아니면 줄마다 다시 판정해 섞인 인코딩(`mixed`)과 해석하지 못한 줄 구간을 기록한다. CP949 줄이 Shift-JIS로도 자연스럽게 읽히거나 BOM 없는 UTF-16의 바이트 순서를 ASCII 글자로 정할 수 없으면 '인코딩 불확실'로 세고 후보 코덱 히트를 미확정으로 남긴다(`--encoding`으로 재검색). 판정은 휴리스틱이다: KS X 1001 범위 바이트만으로 된 BOM 없는 UTF-16, EUC-JP·Big5 등 다른 코덱, 한 줄 안에서 섞인 인코딩은 구별하지 못한다. 제어 문자가 1%를 넘는 파일은 텍스트가 아닌 것으로 보고 검색 수에서 뺀다.
 - `scripts/signature_check.py`는 선두 수십 바이트만 본다. 시그니처를 위조한 파일·UNKNOWN(시그니처 없는 텍스트류)은 정상일 수 있다.
 - `scripts/dedup_files.py`는 정확 중복만 확실하다. 유사 그룹은 이미지뿐이고 '어느 쪽이 원본인가'는 판정하지 않는다.
 - `scripts/archive_survey.py`는 zip/tar만 본다 — RAR/7z는 외부 도구. 플래그는 '수동 확인 필요 신호'이지 악성 판정이 아니다.

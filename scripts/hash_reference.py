@@ -201,8 +201,10 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
     result: match | mismatch | not_found | ambiguous
 
     후보는 다음 순서로 찾고 후보가 처음 나온 단계에서 멈춘다:
-    1) 원문 전체 경로(일치 → 끝부분 일치), 2) 유니코드 정규형(NFC)을 맞춘 전체 경로,
-    3) 파일명(원문 → NFC). 그 단계의 후보가 둘 이상이면 귀속을 보류(ambiguous)한다.
+    1) 원문 전체 경로, 2) 유니코드 정규형(NFC)을 맞춘 전체 경로, 3) 대소문자를 무시한 전체 경로
+    (원문 → NFC, Windows·macOS 볼륨에서 같은 파일을 가리키는 표기), 4) 경로 끝부분 일치(원문 → NFC),
+    5) 파일명(원문 → NFC). 전체 경로 단계를 모두 본 뒤에만 끝부분·파일명 후보를 쓴다.
+    그 단계의 후보가 둘 이상이면 귀속을 보류(ambiguous)한다.
     NFC로 찾았으면 normalization에 방식을 남긴다. name·file은 각각 목록과 증거의 원형이다.
     path_differs: 참조에 적힌 상위 경로와 증거 경로가 다르고 파일명만 같다 (해시 일치 ≠ 같은 파일 귀속).
     """
@@ -215,36 +217,38 @@ def match_reference(entries: list[dict], files: list[dict]) -> list[dict]:
             index.setdefault((norm, "path", p), []).append(f)
             index.setdefault((norm, "base", p.rsplit("/", 1)[-1].casefold()), []).append((p.casefold(), f))
 
-    def by_path(name: str, norm) -> tuple[list[dict], str]:
-        want = norm(name)
-        exact = index.get((norm, "path", want), [])
-        if exact:
-            return exact, "path"
-        folded = want.casefold()
+    def full_path(name: str, norm) -> list[dict]:
+        return index.get((norm, "path", norm(name)), [])
+
+    def by_fold(name: str, norm, suffix: bool) -> list[dict]:
+        folded = norm(name).casefold()
         same_base = index.get((norm, "base", folded.rsplit("/", 1)[-1]), [])
-        return [f for have, f in same_base if have == folded or have.endswith("/" + folded)
-                or folded.endswith("/" + have)], "path_suffix"
+        if not suffix:
+            return [f for have, f in same_base if have == folded]
+        return [f for have, f in same_base if have.endswith("/" + folded) or folded.endswith("/" + have)]
 
     def by_name(name: str, norm) -> list[dict]:
         return [f for _, f in index.get((norm, "base", norm(name.rsplit("/", 1)[-1]).casefold()), [])]
 
     nfc = {"normalization": "NFC", "note": "목록과 증거의 유니코드 정규형이 달라 NFC로 맞춰 대조"}
+    tiers = [("path", full_path),
+             ("path_casefold", lambda n, norm: by_fold(n, norm, False)),
+             ("path_suffix", lambda n, norm: by_fold(n, norm, True)),
+             ("basename", by_name)]
     results = []
     for e in entries:
         name = e["name"].replace("\\", "/")
         normalized: dict = {}
-        matches, how = by_path(name, str)
-        if not matches:
-            matches, how = by_path(name, _nfc)
-            normalized = nfc if matches else {}
-        if not matches:
-            how = "basename"
-            matches = by_name(name, str)
+        matches, how = [], "basename"
+        for how, find in tiers:
+            matches = find(name, str)
             if not matches:
-                matches = by_name(name, _nfc)
+                matches = find(name, _nfc)
                 normalized = nfc if matches else {}
+            if matches:
+                break
         if len(matches) > 1:
-            note = f"같은 {'경로' if how == 'path' else '이름'} {len(matches)}개"
+            note = f"같은 {'경로' if how in ('path', 'path_casefold') else '이름'} {len(matches)}개"
             if normalized:
                 note = f"유니코드 정규화(NFC) 후 {note} — 대조 보류"
             results.append({**e, "result": "ambiguous", "file": None, "matched_by": how, **normalized,

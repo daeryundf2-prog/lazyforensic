@@ -150,7 +150,24 @@ def wal_audit(path: Path) -> dict:
     out["uncommitted_frames"] = out["frames_valid"] - out["last_commit_frame"]
     rest = len(data) - off
     if stop == "stale":
-        out["stale_frames"] = rest // frame  # 이전 WAL 세대의 프레임 — SQLite도 정상적으로 무시한다
+        # 이전 WAL 세대의 프레임이면 SQLite도 정상적으로 무시한다. 다만 salt가 어긋난 프레임 뒤에
+        # 현 세대 salt가 다시 나오거나, salt-1이 현 세대보다 앞선 값이 아니면 이전 세대라고
+        # 판정할 근거가 없다 — 손상된 프레임 뒤의 커밋이 버려졌을 수 있다.
+        out["stale_frames"] = rest // frame
+        current, later = 0, 0
+        for pos in range(off, off + out["stale_frames"] * frame, frame):
+            f1, f2 = struct.unpack(">2I", data[pos + 8:pos + 16])
+            if (f1, f2) == (salt1, salt2):
+                current += 1
+            elif not 0 < (salt1 - f1) & 0xFFFFFFFF < 0x80000000:
+                later += 1
+        if current or later:
+            out["complete"] = False
+            out["generation_undetermined_frames"] = out["stale_frames"]
+            out["limitations"].append(
+                f"WAL {out['frames_valid'] + 1}번째 프레임의 salt가 현 세대와 다르지만 그 뒤 "
+                f"{out['stale_frames']}개 프레임 중 현 세대 salt {current}개·이전 세대로 볼 수 없는 salt "
+                f"{later}개 — 이전 세대 꼬리로 판정할 수 없어 그 뒤 커밋의 반영 여부 미확인")
     elif stop == "checksum":
         out["complete"] = False
         out["trailing_bytes"] = rest
@@ -177,6 +194,28 @@ def _in_scope(path: Path) -> bool:
     return stat.S_ISREG(st.st_mode) and getattr(st, "st_reparse_tag", 0) not in evidence_manifest.LINK_REPARSE_TAGS
 
 
+def _approved_alias(path: Path, allowed: set[Path]) -> Path | None:
+    """SQLite가 열 부수 파일 이름에 해당하는, 열거기가 승인한 실제 항목.
+
+    대소문자를 구별하지 않는 볼륨(Windows·macOS 기본)에서는 'x.db-WAL'로 열거된 항목을 SQLite가
+    'x.db-wal'로 연다. 같은 폴더의 승인된 항목 중 이름이 대소문자만 다르고 실제로 같은 파일(samefile)인
+    것만 연결한다 — 이름을 전역 소문자화하지 않으므로 대소문자 구별 볼륨의 다른 파일은 결합하지 않는다.
+    링크인 이름은 연결하지 않는다."""
+    if path in allowed:
+        return path
+    if os.path.islink(path):
+        return None
+    key = path.name.casefold()
+    for cand in allowed:
+        if cand.parent == path.parent and cand.name.casefold() == key:
+            try:
+                if os.path.samefile(cand, path):
+                    return cand
+            except OSError:
+                continue
+    return None
+
+
 def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | None) -> None:
     cur = conn.cursor()
     rec["page_size"] = cur.execute("PRAGMA page_size").fetchone()[0]
@@ -192,48 +231,63 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
         "ORDER BY name").fetchall()
     for name, ttype in rows:
         entry: dict = {"name": name, "type": ttype}
+        ident = '"' + name.replace('"', '""') + '"'  # SQLite 식별자 인용 규칙
         try:
             entry["row_count"] = cur.execute(
-                f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
+                f'SELECT COUNT(*) FROM {ident}').fetchone()[0]
         except sqlite3.Error as e:
             entry["row_count"] = None
             entry["count_error"] = str(e)
         try:
             entry["columns"] = [r[1] for r in cur.execute(
-                f'PRAGMA table_info("{name}")').fetchall()]
+                f'PRAGMA table_info({ident})').fetchall()]
         except sqlite3.Error:
             entry["columns"] = []
         if sample and sample[0] == name:
             try:
                 entry["sample_rows"] = [
                     list(r) for r in cur.execute(
-                        f'SELECT * FROM "{name}" LIMIT ?', (sample[1],)).fetchall()]
+                        f'SELECT * FROM {ident} LIMIT ?', (sample[1],)).fetchall()]
             except sqlite3.Error as e:
                 entry["sample_error"] = str(e)
         tables.append(entry)
     rec["tables"] = tables
     # 뷰는 테이블 행을 다시 보여 줄 뿐이므로 저장 레코드 합계에 넣지 않는다.
-    rec["total_rows"] = sum(t["row_count"] or 0 for t in tables if t["type"] == "table")
+    # 집계하지 못한 저장 테이블이 하나라도 있으면 최종 합계는 미확인이고, 센 테이블의 소계만 남긴다.
+    stored = [t for t in tables if t["type"] == "table"]
+    failed = [t["name"] for t in stored if t["row_count"] is None]
+    subtotal = sum(t["row_count"] for t in stored if t["row_count"] is not None)
+    if failed:
+        rec["total_rows"] = None
+        rec["visible_rows"] = subtotal
+        rec.setdefault("limitations", []).append(
+            f"테이블 {len(failed)}개 행 수 집계 실패({', '.join(failed)}) — 집계된 {len(stored) - len(failed)}개 "
+            f"테이블 소계 {subtotal}행, 최종 합계 미확인")
+    else:
+        rec["total_rows"] = subtotal
     rec["view_rows"] = sum(t["row_count"] or 0 for t in tables if t["type"] == "view")
 
 
-def _survey_working_copy(path: Path, rec: dict, sidecars: list[Path],
+def _survey_working_copy(path: Path, rec: dict, sidecars: list[tuple[Path, Path]],
                          sample: tuple[str, int] | None) -> None:
-    """본체와 범위 안 -wal/-journal을 임시 사본으로 복사해 커밋된 상태를 읽는다. 원본은 열지 않는다."""
+    """본체와 범위 안 -wal/-journal을 임시 사본으로 복사해 커밋된 상태를 읽는다. 원본은 열지 않는다.
+
+    sidecars: (열거기가 승인한 실제 항목, SQLite가 찾는 이름) 쌍. 사본은 SQLite가 찾는 이름으로 둔다."""
     with tempfile.TemporaryDirectory(prefix="lf-sqlite-") as tmp:
         copy = Path(tmp) / path.name
         body_sha = _copy_hashed(path, copy)
-        copied = {s.name: _copy_hashed(s, Path(tmp) / s.name) for s in sidecars}
         changed = [path.name] if body_sha != rec["sha256"] else []
-        for entry in rec.get("sidecars", []):
-            if copied[entry["file"]] != entry["sha256"]:
+        wal = None
+        for entry, (src, expected) in zip(rec.get("sidecars", []), sidecars):
+            if _copy_hashed(src, Path(tmp) / expected.name) != entry["sha256"]:
                 changed.append(entry["file"])
+            if expected.name.endswith("-wal"):
+                wal, wal_copy = entry, Path(tmp) / expected.name
         if changed:
             raise OSError("조사 중 원본 바이트가 바뀜: " + ", ".join(changed))
-        wal = next((e for e in rec.get("sidecars", []) if e["file"].endswith("-wal")), None)
         if wal is not None:
             # SQLite가 연 결과와 별개로, 복사한 바이트 그대로 프레임 경계·salt·체크섬을 검사한다.
-            wal["audit"] = wal_audit(Path(tmp) / wal["file"])
+            wal["audit"] = wal_audit(wal_copy)
             if not wal["audit"]["complete"]:
                 rec["limitations"] += [f"{wal['file']}: {t}" for t in wal["audit"]["limitations"]]
         conn = sqlite3.connect(str(copy))
@@ -266,18 +320,18 @@ def survey_db(path: Path, sample: tuple[str, int] | None = None,
     sidecars, outside = [], []
     for s in present:
         if allowed is not None:
-            ok = s in allowed
+            src = _approved_alias(s, allowed)
             reason = "증거 열거 범위 밖(링크·특수 파일 등으로 제외됨) — 읽지 않음"
         else:
-            ok = _in_scope(s)
+            src = s if _in_scope(s) else None
             reason = evidence_manifest.LINK_REASON if os.path.islink(s) else evidence_manifest.SPECIAL_REASON
-        if ok:
-            sidecars.append(s)
+        if src is not None:
+            sidecars.append((src, s))
         else:
             outside.append({"file": s.name, "reason": reason})
     if sidecars or outside:
-        rec["sidecars"] = [{"file": s.name, "size_bytes": s.stat().st_size, "sha256": sha256_file(s),
-                            "in_inventory": True} for s in sidecars]
+        rec["sidecars"] = [{"file": src.name, "size_bytes": src.stat().st_size, "sha256": sha256_file(src),
+                            "in_inventory": True} for src, _ in sidecars]
         rec["read_from"] = "working_copy"
         rec["limitations"] = []
         if outside:
@@ -290,11 +344,12 @@ def survey_db(path: Path, sample: tuple[str, int] | None = None,
             rec.pop("tables", None)
             rec["total_rows"] = None
             rec["view_rows"] = None
-            rec["error"] = f"부수 파일({', '.join(s.name for s in sidecars)}) 반영 실패 — 행 수 미확인: {e}"
+            rec["error"] = f"부수 파일({', '.join(src.name for src, _ in sidecars)}) 반영 실패 — 행 수 미확인: {e}"
             return rec
         if rec["limitations"]:
             # 열 수 있었던 상태의 행 수일 뿐, 마지막 커밋까지 취득했는지는 확인되지 않았다.
-            rec["visible_rows"] = rec["total_rows"]
+            if rec.get("total_rows") is not None:
+                rec["visible_rows"] = rec["total_rows"]
             rec["total_rows"] = None
             rec["status"] = "partial"
         else:
@@ -312,6 +367,8 @@ def survey_db(path: Path, sample: tuple[str, int] | None = None,
         rec["error"] = f"조사 실패: {e}"
     finally:
         conn.close()
+    if rec.get("limitations"):
+        rec["status"] = "partial"
     return rec
 
 

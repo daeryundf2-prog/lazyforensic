@@ -142,6 +142,7 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
                     "files_partially_searched": len(found["partial"]),
                     "files_mixed_encoding": len(found["mixed"]),
                     "encodings": found["encodings"],
+                    **mod.uncertain_summary(found),
                     "total_hits": sum(r["hit_count"] for r in results),
                     "status": found["status"],
                     "skipped": found["read_errors"], "undecodable": found["undecodable"],

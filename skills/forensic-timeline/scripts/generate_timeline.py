@@ -11,6 +11,23 @@ import html
 import json
 import sys
 from datetime import datetime
+from pathlib import Path
+
+# 보고서·timeline 병합과 같은 정수 나노초 정렬기를 쓴다 (datetime은 마이크로초까지라 900ns·100ns를 구별하지 못한다).
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import merge_timeline  # noqa: E402
+
+# 범주 → (카드 클래스, 배지 클래스, 배지 문구). 생성기(report_draft 등)가 내보내는 범주는 모두 여기 있어야 한다.
+# 목록에 없거나 범주가 없는 사건은 '미분류'로 중립 표시하고 다른 범주 필터에 넣지 않는다.
+CATEGORIES = {
+    "critical": ("tag-critical", "badge-critical", "주의"),
+    "file": ("tag-file", "badge-file", "파일행위"),
+    "media": ("tag-media", "badge-media", "촬영기록"),
+    "web": ("tag-web", "badge-web", "웹/검색"),
+    "chat": ("tag-chat", "badge-chat", "메신저"),
+    "system": ("tag-system", "badge-system", "시스템"),
+    "unclassified": ("tag-unclassified", "badge-unclassified", "미분류"),
+}
 
 # Windows(cp1252/cp949) 콘솔에서 한글 진단 메시지가 UnicodeEncodeError로 죽는 것을 막는다.
 # 커밋 e3fa4e6 ("force UTF-8 stdio in all CLI scripts")에서 이 스크립트만 누락되었다.
@@ -164,6 +181,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .timeline-item.tag-web::before {{ background: var(--warning); box-shadow: 0 0 0 2px #fef3c7; }}
   .timeline-item.tag-chat::before {{ background: var(--accent); box-shadow: 0 0 0 2px #e0e7ff; }}
   .timeline-item.tag-system::before {{ background: var(--success); box-shadow: 0 0 0 2px #bbf7d0; }}
+  .timeline-item.tag-media::before {{ background: #0e7490; box-shadow: 0 0 0 2px #cffafe; }}
+  .timeline-item.tag-unclassified::before {{ background: #94a3b8; box-shadow: 0 0 0 2px #e2e8f0; }}
 
   .item-header {{
     display: flex;
@@ -192,6 +211,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge-web {{ background: #fef3c7; color: #92400e; }}
   .badge-chat {{ background: #ede9fe; color: #5b21b6; }}
   .badge-system {{ background: #dcfce7; color: #166534; }}
+  .badge-media {{ background: #cffafe; color: #155e75; }}
+  .badge-unclassified {{ background: #f1f5f9; color: #475569; }}
+  .badge-tie {{ background: #fff7ed; color: #9a3412; margin-left: 4px; }}
 
   .item-body {{
     font-size: 14px;
@@ -245,6 +267,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button class="btn" onclick="setCategory('web', this)">🌐 웹/검색</button>
       <button class="btn" onclick="setCategory('chat', this)">💬 메신저/대화</button>
       <button class="btn" onclick="setCategory('system', this)">⚙️ 시스템</button>
+      <button class="btn" onclick="setCategory('media', this)">📷 촬영 기록</button>
+      <button class="btn" onclick="setCategory('unclassified', this)">미분류</button>
     </div>
   </div>
 
@@ -315,23 +339,41 @@ def load_events(path, max_events=DEFAULT_MAX_EVENTS):
 
 
 def order_events(events):
-    parsed = []
+    """(정렬된 이벤트, 정렬 안내). 정렬 기준은 merge_timeline과 같은 정수 나노초다.
+
+    instant_ns·mtime_ns가 있거나 시간대가 붙은 시각은 그 순간으로, 모두 시간대가 없는 시각이면 표기된
+    시각끼리 비교한다. 둘이 섞이거나 해석할 수 없는 시각이 있으면 입력 순서를 그대로 둔다.
+    선후를 구별할 수 없는 이웃은 order_tie로 표시된다(사본에만 표시하고 입력은 바꾸지 않는다)."""
+    prepared = []
     awareness = None
     for ev in events:
         raw = ev.get("timestamp")
         if not isinstance(raw, str) or not raw.strip():
             return list(events), "입력 순서 (시각 누락/형식 불명)"
-        try:
-            value = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
-        except ValueError:
-            return list(events), "입력 순서 (시각 형식 불명)"
-        current_awareness = value.tzinfo is not None
+        instant = merge_timeline.event_instant(ev)
+        aware = instant is not None
+        if instant is None:
+            # 시간대 없는 표기: 같은 표기끼리의 비교만 가능하므로 UTC로 읽어 순서만 정한다.
+            instant = merge_timeline._parse_ns(raw.strip().removesuffix("Z") + "Z")
+            if instant is None:
+                return list(events), "입력 순서 (시각 형식 불명)"
         if awareness is None:
-            awareness = current_awareness
-        elif awareness != current_awareness:
+            awareness = aware
+        elif awareness != aware:
             return list(events), "입력 순서 (타임존 표기 혼합)"
-        parsed.append((value, ev))
-    return [ev for _, ev in sorted(parsed, key=lambda item: item[0])], "시각 오름차순"
+        prepared.append({**ev, "instant_ns": instant[0], "precision_ns": instant[1]})
+    ordered = merge_timeline.order_events(prepared)
+    originals = {id(p): ev for p, ev in zip(prepared, events)}
+    out = []
+    for p in ordered:
+        ev = dict(originals[id(p)])
+        if p.get("order_tie"):
+            ev["order_tie"] = True
+        out.append(ev)
+    label = "시각 오름차순" if awareness is not False else "시각 오름차순 (시간대 미표기 — 표기된 시각끼리 비교)"
+    if any(ev.get("order_tie") for ev in out):
+        label += ", 동률 표시는 기록 정밀도 안에서 선후 미확정"
+    return out, label
 
 
 def generate_html(
@@ -342,31 +384,26 @@ def generate_html(
 ):
     items_html = []
     ordered_events, ordering = order_events(events)
-    category_map = {
-        "critical": ("tag-critical", "badge-critical", "주의"),
-        "file": ("tag-file", "badge-file", "파일행위"),
-        "web": ("tag-web", "badge-web", "웹/검색"),
-        "chat": ("tag-chat", "badge-chat", "메신저"),
-        "system": ("tag-system", "badge-system", "시스템"),
-    }
 
     for ev in ordered_events:
-        cat = str(ev.get("category", "file")).lower()
-        if cat not in category_map:
-            cat = "file"
-        tag_cls, badge_cls, badge_label = category_map[cat]
+        cat = str(ev.get("category") or "unclassified").lower()
+        if cat not in CATEGORIES:
+            cat = "unclassified"
+        tag_cls, badge_cls, badge_label = CATEGORIES[cat]
         time_str = escape_text(ev.get("timestamp", "-"))
         desc = escape_text(ev.get("description", ""))
         details = escape_text(ev.get("details", ""))
         safe_cat = escape_text(cat)
 
         detail_html = f'<div class="item-details">{details}</div>' if details else ""
+        tie_html = ('<span class="badge-tie" title="기록 정밀도 안에서 이웃 사건과 선후를 구별할 수 없음">'
+                    '동률</span>') if ev.get("order_tie") else ""
 
         item = f"""
         <div class="timeline-item {tag_cls}" data-category="{safe_cat}">
           <div class="item-header">
             <span class="item-time">{time_str}</span>
-            <span class="item-badge {badge_cls}">{badge_label}</span>
+            <span class="item-badge {badge_cls}">{badge_label}</span>{tie_html}
           </div>
           <div class="item-body">
             <div class="item-desc">{desc}</div>
