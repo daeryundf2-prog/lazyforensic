@@ -338,7 +338,8 @@ def test_case_alias_of_approved_wal_is_read_by_both_entry_points(tmp_path):
     for rec in (directory, direct):
         assert rec["total_rows"] == 2 and "out_of_scope_sidecars" not in rec
         assert rec["sidecars"][0]["sha256"] == digest and rec["sidecars"][0]["in_inventory"] is True
-    assert directory["sidecars"][0]["file"] == "sample.db-WAL"
+    # Windows Path equality is already case-insensitive, so the recorded spelling may be either one.
+    assert directory["sidecars"][0]["file"].casefold() == "sample.db-wal"
 
 
 def test_case_variant_that_is_another_file_stays_out_of_scope(tmp_path):
