@@ -41,10 +41,66 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from exif_audit import capture_time  # noqa: E402
+from exif_audit import capture_time, event_fields, zone_note  # noqa: E402
 from console_json import print_json  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_ISO_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?$")
+
+
+def _parse_ns(raw) -> tuple[int, int] | None:
+    """시간대가 붙은 ISO 8601 → (정수 나노초, 정밀도 ns). 시간대가 없거나 형식이 다르면 None.
+
+    부동소수 초나 datetime(마이크로초)을 거치지 않으므로 소수 9자리까지 그대로 비교한다.
+    """
+    m = _ISO_RE.match(str(raw or "").strip())
+    if not m:
+        try:  # 다른 ISO 표기 (마이크로초까지)
+            dt = datetime.fromisoformat(str(raw or "").strip().replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        if dt.tzinfo is None:
+            return None
+        return (dt - EPOCH) // timedelta(microseconds=1) * 1000, 1000
+    if not m.group(4):
+        return None
+    day, clock, frac, zone = m.groups()
+    try:
+        whole = datetime.fromisoformat(f"{day}T{clock}{'+00:00' if zone == 'Z' else zone}")
+    except ValueError:
+        return None
+    frac = frac or ""
+    return ((whole - EPOCH) // timedelta(seconds=1) * 10**9 + int((frac + "0" * 9)[:9]),
+            10 ** (9 - min(len(frac), 9)))
+
+
+def event_instant(ev: dict) -> tuple[int, int] | None:
+    """이벤트의 정렬 기준 (정수 나노초, 정밀도 ns). 보고서·timeline·양식이 같은 값을 쓴다.
+
+    우선순위: instant_ns(EXIF 원문 소수부로 계산) → mtime_ns(운영체제 원값) → timestamp.
+    시간대가 없는 timestamp는 순간을 정할 수 없으므로 None (맨 뒤에 둔다).
+    """
+    if isinstance(ev.get("instant_ns"), int):
+        return ev["instant_ns"], ev.get("precision_ns") or 1
+    if isinstance(ev.get("mtime_ns"), int):
+        return ev["mtime_ns"], 1
+    return _parse_ns(ev.get("timestamp"))
+
+
+def order_events(events: list[dict]) -> list[dict]:
+    """정수 나노초로 시간순 정렬(같은 값은 입력 순서 유지)하고 구별할 수 없는 이웃을 동률로 표시한다.
+
+    두 이벤트를 더 거친 쪽 정밀도로 버림한 값이 같으면 선후를 알 수 없으므로 order_tie를 단다.
+    """
+    keyed = [(event_instant(ev), ev) for ev in events]
+    keyed.sort(key=lambda kv: (kv[0] is None, kv[0][0] if kv[0] else 0))
+    for (a, ev_a), (b, ev_b) in zip(keyed, keyed[1:]):
+        if a and b:
+            step = max(a[1], b[1])
+            if a[0] // step == b[0] // step:
+                ev_a["order_tie"] = ev_b["order_tie"] = True
+    return [ev for _, ev in keyed]
 
 
 def _load_json(path: str):
@@ -75,9 +131,13 @@ def events_from_manifest(path: str) -> list[dict]:
     out = []
     for f in files:
         ts = _norm_iso(f.get("mtime", ""))
-        out.append({"timestamp": ts or f.get("mtime", ""), "source": "파일시스템",
-                    "description": f"파일 수정(기록값): {f['path']}",
-                    "file": f["path"], "sha256": f.get("sha256", "")[:16]})
+        ev = {"timestamp": ts or f.get("mtime", ""), "source": "파일시스템",
+              "description": f"파일 수정(기록값): {f['path']}",
+              "file": f["path"], "sha256": f.get("sha256", "")[:16]}
+        if isinstance(f.get("mtime_ns"), int):
+            # timestamp는 마이크로초까지다. 정렬과 원값은 운영체제가 돌려준 정수 나노초로 한다.
+            ev["mtime_ns"] = f["mtime_ns"]
+        out.append(ev)
     return out
 
 
@@ -107,12 +167,13 @@ def events_from_exif(path: str) -> list[dict]:
         if shot is None:
             continue
         ev = {"timestamp": shot["timestamp"], "source": "EXIF",
-              "description": f"촬영(기록값): {Path(r['file']).name}",
-              "file": r["file"]}
+              "description": f"촬영(기록값, {zone_note(shot)}): {Path(r['file']).name}",
+              "file": r["file"], **event_fields(shot)}
         if not shot["offset"]:
-            # 오프셋이 기록되지 않은 경우에만 KST를 가정하고, 가정했다고 남긴다.
+            # 오프셋이 없거나 형식이 맞지 않으면 KST를 가정하고, 가정했다고 남긴다.
             ev["timestamp"] = shot["timestamp"] + "+09:00"
-            ev["note"] = "OffsetTimeOriginal 미기록 — KST로 가정"
+            ev["note"] = ("OffsetTimeOriginal 형식 오류 — KST로 가정" if shot["offset_status"] == "malformed"
+                          else "OffsetTimeOriginal 미기록 — KST로 가정")
         out.append(ev)
     return out
 
@@ -230,17 +291,7 @@ def merge(manifests, kakaos, exifs, stts, anchors, plasos=None) -> dict:
         a, u = events_from_stt(p, anchors)
         events += a
         unanchored += u
-    def sort_key(event):
-        try:
-            ts = datetime.fromisoformat(str(event.get("timestamp", "")).replace("Z", "+00:00"))
-            if ts.tzinfo is None:
-                return (1, datetime.min.replace(tzinfo=timezone.utc))
-            return (0, ts.astimezone(timezone.utc))
-        except (ValueError, TypeError):
-            return (1, datetime.min.replace(tzinfo=timezone.utc))
-
-    events.sort(key=sort_key)
-    return {"events": events, "unanchored_stt": unanchored, "inputs": inputs}
+    return {"events": order_events(events), "unanchored_stt": unanchored, "inputs": inputs}
 
 
 def main(argv: list[str] | None = None) -> int:

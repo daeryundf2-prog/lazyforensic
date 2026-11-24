@@ -22,6 +22,11 @@ keyword_report.py — 증거형 키워드 검색 리포트
   '인코딩 판정 불가'로 따로 세고 검색한 파일 수에 넣지 않는다.
   BOM 없는 UTF-16은 NUL 바이트 위치로만 알아본다. 한글만 든 BOM 없는
   UTF-16처럼 다른 인코딩으로도 해석되는 입력은 구별하지 못한다.
+- 파일 전체가 UTF-8이 아니면 줄마다 UTF-8 → CP949로 다시 판정한다. 줄마다 코덱이 다르면
+  'mixed'로 표시하고 코덱 구간을 남긴다. 해석하지 못한 줄은 검색하지 않은 구간으로 적고
+  그 파일은 부분 검색으로 센다. 한 줄 안에서 코덱이 섞인 경우는 구별하지 못한다.
+- 디코딩에 성공해도 제어 문자 비율이 1%를 넘으면 텍스트가 아닌 기록으로 보고
+  텍스트 검색 수에서 빼 따로 센다.
 - 줄과 키워드를 NFC로 맞춘 뒤 비교한다 (macOS 등의 NFD 한글 대응).
 """
 from __future__ import annotations
@@ -106,18 +111,97 @@ def decode_text(data: bytes) -> tuple[str | None, str | None, str]:
     return None, None, "UTF-8·CP949 어느 쪽으로도 해석되지 않음"
 
 
-def search_file_result(path: Path, keywords: list[str], context: int) -> dict:
-    """{'hits', 'error', 'encoding', 'basis', 'undecodable'}을 반환한다.
+# 텍스트에 나오지 않는 C0 제어 문자 (탭·줄바꿈·폼피드·ESC 제외). 디코딩에 성공해도 이 비율이 높으면 텍스트가 아니다.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0e-\x1a\x1c-\x1f\x7f]")
+NOT_TEXT_RATIO = 0.01
 
-    읽기 실패(error)와 인코딩 판정 불가(undecodable)는 '히트 없음'이 아니라 검색 불가다.
+
+def _runs(numbers: list[int]) -> list[list[int]]:
+    """오름차순 줄 번호를 [처음, 끝] 구간으로 묶는다."""
+    runs: list[list[int]] = []
+    for n in numbers:
+        if runs and runs[-1][1] == n - 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    return runs
+
+
+def decode_lines(data: bytes) -> dict | None:
+    """줄마다 엄격한 UTF-8 → CP949 순으로 해석한다 (BOM·NUL·선언이 없는 파일 전용).
+
+    한 파일에 UTF-8 줄과 CP949 줄이 섞이면 파일 전체 CP949 해석은 UTF-8 한글을 다른
+    글자로 바꿔 '미검출'을 만든다. 줄 단위 판정 결과 코덱이 섞였거나 해석하지 못한 줄이
+    있으면 {'lines', 'encoding', 'segments', 'unsearched_lines'}를 돌려준다.
+    모든 줄이 한 코덱으로 해석되면 None (파일 단위 판정을 그대로 쓴다).
     """
+    lines: list[str] = []
+    kinds: list[str] = []
+    for raw in data.split(b"\n"):
+        if raw.isascii():
+            lines.append(raw.decode("ascii"))
+            kinds.append("ascii")
+            continue
+        for codec in ("utf-8", "cp949"):
+            try:
+                lines.append(raw.decode(codec))
+                kinds.append(codec)
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            lines.append("")
+            kinds.append("undecodable")
+    used = {k for k in kinds if k not in ("ascii", "undecodable")}
+    bad = [i + 1 for i, k in enumerate(kinds) if k == "undecodable"]
+    if not used or (not bad and len(used) == 1):
+        return None
+    segments: list[dict] = []
+    for i, k in enumerate(kinds):
+        if k == "ascii":
+            continue
+        if segments and segments[-1]["encoding"] == k and segments[-1]["last_line"] == i:
+            segments[-1]["last_line"] = i + 1
+        else:
+            segments.append({"first_line": i + 1, "last_line": i + 1, "encoding": k})
+    return {"lines": lines, "encoding": "mixed" if len(used) > 1 else used.pop(),
+            "segments": segments, "unsearched_lines": _runs(bad)}
+
+
+def not_text_reason(text: str) -> str | None:
+    """디코딩된 문자열을 텍스트로 볼 수 없는 근거 (제어 문자 비율). 텍스트면 None."""
+    controls = len(_CONTROL_RE.findall(text))
+    if text and controls > len(text) * NOT_TEXT_RATIO:
+        return f"제어 문자 {controls}개 / {len(text)}자 — 텍스트가 아닌 바이너리 기록으로 판단"
+    return None
+
+
+def search_file_result(path: Path, keywords: list[str], context: int) -> dict:
+    """{'hits', 'error', 'encoding', 'basis', 'undecodable', 'not_text', 'segments', 'unsearched_lines'}.
+
+    읽기 실패(error)·인코딩 판정 불가(undecodable)·텍스트 아님(not_text)은 '히트 없음'이 아니라
+    검색 불가다. 디코딩 성공은 텍스트라는 뜻이 아니다. unsearched_lines는 해석하지 못해
+    검색하지 않은 줄 구간, segments는 줄 단위로 판정한 코덱 구간이다.
+    """
+    empty = {"hits": [], "error": None, "encoding": None, "basis": None, "undecodable": None,
+             "not_text": None, "segments": None, "unsearched_lines": []}
     try:
         data = path.read_bytes()
     except OSError as e:
-        return {"hits": [], "error": str(e), "encoding": None, "basis": None, "undecodable": None}
+        return {**empty, "error": str(e)}
     text, codec, basis = decode_text(data)
+    segments, unsearched = None, []
+    if codec in ("cp949", None) and basis in ("strict", "UTF-8·CP949 어느 쪽으로도 해석되지 않음"):
+        per_line = decode_lines(data)
+        if per_line is not None:
+            text = "\n".join(per_line["lines"])
+            codec, basis = per_line["encoding"], "per_line"
+            segments, unsearched = per_line["segments"], per_line["unsearched_lines"]
     if text is None:
-        return {"hits": [], "error": None, "encoding": None, "basis": None, "undecodable": basis}
+        return {**empty, "undecodable": basis}
+    reason = not_text_reason(text)
+    if reason:
+        return {**empty, "encoding": codec, "basis": basis, "not_text": reason}
     lines = text.splitlines()
     wanted = [(kw, unicodedata.normalize("NFC", kw)) for kw in keywords]
     hits = []
@@ -139,7 +223,8 @@ def search_file_result(path: Path, keywords: list[str], context: int) -> dict:
                     ]
                 hits.append(hit)
                 break  # 같은 줄에서 키워드 여러 개면 한 번만
-    return {"hits": hits, "error": None, "encoding": codec, "basis": basis, "undecodable": None}
+    return {**empty, "hits": hits, "encoding": codec, "basis": basis,
+            "segments": segments, "unsearched_lines": unsearched}
 
 
 def search_file(path: Path, keywords: list[str], context: int) -> list[dict]:
@@ -148,7 +233,60 @@ def search_file(path: Path, keywords: list[str], context: int) -> list[dict]:
         raise OSError(result["error"])
     if result["undecodable"] is not None:
         raise ValueError(result["undecodable"])
+    if result.get("not_text") is not None:
+        raise ValueError(result["not_text"])
     return result["hits"]
+
+
+def search_files(files: list[Path], keywords: list[str], context: int) -> dict:
+    """텍스트 확장자 파일을 검색하고 검색 범위를 분류한다 (CLI·선조사 공통).
+
+    searched만 검색 분모다. read_errors·undecodable·not_text는 검색 불가이고,
+    partial은 일부 줄을 해석하지 못해 그 구간을 검색하지 못한 파일이다.
+    """
+    out: dict = {"searched": [], "read_errors": [], "undecodable": [], "not_text": [],
+                 "partial": [], "mixed": [], "encodings": {}, "results": []}
+    for f in files:
+        res = search_file_result(f, keywords, context)
+        if res["error"] is not None:
+            out["read_errors"].append({"file": str(f), "error": res["error"][:200]})
+            continue
+        if res["undecodable"] is not None:
+            out["undecodable"].append({"file": str(f), "reason": res["undecodable"]})
+            continue
+        if res.get("not_text") is not None:
+            out["not_text"].append({"file": str(f), "encoding": res["encoding"], "reason": res["not_text"]})
+            continue
+        out["searched"].append(str(f))
+        out["encodings"][res["encoding"]] = out["encodings"].get(res["encoding"], 0) + 1
+        if res.get("unsearched_lines"):
+            out["partial"].append({"file": str(f), "unsearched_lines": res["unsearched_lines"],
+                                   "segments": res["segments"]})
+        if res["encoding"] == "mixed":
+            out["mixed"].append({"file": str(f), "segments": res["segments"]})
+        if res["hits"]:
+            row = {"file": str(f), "sha256": sha256_file(f), "encoding": res["encoding"],
+                   "encoding_basis": res["basis"], "hit_count": len(res["hits"]), "hits": res["hits"]}
+            if res.get("segments"):
+                row["encoding_segments"] = res["segments"]
+            if res.get("unsearched_lines"):
+                row["unsearched_lines"] = res["unsearched_lines"]
+            out["results"].append(row)
+    out["status"] = ("partial" if out["read_errors"] or out["undecodable"] or out["not_text"] or out["partial"]
+                     else "complete")
+    return out
+
+
+def scope_note(result: dict) -> str:
+    """검색 결과 요약에 붙일 검색 범위 제한 문구 (보고서·선조사 공통). 없으면 빈 문자열."""
+    parts = []
+    if result.get("files_not_text"):
+        parts.append(f"텍스트 아님(바이너리 기록) {result['files_not_text']}개")
+    if result.get("files_partially_searched"):
+        parts.append(f"일부 줄 해석 불가(그 구간 검색 안 함) {result['files_partially_searched']}개")
+    if result.get("files_mixed_encoding"):
+        parts.append(f"줄마다 인코딩이 다른 파일 {result['files_mixed_encoding']}개(줄 단위 해석)")
+    return "".join(", " + p for p in parts)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -169,44 +307,29 @@ def main(argv: list[str] | None = None) -> int:
         print(f"대상을 찾을 수 없습니다: {target}", file=sys.stderr)
         return 2
 
-    searched, skipped, results = [], [], []
-    read_errors, undecodable = [], []
-    encodings: dict[str, int] = {}
+    text_files = []
+    skipped = []
     for f in files:
-        if f.suffix.lower() not in TEXT_EXTS:
-            skipped.append(str(f))
-            continue
-        res = search_file_result(f, args.keywords, args.context)
-        if res["error"] is not None:
-            skipped.append(str(f))
-            read_errors.append({"file": str(f), "error": res["error"][:200]})
-            continue
-        if res["undecodable"] is not None:
-            undecodable.append({"file": str(f), "reason": res["undecodable"]})
-            continue
-        searched.append(str(f))
-        encodings[res["encoding"]] = encodings.get(res["encoding"], 0) + 1
-        if res["hits"]:
-            results.append({
-                "file": str(f),
-                "sha256": sha256_file(f),
-                "encoding": res["encoding"],
-                "encoding_basis": res["basis"],
-                "hit_count": len(res["hits"]),
-                "hits": res["hits"],
-            })
-
+        (text_files if f.suffix.lower() in TEXT_EXTS else skipped).append(f)
+    found = search_files(text_files, args.keywords, args.context)
+    skipped = [str(f) for f in skipped] + [e["file"] for e in found["read_errors"]]
+    results = found["results"]
     report = {
         "keywords": args.keywords,
         "scope": str(target),
-        "status": "partial" if read_errors or undecodable else "complete",
-        "files_searched": len(searched),
+        "status": found["status"],
+        "files_searched": len(found["searched"]),
         "files_skipped_binary": len(skipped),
-        "files_read_failed": len(read_errors),
-        "read_errors": read_errors[:50],
-        "files_undecodable": len(undecodable),
-        "undecodable": undecodable[:50],
-        "encodings": encodings,
+        "files_read_failed": len(found["read_errors"]),
+        "read_errors": found["read_errors"][:50],
+        "files_undecodable": len(found["undecodable"]),
+        "undecodable": found["undecodable"][:50],
+        "files_not_text": len(found["not_text"]),
+        "not_text": found["not_text"][:50],
+        "files_partially_searched": len(found["partial"]),
+        "partially_searched": found["partial"][:50],
+        "files_mixed_encoding": len(found["mixed"]),
+        "encodings": found["encodings"],
         "files_with_hits": len(results),
         "total_hits": sum(r["hit_count"] for r in results),
         "results": results,
@@ -232,6 +355,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"주의: 읽기 실패 {report['files_read_failed']}개 파일 — '미검출'이 아니라 '검색 불가'다", file=sys.stderr)
         if report["files_undecodable"]:
             print(f"주의: 인코딩 판정 불가 {report['files_undecodable']}개 파일 — '미검출'이 아니라 '검색 불가'다",
+                  file=sys.stderr)
+        if report["files_not_text"]:
+            print(f"주의: 텍스트 확장자지만 텍스트가 아닌 파일 {report['files_not_text']}개 — 텍스트 검색 수에서 제외",
+                  file=sys.stderr)
+        if report["files_partially_searched"]:
+            print(f"주의: 일부 줄을 해석하지 못한 파일 {report['files_partially_searched']}개 — 그 구간은 검색 불가",
+                  file=sys.stderr)
+        if report["files_mixed_encoding"]:
+            print(f"참고: 줄마다 인코딩이 다른 파일 {report['files_mixed_encoding']}개 — 줄 단위로 해석해 검색",
                   file=sys.stderr)
         if report["total_hits"] == 0:
             print("결과: 전수 검색 범위 내 미검출" if report["status"] == "complete"

@@ -24,8 +24,11 @@ JSON(tags)에는 문자열 전체를 그대로 싣는다. 화면 출력만 발�
   값'으로만 보고할 것. 촬영 시점 확정 수단이 아니다.
 - EXIF가 지워진 파일이 '조작됐다'는 뜻이 아니다 — 대부분의 메신저
   경유 이미지는 EXIF가 없다.
-- OffsetTimeOriginal이 없으면 촬영 시각의 시간대는 미기록이다. 정렬에
-  가정이 필요하면 그 가정을 결과에 표시한다.
+- OffsetTimeOriginal이 없으면 촬영 시각의 시간대는 미기록이다. 형식이 맞지 않는
+  값(예: +09:75)은 '형식 오류'로 원문과 함께 따로 표시한다. 두 경우 모두 정렬에서만
+  KST를 가정하고 그 가정을 결과에 표시한다.
+- SubSecTimeOriginal은 9자리(나노초)까지 정렬에 쓴다. 더 긴 자릿수는 원문에 남기고
+  정렬에서는 버린다(subsec_truncated).
 """
 from __future__ import annotations
 
@@ -52,6 +55,8 @@ TAG_NAMES = {
 }
 EXIF_DT_RE = re.compile(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})")
 OFFSET_RE = re.compile(r"^([+-])(\d{2}):(\d{2})$")
+KST = timezone(timedelta(hours=9))
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 EXCERPT_CHARS = 100
 
 
@@ -67,6 +72,9 @@ def capture_time(tags: dict) -> dict | None:
 
     timestamp: 오프셋이 기록돼 있으면 그 오프셋을 붙인 ISO 8601, 없으면 시간대 없는 ISO 8601.
     소수초는 기록된 자릿수대로(최대 6자리) 싣고 원래 문자열은 subsec에 둔다.
+    instant_ns: 정렬용 정수 나노초(UTC 기준). 소수초 원문을 9자리까지 쓰고, 오프셋이 유효하지
+    않으면 KST로 가정한다. precision_ns는 기록된 소수 자릿수가 구별할 수 있는 최소 간격이다.
+    offset_raw·offset_status는 오프셋 원문과 판정(valid·absent·malformed)이다.
     """
     raw = (tags.get("DateTimeOriginal") or "").strip().rstrip("\x00")
     m = EXIF_DT_RE.match(raw)
@@ -81,13 +89,43 @@ def capture_time(tags: dict) -> dict | None:
         delta = timedelta(hours=int(om.group(2)), minutes=int(om.group(3)))
         tz = timezone(-delta if om.group(1) == "-" else delta)
     try:
-        dt = datetime(*[int(g) for g in m.groups()], int((digits + "000000")[:6]), tzinfo=tz)
+        fields = [int(g) for g in m.groups()]
+        dt = datetime(*fields, int((digits + "000000")[:6]), tzinfo=tz)
+        whole = datetime(*fields, tzinfo=tz or KST)
     except ValueError:
         return None
     spec = "seconds" if not digits else "milliseconds" if len(digits) <= 3 else "microseconds"
+    seconds = (whole - EPOCH) // timedelta(seconds=1)
     return {"timestamp": dt.isoformat(timespec=spec), "offset": offset_raw if tz else None,
             "subsec": subsec or None, "raw": raw,
-            "timezone": "recorded" if tz else "not_recorded"}
+            "timezone": "recorded" if tz else "not_recorded",
+            "offset_raw": offset_raw or None,
+            "offset_status": "valid" if tz else "malformed" if offset_raw else "absent",
+            "instant_ns": seconds * 10**9 + int((digits + "0" * 9)[:9]),
+            "precision_ns": 10 ** (9 - min(len(digits), 9)),
+            "subsec_truncated": len(digits) > 9}
+
+
+def zone_note(shot: dict) -> str:
+    """촬영 시각의 시간대 판정 문구: 유효·미기록·형식 오류를 구별한다."""
+    if shot.get("offset"):
+        return f"UTC{shot['offset']} 기록"
+    if shot.get("offset_status") == "malformed":
+        return f"UTC 오프셋 형식 오류(원문 '{shot['offset_raw']}'), 정렬만 KST 가정"
+    return "시간대 미기록, 정렬만 KST 가정"
+
+
+def event_fields(shot: dict) -> dict:
+    """타임라인 이벤트에 싣는 촬영 시각 원문·판정·정렬 기준 (보고서·timeline 공통)."""
+    fields = {"recorded": {"DateTimeOriginal": shot["raw"], "SubSecTimeOriginal": shot["subsec"],
+                           "OffsetTimeOriginal": shot["offset_raw"]},
+              "offset_status": shot["offset_status"],
+              "instant_ns": shot["instant_ns"], "precision_ns": shot["precision_ns"]}
+    if shot["subsec_truncated"]:
+        fields["subsec_truncated"] = True
+    if not shot["offset"]:
+        fields["timezone_assumed"] = "KST (정렬 전용)"
+    return fields
 
 
 def _require_pillow():
@@ -187,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
             elif r.get("exif_present"):
                 t = r["tags"]
                 shot = r.get("capture_time")
-                when = (shot["timestamp"] + ("" if shot["offset"] else " (시간대 미기록)")) if shot else "기록없음"
+                when = (shot["timestamp"] + ("" if shot["offset"] else f" ({zone_note(shot)})")) if shot else "기록없음"
                 print(f"  {r['file']}: {excerpt(t.get('Make', '?'))} {excerpt(t.get('Model', '?'))} "
                       f"촬영 {when}"
                       + (" [GPS]" if r["has_gps"] else "")

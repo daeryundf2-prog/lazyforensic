@@ -126,29 +126,21 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
     if keywords:
         def step_keywords():
             mod = _load("keyword_report")
-            searched, results, skipped, undecodable = [], [], [], []
-            encodings: dict[str, int] = {}
-            for f in by_ext(mod.TEXT_EXTS):
-                res = mod.search_file_result(f, keywords, context=0)
-                if res["error"] is not None:
-                    skipped.append({"file": str(f), "error": res["error"]})
-                    continue
-                if res["undecodable"] is not None:
-                    # 해석할 수 없는 파일은 '미검출'이 아니므로 검색 분모에서 뺀다.
-                    undecodable.append({"file": str(f), "reason": res["undecodable"]})
-                    continue
-                searched.append(str(f))
-                encodings[res["encoding"]] = encodings.get(res["encoding"], 0) + 1
-                if res["hits"]:
-                    results.append({"file": str(f), "sha256": mod.sha256_file(f),
-                                    "encoding": res["encoding"], "encoding_basis": res["basis"],
-                                    "hit_count": len(res["hits"]), "hits": res["hits"]})
-            return {"keywords": keywords, "files_searched": len(searched),
-                    "files_undecodable": len(undecodable), "files_read_failed": len(skipped),
-                    "encodings": encodings,
+            # 검색 불가(읽기 실패·인코딩 판정 불가·텍스트 아님)는 '미검출'이 아니므로 검색 분모에서 뺀다.
+            found = mod.search_files(by_ext(mod.TEXT_EXTS), keywords, 0)
+            results = found["results"]
+            return {"keywords": keywords, "files_searched": len(found["searched"]),
+                    "files_undecodable": len(found["undecodable"]),
+                    "files_read_failed": len(found["read_errors"]),
+                    "files_not_text": len(found["not_text"]),
+                    "files_partially_searched": len(found["partial"]),
+                    "files_mixed_encoding": len(found["mixed"]),
+                    "encodings": found["encodings"],
                     "total_hits": sum(r["hit_count"] for r in results),
-                    "status": "partial" if skipped or undecodable else "complete",
-                    "skipped": skipped, "undecodable": undecodable, "results": results}
+                    "status": found["status"],
+                    "skipped": found["read_errors"], "undecodable": found["undecodable"],
+                    "not_text": found["not_text"], "partially_searched": found["partial"],
+                    "mixed_encoding": found["mixed"], "results": results}
         report["steps"]["keywords"] = _run_step("keywords", step_keywords)
 
     def step_audio():
@@ -213,10 +205,16 @@ def survey(root: Path, keywords: list[str], run_stt: bool, case_id=None, evidenc
     def step_sqlite():
         mod = _load("sqlite_survey")
         records = mod.scan(root, files=all_files)
+        limited = [{"file": r["file"], "limitations": r["limitations"]}
+                   for r in records if r.get("limitations")]
         return {"db_files": len(records),
                 "unreadable": sum(1 for r in records if mod.unreadable(r)),
                 "broken": sum(1 for r in records
                               if r.get("is_sqlite") and not r.get("integrity_ok")),
+                # 열 수는 있었지만 마지막 커밋까지 취득했는지 확인하지 못한 DB (불완전 WAL·범위 밖 부수 파일)
+                "rows_unconfirmed": len(limited),
+                "status": "partial" if limited else "complete",
+                "limitations": limited,
                 "records": records}
     report["steps"]["sqlite"] = _run_step("sqlite", step_sqlite)
 
@@ -337,7 +335,8 @@ def to_markdown(report: dict) -> str:
                 lines.append(f"- {h['file']}: {h['pii_count']}건")
         elif key == "keywords":
             lines.append(f"## {title}: {r['total_hits']}히트 ({r['files_searched']}개 파일 검색, "
-                         f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개)")
+                         f"인코딩 판정 불가 {r['files_undecodable']}개, 읽기 실패 {r['files_read_failed']}개"
+                         f"{_load('keyword_report').scope_note(r)})")
             for res in r["results"]:
                 lines.append(f"- {res['file']}: {res['hit_count']}히트")
         elif key == "audio":
@@ -371,10 +370,14 @@ def to_markdown(report: dict) -> str:
         elif key == "sqlite":
             lines.append(f"## {title}: 후보 {r['db_files']}개(판독 불가·무결성 검사 미수행 {r.get('unreadable', 0)}개), "
                          f"무결성 이상 {r['broken']}건")
+            if r.get("rows_unconfirmed"):
+                lines[-1] += f", 최종 행 수 미확인 {r['rows_unconfirmed']}개"
+            rows_text = _load("sqlite_survey").rows_text
             for rec in r["records"]:
                 if rec.get("tables"):
-                    lines.append(f"- {rec['file']}: 테이블 {len(rec['tables'])}개, "
-                                 f"총 {rec.get('total_rows', 0)}행")
+                    lines.append(f"- {rec['file']}: 테이블 {len(rec['tables'])}개, {rows_text(rec)}")
+                for text in rec.get("limitations", []):
+                    lines.append(f"  - 제한: {text}")
         elif key == "videos":
             lines.append(f"## {title}: {r['video_files']}개 영상 지문 생성")
         elif key == "video_integrity":
