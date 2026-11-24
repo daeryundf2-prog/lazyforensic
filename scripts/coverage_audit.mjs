@@ -11,6 +11,8 @@
  *      (감사 전에 원문을 반드시 파일로 저장하라는 계약의 집행기)
  *   2. 감사 키를 산출물이 아니라 원문 항목에서만 뽑는다 — 자체 키워드 목록을 만들 수 없다.
  *   3. 모든 판정은 항목별 매핑(원문 행 → 산출 파일:행, 매칭 키) 수신증으로 남긴다.
+ *   4. 분모는 구조화 항목(표 행/목록 항목)과 일반 문장을 모두 센다. 수신증의 denominator에 정의와
+ *      종류별 건수가 있다 — 목록만 반영하고 일반 문장의 관찰을 빠뜨린 산출물은 100%가 되지 않는다.
  *
  * 사용법:
  *   node coverage_audit.mjs --source <원문.md> --target <산출1.md> [--target 산출2.md ...]
@@ -92,8 +94,9 @@ function extractKeys(recordText, commonTokens, docFreqLimit) {
 	return [...keys];
 }
 
-// 원문 → 레코드(표 행/불릿/번호 항목). 헤딩은 레코드가 아니라 섹션 문맥으로 쓴다.
-// 표 헤더 행(바로 다음 행이 구분자 행인 표 행)은 항목이 아니라 스키마라 제외한다.
+// 원문 → 레코드. 구조화 항목(표 행/불릿/번호 항목)과 그 밖의 일반 문장이 모두 분모에 들어간다 —
+// 목록 옆 일반 문장에 적힌 관찰이 빠져도 100%로 나오지 않게 한다. 헤딩은 레코드가 아니라 섹션 문맥으로 쓴다.
+// 표 헤더 행(바로 다음 행이 구분자 행인 표 행)은 항목이 아니라 스키마라 제외한다. 코드 블록은 세지 않는다.
 function extractRecords(sourceText) {
 	const lines = sourceText.split(/\r?\n/);
 	const records = [];
@@ -117,14 +120,18 @@ function extractRecords(sourceText) {
 			if (isSeparatorRow(raw)) continue; // 구분자 행
 			if (i + 1 < lines.length && isSeparatorRow(lines[i + 1])) continue; // 표 헤더 행
 			const cells = tableRow[1].split('|').map((c) => c.trim());
-			records.push({ line: i + 1, section, text: cells.filter(Boolean).join(' — ') });
+			records.push({ line: i + 1, section, kind: 'structured', text: cells.filter(Boolean).join(' — ') });
 			continue;
 		}
 		const bullet = raw.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/);
 		if (bullet) {
-			records.push({ line: i + 1, section, text: bullet[1] });
+			records.push({ line: i + 1, section, kind: 'structured', text: bullet[1] });
 			continue;
 		}
+		// 일반 문장: 한 줄의 문장마다 레코드 하나 (인용 표시 '>'는 벗긴다). 글자·숫자가 없는 줄(구분선 등)은 제외.
+		const prose = raw.replace(/^\s*>\s?/, '').trim();
+		const sentences = prose.split(/(?<=[.!?。])\s+/).filter((s) => /[\p{L}\p{N}]/u.test(s));
+		sentences.forEach((text, part) => records.push({ line: i + 1, part: part + 1, section, kind: 'sentence', text }));
 	}
 	return records;
 }
@@ -178,7 +185,7 @@ if (!(opts.min >= 0 && opts.min <= 1)) fail(`--min 은 0 이상 1 이하: ${opts
 
 const sourceText = readFileCapped(opts.source);
 const records = extractRecords(sourceText);
-if (records.length === 0) fail('감사 거부 — 원문에서 레코드(표 행/불릿/번호 항목)를 하나도 추출하지 못했다. 원문 형식을 확인하라.');
+if (records.length === 0) fail('감사 거부 — 원문에서 레코드(표 행/불릿/번호 항목/일반 문장)를 하나도 추출하지 못했다. 원문 형식을 확인하라.');
 
 // 전 항목에 흔한 토큰(레코드의 34% 초과 등장)은 키에서 제외 — 오매칭 방지
 const tokenDocFreq = new Map();
@@ -214,7 +221,8 @@ for (const rec of records) {
 	const status = matchedIn.length > 0 ? 'COVERED' : 'MISSING';
 	if (matchedIn.length > 0) covered += 1;
 	const item = {
-		id: `S${String(rec.line).padStart(4, '0')}`,
+		id: `S${String(rec.line).padStart(4, '0')}${rec.part > 1 ? `.${rec.part}` : ''}`,
+		kind: rec.kind,
 		sourceLine: rec.line,
 		section: rec.section.slice(0, 60),
 		excerpt: normalize(rec.text).slice(0, 110),
@@ -226,6 +234,14 @@ for (const rec of records) {
 	perItem.push(item);
 }
 
+const count = (kind, status) => perItem.filter((it) => it.kind === kind && (!status || it.status === status)).length;
+const denominator = {
+	definition: '원문의 표 행(헤더·구분자 제외)·목록/번호 항목·그 밖의 일반 문장 전체. 헤딩과 코드 블록만 제외한다.',
+	structuredItems: count('structured'),
+	coveredStructured: count('structured', 'COVERED'),
+	sentenceItems: count('sentence'),
+	coveredSentences: count('sentence', 'COVERED'),
+};
 const rate = records.length > 0 ? covered / records.length : 0;
 const pass = rate >= opts.min;
 
@@ -237,6 +253,7 @@ const receipt = {
 	targets: opts.targets.map((t) => ({ path: t, sha256: sha256File(t) })),
 	minRequired: opts.min,
 	totalItems: records.length,
+	denominator,
 	coveredItems: covered,
 	missingItems: missing.length,
 	coverageRate: Math.round(rate * 10000) / 10000,
@@ -246,14 +263,15 @@ const receipt = {
 };
 
 const summary = [
-	`[COVERAGE AUDIT v${GUARD_PACK_VERSION}] ${pass ? 'PASS' : 'FAIL'} — ${covered}/${records.length} 항목 커버리지 ${(rate * 100).toFixed(1)}% (요구 ≥ ${(opts.min * 100).toFixed(0)}%)`,
+	`[COVERAGE AUDIT v${GUARD_PACK_VERSION}] ${pass ? 'PASS' : 'FAIL'} — ${covered}/${records.length} 항목 커버리지 ${(rate * 100).toFixed(1)}% (요구 ≥ ${(opts.min * 100).toFixed(0)}%)`
+		+ ` — 구조화 항목 ${denominator.coveredStructured}/${denominator.structuredItems}, 일반 문장 ${denominator.coveredSentences}/${denominator.sentenceItems}`,
 	`  원문: ${opts.source} (sha256 ${receipt.source.sha256.slice(0, 16)}…)`,
 	`  산출: ${opts.targets.join(', ')}`,
 ];
 if (missing.length > 0) {
 	summary.push(`  누락 ${missing.length}개 항목 (원문 행 기준):`);
 	for (const rec of missing.slice(0, 20)) {
-		summary.push(`    - L${rec.sourceLine} [${rec.section || '본문'}] ${rec.excerpt.slice(0, 90)}`);
+		summary.push(`    - L${rec.sourceLine} [${rec.section || '본문'}]${rec.kind === 'sentence' ? ' (일반 문장)' : ''} ${rec.excerpt.slice(0, 90)}`);
 	}
 	if (missing.length > 20) summary.push(`    - … 외 ${missing.length - 20}개 (수신증 JSON 참조)`);
 }

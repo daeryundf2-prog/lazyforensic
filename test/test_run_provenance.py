@@ -102,6 +102,59 @@ def test_reservation_is_exclusive_even_for_an_existing_empty_folder(tmp_path):
     assert report_draft.reserve_output_dir(out) == tmp_path / "결과_4"
 
 
+FAULT_CHILD = r"""
+import builtins, io, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import report_draft
+point, evidence, out = sys.argv[2], sys.argv[3], sys.argv[4]
+final = []
+real_listing, real_open, real_replace = report_draft.write_run_listing, builtins.open, os.replace
+
+def listing(*args, **kwargs):
+    final.append(True)
+    return real_listing(*args, **kwargs)
+
+def opened(file, mode="r", *args, **kwargs):
+    stream = real_open(file, mode, *args, **kwargs)
+    # The completion list (or its staging file) has just been opened for writing.
+    if (point == "open" and final and "w" in mode and isinstance(file, (str, os.PathLike))
+            and Path(file).name.lstrip(".").startswith(report_draft.RUN_LISTING)):
+        os._exit(24)
+    return stream
+
+def replace(src, dst):
+    if point == "before-replace" and final:
+        os._exit(24)
+    real_replace(src, dst)
+    if point == "after-replace" and final:
+        os._exit(24)
+
+report_draft.write_run_listing = listing
+builtins.open = io.open = opened
+os.replace = replace
+sys.exit(report_draft.main([evidence, "-o", out, "--no-docx", "--no-hwpx"]))
+"""
+
+
+@pytest.mark.parametrize(("point", "status"), [("open", "in_progress"), ("before-replace", "in_progress"),
+                                                ("after-replace", "complete")])
+def test_run_killed_while_publishing_its_listing_leaves_a_parseable_state(tmp_path, point, status):
+    # D17 F12: a process killed at any instant of publishing the completion list leaves a listing that
+    # parses as in_progress or complete, and a retry writes a new folder without touching it.
+    ev, out = tmp_path / "증거", tmp_path / "결과"
+    ev.mkdir()
+    (ev / "a.bin").write_bytes(b"a")
+    proc = subprocess.run([sys.executable, "-c", FAULT_CHILD, str(ROOT / "scripts"), point, str(ev), str(out)],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert proc.returncode == 24, proc.stdout + proc.stderr
+    before = (out / LISTING).read_bytes()
+    assert json.loads(before.decode("utf-8"))["status"] == status
+    assert report_draft.main([str(ev), "-o", str(out), "--no-docx", "--no-hwpx"]) == 0
+    assert read_json(tmp_path / "결과_2" / LISTING)["status"] == "complete"
+    assert (out / LISTING).read_bytes() == before
+
+
 # 7 -------------------------------------------------------------------------------------------
 
 

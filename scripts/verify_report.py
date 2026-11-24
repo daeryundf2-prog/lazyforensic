@@ -15,6 +15,9 @@ C2 분리: 정규식/상수 테이블은 report_patterns.py, 스캔·추출·로
 - 법령 조문은 --law-cache 로 받은 korean_law MCP 응답 캐시의 조문 레코드(법령·시행일·조·항)와만
   대조한다. 캐시가 없으면 출처 표기 없는 조문 인용을 경고(WARN)로 알릴 뿐이다. 조문 텍스트 자체의
   진위는 검증하지 않는다.
+- 주장-근거 결합(--morph-grounding/--high-fidelity)은 결론 문장이 한 근거 레코드의 대상에 다른 레코드의
+  값을 엇갈려 붙였는지만 용어 위치로 본다. 문장의 의미·부정·결론의 타당성은 판정하지 않는다 — PASS는 자동
+  검사 범위의 통과다.
 """
 from __future__ import annotations
 import argparse
@@ -56,6 +59,7 @@ try:
         _make_statute_pattern,
     )
     from scripts.report_core import (
+        check_claim_binding,
         check_hash_file_binding,
         extract_hashes,
         extract_timestamps,
@@ -65,6 +69,7 @@ try:
         run_forensic_health_check,
         scan_certainty_variants,
         scan_forbidden,
+        unmeasured_placeholders,
     )
 except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
     from report_patterns import (
@@ -88,6 +93,7 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
         _make_statute_pattern,
     )
     from report_core import (
+        check_claim_binding,
         check_hash_file_binding,
         extract_hashes,
         extract_timestamps,
@@ -97,6 +103,7 @@ except ImportError:  # scripts/ 가 sys.path 에 직접 있는 경우
         run_forensic_health_check,
         scan_certainty_variants,
         scan_forbidden,
+        unmeasured_placeholders,
     )
 
 
@@ -159,7 +166,8 @@ def main(argv=None):
         is_form = (args.template_digest is not None or args.template_source is not None or reference.exists()
                    or report_path.stem == Path(report_templates.OUTPUT_NAME).stem)
         # 자리표시자 판정 근거: 양식 본문이 '빈 양식 + 측정값'과 일치하면 빈 양식에서 치환되지 않는 토큰만,
-        # Markdown 초안과 같은 본문이면 판정 대상 없음(측정값만 있음), 그 밖에는 저장된 본문 전체를 본다.
+        # 일반 초안은 --evidence의 측정값(파일명 등) 안에 있지 않은 토큰을 본다. 같은 본문의 Markdown 초안은
+        # 본문 동등성 검사일 뿐 면제 근거가 아니다(그 Markdown도 같은 초안이다).
         residue = None
         try:
             if not is_form:
@@ -192,16 +200,16 @@ def main(argv=None):
                 body = read_document(report_path) if suffix == ".docx" else text
                 if body != report_docx.draft_text(md):
                     errors.append(f"{fmt} 본문이 Markdown 초안과 다름 (표·해시·본문 대조)")
-                elif not is_form:
-                    residue = []
         except report_templates.PACKAGE_ERRORS as exc:
             text = ""
             errors.append(f"{fmt} 검증 입력을 읽을 수 없음: {exc}")
         if residue:
             errors.append(f"치환되지 않은 자리표시자가 있습니다 (빈 양식에 남은 토큰: {residue[:3]})")
-        elif residue is None and ("{{" in text or "}}" in text):
-            errors.append("치환되지 않은 자리표시자가 있습니다"
-                          + (" — 측정값과 구별하려면 --template-source로 빈 양식을 지정하세요" if is_form else ""))
+        elif residue is None and is_form and ("{{" in text or "}}" in text):
+            errors.append("치환되지 않은 자리표시자가 있습니다 — 측정값과 구별하려면 --template-source로 빈 양식을 지정하세요")
+        elif residue is None and (left := unmeasured_placeholders(text, args.evidence, display_name=report_docx.display_value)):
+            errors.append(f"치환되지 않은 자리표시자가 있습니다 ({left[:3]})"
+                          + ("" if args.evidence else " — 측정값(파일명 등)이면 그 값이 든 근거 파일을 --evidence로 지정하세요"))
     elif args.template_digest or args.template_source:
         parser.error("--template-digest·--template-source는 DOCX·HWPX 양식 초안에 사용합니다.")
     elif args.markdown:
@@ -488,12 +496,16 @@ def main(argv=None):
             errors.append("[High-Fidelity Grounding 위반] 증거 기반 사실관계를 뒷받침하는 <evidence> 원문 인용 태그가 없습니다.")
 
     # 5-6) Kiwi 형태소 기반 포렌식 그라운딩 검증 (Section 5.2 & 4.2)
+    #      + 주장-근거 레코드 결합: 용어가 증거에 '있다'는 것만으로는 결론의 대상·값이 맞다는 근거가 아니다.
+    claim_binding = None
     if (args.morph_grounding or args.high_fidelity) and args.evidence:
         try:
-            from scripts.korean_morph_forensic import calculate_forensic_grounding
+            from scripts.korean_morph_forensic import (FORENSIC_PROCEDURAL_TERMS, calculate_forensic_grounding,
+                                                       extract_forensic_morphemes)
         except ImportError:
             try:
-                from korean_morph_forensic import calculate_forensic_grounding
+                from korean_morph_forensic import (FORENSIC_PROCEDURAL_TERMS, calculate_forensic_grounding,
+                                                   extract_forensic_morphemes)
             except ImportError:
                 calculate_forensic_grounding = None
 
@@ -521,6 +533,18 @@ def main(argv=None):
                         f"포렌식 형태소 그라운딩 미달 ({grounding_res['grounding_score']*100:.1f}% < {int(thresh*100)}%): "
                         f"증거에 없는 추정 용어 다수 {grounding_res['unsupported_terms'][:5]}"
                     )
+                    if args.high_fidelity:
+                        errors.append(f"[High-Fidelity Grounding 위반] {msg}")
+                    else:
+                        warnings.append(msg)
+                claim_binding = check_claim_binding(eval_target, args.evidence, extract_forensic_morphemes,
+                                                    FORENSIC_PROCEDURAL_TERMS)
+                for claim in claim_binding["claims"]:
+                    if claim["status"] != "unbound":
+                        continue
+                    subject, value = claim["crossed"]
+                    msg = (f"주장-근거 결합 불일치: '{claim['claim'][:60]}' — '{subject}'의 근거 레코드에는 그 자리에 다른 값이 "
+                           f"있는데 다른 레코드의 '{value}'를 붙임. 대상·속성·값을 같은 레코드에서 확인하거나 사람 검토 전까지 결론에서 뺄 것")
                     if args.high_fidelity:
                         errors.append(f"[High-Fidelity Grounding 위반] {msg}")
                     else:
@@ -560,6 +584,8 @@ def main(argv=None):
         result["recorded_template_sha256"] = recorded_template
     if law_check is not None:
         result["law_cache"] = law_check
+    if claim_binding is not None:
+        result["claim_binding"] = claim_binding
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -578,7 +604,8 @@ def main(argv=None):
             if args.strict:
                 print(f"[FAIL] --strict 모드: 경고가 감지되어 차단합니다.", file=sys.stderr)
         else:
-            print("[PASS] 할루시네이션 검증 통과 — 근거 없는 금지 문구/해시 없음")
+            print("[PASS] 할루시네이션 검증 통과 — 자동 검사 범위(금지 문구·근거 해시·인용 원문·용어와 근거 레코드의 결합) "
+                  "안에서 문제 없음. 결론의 의미·타당성은 판정하지 않으므로 사람이 검토한다")
 
     if errors or (args.strict and warnings):
         return 1
