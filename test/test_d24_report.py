@@ -12,6 +12,7 @@ import contextlib
 import hashlib
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -114,5 +115,15 @@ def test_printed_entry_rows_keep_their_own_header_and_whole_hashes(tmp_path):
         assert "참조항목" in pages[n], f"page {n + 1} continues the entry table without its own header"
     list_pages = [n for n, page in enumerate(pages) if "참조목록SHA-256" in page]
     assert len(list_pages) == 1, "the reference-list header repeats on the entry table's pages"
-    for digest in digests:  # once in the file-hash table, once in the entry table — each whole on one page
-        assert sum(page.count(digest) for page in pages) >= 2, f"hash split across pages: {digest}"
+    # A wrapped hash cell is a column of hex fragments; read each page's columns top to bottom so a hash is
+    # found only if all of its fragments are on one page (text order alone interleaves neighbouring cells).
+    boxes = subprocess.run(["pdftotext", "-bbox", str(pdf), "-"], capture_output=True, text=True,
+                           encoding="utf-8").stdout
+    columns: list[str] = []
+    for page in re.findall(r"<page[^>]*>(.*?)</page>", boxes, re.S):
+        cells: dict[int, list[tuple[float, str]]] = {}
+        for x, y, word in re.findall(r'<word xMin="([\d.]+)" yMin="([\d.]+)"[^>]*>([0-9a-f]+)</word>', page):
+            cells.setdefault(round(float(x)), []).append((float(y), word))
+        columns += ["".join(w for _, w in sorted(parts)) for parts in cells.values()]
+    for digest in digests:
+        assert any(digest in column for column in columns), f"hash split across pages: {digest}"

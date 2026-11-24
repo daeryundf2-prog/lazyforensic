@@ -114,15 +114,17 @@ def shape(image, scale: float, box, grid: int = 4) -> tuple:
 def substitutes(samples: list[tuple]) -> list[str]:
     """서로 다른 한글 글자가 같은 모양으로 그려진 글자(대체 글리프·빈 상자).
 
-    실제 한글 글꼴은 거친 모양이 같은 글자가 한 무리에 몇 자뿐이다(보고서 한 부 약 250자 중 최대 7자).
-    대체 글리프는 모든 글자가 한 모양(화소 위치 차로 두세 무리)이 된다. 세 글자 이상이 같은 모양인 무리 중
-    가장 큰 셋이 서로 다른 글자의 절반 이상을 덮을 때만 대체 글리프로 판정한다."""
+    실제 한글 글꼴은 거친 모양이 같은 글자가 한 무리에 몇 자뿐이다(보고서 한 부 약 250자 중 최대 8자,
+    네 글자 이상 무리를 모두 합쳐도 15% 안팎). 대체 글리프는 모든 글자가 한 모양이지만 화소 위치와
+    글자 칸 너비의 1화소 차로 여러 무리로 나뉜다 — 무리 수는 쪽 배치에 따라 달라진다. 그래서 가장 큰 몇 무리가
+    아니라 서로 다른 글자 네 개 이상(글자가 열 개 미만이면 세 개 이상)이 같은 모양인 무리를 모두 합쳐,
+    서로 다른 글자의 절반 이상을 덮을 때 대체 글리프로 판정한다."""
     chars_by_shape: dict[tuple, set] = {}
     for char, key in samples:
         chars_by_shape.setdefault(key, set()).add(char)
     distinct = {char for char, _ in samples}
-    largest = sorted((chars for chars in chars_by_shape.values() if len(chars) >= 3), key=len, reverse=True)[:3]
-    shared = set().union(*largest, set())
+    least = 3 if len(distinct) < 10 else 4
+    shared = set().union(*(chars for chars in chars_by_shape.values() if len(chars) >= least), set())
     return sorted(shared) if len(distinct) >= 5 and len(shared) * 2 >= len(distinct) else []
 
 
