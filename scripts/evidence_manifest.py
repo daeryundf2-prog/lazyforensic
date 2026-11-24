@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from console_json import print_json  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
-TOOL_VERSION = "1.7.1"
+TOOL_VERSION = "1.7.2"
 
 
 def sha256_file(path: Path) -> str:

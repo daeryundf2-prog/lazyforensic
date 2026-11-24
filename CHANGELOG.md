@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.7.2
+
+GPT 4·5차 적대적 리뷰(D21, D24) 수정판이다. **동작 변경:** 인코딩 선언이 없는 짧은 CP949 한글 줄은 EUC-JP·Big5로도 읽혀 키워드 적중이 '후보'로 남고 검색은 '부분 완료'가 된다. 사건 단위로 `LAZYFORENSIC_KEYWORD_ENCODING=cp949`(또는 `--keyword-encoding cp949`)를 지정하면 운영자 지정 코덱으로 기록되고 확정 적중이 된다.
 
 GPT 4차 적대적 리뷰(D21) 발견 1·2·6과 D17 F3·F8의 남은 부분.
 
