@@ -9,7 +9,9 @@
 - 인용 앞에 법령명이 있으면 그 법령의 레코드다. 법령명이 없으면 캐시 안에서 그 조가 한 법령·한 판본에만 있다.
 - 인용에 시행일(판본)이 붙어 있으면 같은 시행일의 레코드다. 없으면 후보 판본이 하나뿐이다.
 - 항을 인용했으면 레코드에 그 항이 있다. 항 번호 필드·항 목록·조문 식별자가 있으면 그것만 쓰고, 없을 때만
-  본문의 항 시작 표지(첫머리나 공백 뒤 ①부터 차례로)를 쓴다. 인용부호 속 ‘②’ 같은 본문 예시는 근거가 아니다.
+  본문의 줄 첫머리 항 표지(①부터 차례로)를 쓴다. 첫 줄은 조 제목(‘제2조(정의)’) 뒤의 표지도 줄 첫머리로 본다.
+  한 문장 안의 표지(‘기호 ② 를 적는다’), 인용부호 속 ‘②’, 줄을 나누지 않고 평탄화한 본문의 표지는
+  항의 근거가 아니다. 이런 본문은 항을 복원하지 않고 판정 근거에 그 이유를 남긴다.
 """
 from __future__ import annotations
 
@@ -73,21 +75,30 @@ def _first(obj: dict, keys):
     return None
 
 
-def _text_paragraphs(text: str) -> set:
-    """본문에서 항 시작 표지만 항 번호로 복원한다.
+HEADING_RE = re.compile(r"^\s*제\s*\d+\s*조(?:\s*의\s*\d+)?\s*(?:\([^()\n]*\))?")
+CLOSERS = "’”'\")」』〉》]"
 
-    항 표지는 본문 첫머리나 공백 뒤에 오고 뒤에 공백이 따르며 ①부터 차례로 이어진다. 인용부호·괄호에
-    붙은 원문자(예: ‘②’)와 순서를 벗어난 원문자는 본문 속 예시·참조라 항의 근거가 아니다."""
-    found, expected = set(), 1
-    for i, c in enumerate(text):
-        if CIRCLED.get(c) != expected:
-            continue
-        before = text[i - 1] if i else ""
-        after = text[i + 1] if i + 1 < len(text) else ""
-        if (not before or before.isspace() or before == ")") and (not after or after.isspace()):
+
+def _text_paragraphs(text: str):
+    """본문에서 줄 첫머리의 항 시작 표지만 항 번호로 복원한다. (항 번호 집합, 보류 이유 또는 None).
+
+    표지는 줄 첫머리(앞에 공백만)나 첫 줄의 조 제목 바로 뒤에 있어야 하고 ①부터 차례로 이어져야 한다.
+    줄 중간의 원문자는 본문 속 예시·참조일 수 있어 근거로 쓰지 않는다. 붙여 쓴 표지(‘①첫 항’)는 줄
+    첫머리에 있으면 받아들이고, 닫는 인용부호·괄호가 바로 붙은 표지(‘②’)는 받지 않는다."""
+    found, expected, accepted = set(), 1, 0
+    for index, line in enumerate(text.splitlines()):
+        start = len(line) - len(line.lstrip())
+        if index == 0 and (heading := HEADING_RE.match(line)):
+            start = heading.end() + len(line[heading.end():]) - len(line[heading.end():].lstrip())
+        lead = line[start:start + 1]
+        after = line[start + 1:start + 2]
+        if CIRCLED.get(lead) == expected and after not in CLOSERS:
             found.add(expected)
             expected += 1
-    return found
+            accepted += 1
+    if sum(c in CIRCLED for c in text) > accepted:
+        return found, "줄 첫머리가 아닌 항 표지(한 문장 속 예시·평탄화된 본문)는 항으로 복원하지 않음"
+    return found, None
 
 
 def _explicit_paragraphs(obj) -> set:
@@ -104,10 +115,10 @@ def _explicit_paragraphs(obj) -> set:
 
 
 def _paragraph_numbers(obj, identified=None):
-    """레코드가 밝힌 항 번호 집합. 항 정보가 없으면 None.
+    """레코드가 밝힌 항 번호 집합(없으면 None)과 본문에서 항을 복원하지 않은 이유(없으면 None).
 
     항 필드·항 목록·조문 식별자의 항(identified)이 있으면 그것만 쓴다. 구조 정보가 없을 때만 본문의
-    항 시작 표지에서 복원한다."""
+    줄 첫머리 항 표지에서 복원한다."""
     found = _explicit_paragraphs(obj) | ({identified} if identified is not None else set())
     for item in obj.get("paragraphs") or ():
         if isinstance(item, int) and not isinstance(item, bool):
@@ -121,19 +132,20 @@ def _paragraph_numbers(obj, identified=None):
                 own = {CIRCLED[lead[0]]}
             found |= own
     if found:
-        return found
+        return found, None
     text = _first(obj, TEXT_KEYS)
+    withheld = None
     if isinstance(text, str):
-        found = _text_paragraphs(text)
-    return found or None
+        found, withheld = _text_paragraphs(text)
+    return found or None, withheld
 
 
 def records(obj) -> list[dict]:
     """캐시 객체에서 조문 레코드를 모은다. 법령명·ID·시행일은 바깥 객체에서 물려받는다."""
     out: list[dict] = []
 
-    def add(ctx, article, paragraphs):
-        out.append({**ctx, "article": article, "paragraphs": paragraphs})
+    def add(ctx, article, paragraphs, withheld=None):
+        out.append({**ctx, "article": article, "paragraphs": paragraphs, "paragraph_note": withheld})
 
     def walk(node, ctx):
         if isinstance(node, list):
@@ -153,8 +165,8 @@ def records(obj) -> list[dict]:
                 break
         if (raw := _first(node, ARTICLE_KEYS)) and (parsed := parse_article(raw)):
             article, paragraph = parsed
-            paragraphs = _paragraph_numbers(node, paragraph)
-            add(ctx, article, paragraphs)
+            paragraphs, withheld = _paragraph_numbers(node, paragraph)
+            add(ctx, article, paragraphs, withheld)
         for key, value in node.items():
             if key in CONTAINER_KEYS:
                 if isinstance(value, dict):  # {"20": "본문", "제32조의2": {...}}
@@ -165,8 +177,8 @@ def records(obj) -> list[dict]:
                             continue
                         article, paragraph = parsed
                         detail = body if isinstance(body, dict) else {"text": body}
-                        paragraphs = _paragraph_numbers(detail, paragraph)
-                        add(ctx, article, paragraphs)
+                        paragraphs, withheld = _paragraph_numbers(detail, paragraph)
+                        add(ctx, article, paragraphs, withheld)
                 elif isinstance(value, list):
                     for item in value:
                         if isinstance(item, (str, int)) and (parsed := parse_article(item)):
@@ -233,8 +245,10 @@ def check(text: str, cache_path: Path, known_names=()) -> dict:
                 if not reason and len({_edition(r) for r in candidates}) > 1:
                     reason = "같은 번호 조문이 여러 법령·판본에 있어 특정할 수 없음"
                 if not reason and paragraph is not None:
+                    notes = sorted({r["paragraph_note"] for r in candidates if r["paragraph_note"]})
                     candidates = [r for r in candidates if r["paragraphs"] and paragraph in r["paragraphs"]]
-                    reason = None if candidates else f"제{paragraph}항을 확인할 항 정보가 없음"
+                    reason = None if candidates else f"제{paragraph}항을 확인할 항 정보가 없음" + (
+                        f" ({'; '.join(notes)})" if notes else "")
             if reason:
                 entry.update(status="missing" if reason == "missing" else "unconfirmed",
                              reason=None if reason == "missing" else reason)

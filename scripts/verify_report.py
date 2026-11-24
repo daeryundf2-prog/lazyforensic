@@ -16,8 +16,8 @@ C2 분리: 정규식/상수 테이블은 report_patterns.py, 스캔·추출·로
   대조한다. 캐시가 없으면 출처 표기 없는 조문 인용을 경고(WARN)로 알릴 뿐이다. 조문 텍스트 자체의
   진위는 검증하지 않는다.
 - 주장-근거 결합(--morph-grounding/--high-fidelity)은 결론 문장이 한 근거 레코드의 대상에 다른 레코드의
-  값을 엇갈려 붙였는지만 용어 위치로 본다. 문장의 의미·부정·결론의 타당성은 판정하지 않는다 — PASS는 자동
-  검사 범위의 통과다.
+  값을 엇갈려 붙였는지만 용어 위치로 본다. 부정·비교 문장은 위치로 참·거짓을 가릴 수 없어 판정하지 않고
+  사람 검토(WARN)로 넘긴다. 문장의 의미·결론의 타당성은 판정하지 않는다 — PASS는 자동 검사 범위의 통과다.
 """
 from __future__ import annotations
 import argparse
@@ -540,6 +540,12 @@ def main(argv=None):
                 claim_binding = check_claim_binding(eval_target, args.evidence, extract_forensic_morphemes,
                                                     FORENSIC_PROCEDURAL_TERMS)
                 for claim in claim_binding["claims"]:
+                    if claim["status"] == "review":
+                        # 부정·비교: 같은 레코드 용어여도 거짓일 수 있고 엇갈린 용어여도 참일 수 있다.
+                        warnings.append(
+                            f"주장-근거 결합 판정 불가(사람 검토): '{claim['claim'][:60]}' — {'·'.join(claim['relation'])} "
+                            "표현이 있어 용어 위치만으로 참·거짓을 가릴 수 없음. 근거 레코드와 대조해 사람이 확인할 것")
+                        continue
                     if claim["status"] != "unbound":
                         continue
                     subject, value = claim["crossed"]

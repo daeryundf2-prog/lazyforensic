@@ -32,6 +32,7 @@
 | `case_survey.py` (`lazyforensic scan`) | 단계 호출 완료, 열거 완전 | **조사 범위 미확인** | 인자 오류·출력 경로가 증거 안 | — | — |
 | `evidence_manifest.py` (`lazyforensic manifest`) | 생성 완료 | 검증 실패, **조사 범위 미확인**(부분 매니페스트) | 인자 오류 | — | — |
 | `case_envelope.py` | 생성 완료 | — | 인자 오류 | — | — |
+| `print_check.py` (`lazyforensic printcheck`) | 인쇄본의 글자가 모두 그려짐 | 빈 글자·대체 글리프·누락 문자열·미포함 글꼴 | PDF/DOCX 없음·인자 오류 | Poppler 없음·PDF 판독 실패 (통과로 치지 않음) | — |
 | `check_tool.py` | 도구 발견 | — | 하나 이상 미발견 (설치 안내만 출력) | — | — |
 | `setup_forensic_env.py` | 설정 완료 | 단계 실패 | — | — | — |
 | `setup_korean_law.mjs --check` | 빌드+키 OK | 빌드 실패 | — | — | 미빌드/키 없음 |

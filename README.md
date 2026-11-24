@@ -41,6 +41,9 @@ lazyforensic report <증거 폴더> [--case-info 사건정보.txt] [--hashes 해
 한글에서는 `보고서초안.hwpx`, Word에서는 `보고서초안.docx`를 열어 "미확인" 항목을 검토하고 편집본을 다른 이름으로 저장한다.
 두 형식 모두 기본으로 생성한다. `--no-hwpx`와 `--no-docx`로 각각 생략할 수 있다.
 같은 폴더에 Markdown·HTML 초안과 저장된 편집용 초안의 본문·표·해시 대조 결과(`초안검증.json`)가 있다.
+PDF 인쇄본은 만들지 않는다. Word·한글·LibreOffice로 PDF를 만들었다면 변환한 PC에 한글 글꼴이 있었는지
+`lazyforensic printcheck 인쇄본.pdf --docx 보고서초안.docx`로 확인한다(Poppler 필요). PDF에서 한글이 복사된다고
+화면·종이에 한글이 그려진 것은 아니다. 이 명령은 독립 렌더러로 그린 쪽에서 글자 자리마다 잉크를 확인한다.
 공개 표본(Digital Corpora `nps-2009-canon2`)으로 돌린 실제 결과: [`examples/nps-2009-canon2`](examples/nps-2009-canon2/).
 
 ---

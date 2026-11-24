@@ -106,8 +106,9 @@ def verify_with_cache(tmp_path, report_text, cache_bytes, *extra):
     return proc, json.loads(proc.stdout)
 
 
+# D21 #4: paragraph markers count only at line start, so the two paragraphs sit on separate lines.
 EDITION = {"statute_name": "개인정보 보호법", "law_id": "SYN-0001", "effective_date": "2023-09-15",
-           "articles": {"제32조의2": "① 합성 문장 ② 합성 문장", "71": "제70조를 위반한 자 (합성 본문)"}}
+           "articles": {"제32조의2": "① 합성 문장\n② 합성 문장", "71": "제70조를 위반한 자 (합성 본문)"}}
 
 
 def test_same_parsed_cache_gets_the_same_verdict_regardless_of_json_notation(tmp_path):
@@ -188,6 +189,29 @@ def test_circled_numeral_counts_only_as_a_paragraph_start(tmp_path, label, artic
     assert item["status"] == status, (label, item)
     if status == "unconfirmed":
         assert "제2항" in item["reason"] and result["verdict"] == "WARN", result
+
+
+@pytest.mark.parametrize(("label", "text", "cited", "status"), [
+    # D21 #4: markers used as examples inside one sentence, or a flattened body, are not paragraph starts.
+    ("inline example", "① 서식의 둘째 칸에는 기호 ② 를 적는다.", 2, "unconfirmed"),
+    ("inline example, first paragraph", "① 서식의 둘째 칸에는 기호 ② 를 적는다.", 1, "matched"),
+    ("flattened body", "① 합성 문장 ② 합성 문장", 2, "unconfirmed"),
+    ("line starts", "① 첫 항이다.\n② 둘째 항이다.", 2, "matched"),
+    ("compact line starts", "①첫 항이다.\n②둘째 항이다.", 2, "matched"),
+    ("indented line starts", "제2조(합성) ① 첫 항이다.\n  ② 둘째 항이다.", 2, "matched"),
+    ("quoted at line start", "① 첫 항이다.\n②’를 적는다.", 2, "unconfirmed"),
+])
+def test_plain_text_paragraphs_need_line_start_evidence(tmp_path, label, text, cited, status):
+    cache = {"law_name": "합성법", "law_id": "SYN", "articles": [{"article": "제2조", "text": text}]}
+    _, result = verify_with_cache(tmp_path, f"합성법 제2조 제{cited}항을 검토한다.\n",
+                                  json.dumps(cache, ensure_ascii=False).encode())
+    item, = result["law_cache"]["citations"]
+    assert item["status"] == status, (label, item)
+    if status == "unconfirmed":
+        assert result["verdict"] == "WARN", result
+        assert f"제{cited}항" in item["reason"] and "줄 첫머리가 아닌 항 표지" in item["reason"], item
+    else:
+        assert item["basis"]["paragraph"] == cited
 
 
 if __name__ == "__main__":

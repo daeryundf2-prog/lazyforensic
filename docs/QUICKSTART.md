@@ -128,5 +128,17 @@ python "<설치 폴더>/scripts/verify_report.py" 보고서초안.docx --evidenc
 4. **6장 분석 결과**: 시그니처 불일치·중복·EXIF는 검토 대상 목록이지 결론이 아니다. 해당 파일을 직접 열어 본다.
 5. **7장 분석관 의견**: 도구는 비워 둔다. 분석관이 쓴다.
 6. **8장 한계**: 이번 사건에서 하지 않은 분석(삭제 파일 복구, 메신저 DB 등)을 지우지 말고 남긴다.
+7. **인쇄본(PDF)**: LazyForensic은 PDF를 만들지 않는다. 편집을 마친 DOCX를 Word·한글·LibreOffice로 PDF로 바꿨다면
+   제출 전에 아래처럼 확인한다. 변환한 PC에 한글 글꼴이 없으면 PDF에서 한글이 복사·검색은 되는데 화면과 종이에는
+   빈칸으로 나온다. 텍스트 추출이 된다는 이유로 인쇄본을 채택하지 않는다.
+
+   ```text
+   lazyforensic printcheck 인쇄본.pdf --docx 보고서초안.docx --expect "<사진 파일명>" --expect "<SHA-256 하나>"
+   ```
+
+   Poppler(`pdftotext`·`pdftoppm`·`pdffonts`)가 필요하다(macOS `brew install poppler`, Windows `winget install oschwartz10612.Poppler` 등).
+   독립 렌더러로 그린 쪽에서 단어와 한글 글자마다 잉크가 있는지, 서로 다른 글자가 같은 대체 모양으로 그려지지 않았는지,
+   1쪽 제목과 `--expect` 문자열이 있는지, 글꼴이 PDF에 모두 포함됐는지 본다. 종료 코드 0 통과, 1 실패, 3 확인 불가(Poppler 없음).
+   실패하면 한글 글꼴(맑은 고딕·나눔고딕·Noto Sans CJK KR 등)이 있는 PC에서 다시 변환한다.
 
 한계 전체 목록: [`docs/GAPS.md`](GAPS.md). 공개 표본으로 돌린 실제 결과: [`examples/nps-2009-canon2`](../examples/nps-2009-canon2/).
