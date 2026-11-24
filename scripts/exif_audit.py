@@ -135,6 +135,26 @@ def event_fields(shot: dict) -> dict:
     return fields
 
 
+def recorded_time(ev: dict) -> str | None:
+    """EXIF 이벤트의 표시용 시각: 기록된 벽시계 값, 기록된 소수초 원문 전체, 오프셋(유효하면 그 값, 아니면 판정 문구).
+
+    timestamp는 ISO 파서용으로 마이크로초까지만 싣는다. 양식·본문에 그 값을 쓰면 '000000600'처럼 기록된
+    나노초가 사라져 같은 정수 시각의 동률 행을 대조할 수 없다. EXIF 이벤트가 아니면 None."""
+    recorded = ev.get("recorded") or {}
+    m = EXIF_DT_RE.match((recorded.get("DateTimeOriginal") or "").strip().rstrip("\x00"))
+    if not m:
+        return None
+    y, mo, d, h, mi, s = m.groups()
+    text = f"{y}-{mo}-{d} {h}:{mi}:{s}"
+    subsec = (recorded.get("SubSecTimeOriginal") or "").strip().rstrip("\x00")
+    if subsec.isdigit():
+        text += "." + subsec
+    offset_raw = recorded.get("OffsetTimeOriginal")
+    if ev.get("offset_status") == "valid":
+        return text + offset_raw.strip()
+    return f"{text} ({zone_note({'offset': None, 'offset_status': ev.get('offset_status'), 'offset_raw': offset_raw})})"
+
+
 def _require_pillow():
     try:
         from PIL import Image  # type: ignore

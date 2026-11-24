@@ -16,6 +16,7 @@ from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile, ZipFile
 import zlib
 
+import exif_audit
 import report_docx
 import report_hwpx
 from report_package import check_package_size
@@ -63,10 +64,12 @@ def form_fields(case, inventory, integrity_rows, events, limit):
     values["증거목록표"] = limited_table(["파일", "크기(바이트)", "해시"], evidence, len(inventory), "파일해시목록.csv")
     values["무결성검증표"] = [["검증 항목", "결과", "근거"], *[[cell(v) for v in row] for row in integrity_rows]]
     # File events carry the exact nanosecond mtime; timestamp is truncated to microseconds for ISO parsers.
+    # EXIF rows show the recorded sub-second digits and the offset status, so tied rows can be compared as printed.
     # Events arrive in merge_timeline.order_events order; neighbours the recorded precision cannot separate are ties.
     timeline = [[cell(when + " (동률)" if ev.get("order_tie") and when else when),
                  *[cell(ev.get(k)) for k in ("source", "file", "description")]]
-                for ev in events[:limit] for when in [ev.get("mtime") or ev.get("timestamp")]]
+                for ev in events[:limit]
+                for when in [ev.get("mtime") or exif_audit.recorded_time(ev) or ev.get("timestamp")]]
     values["타임라인표"] = limited_table(["시각(기록값)", "출처", "파일", "설명"], timeline, len(events), "events.json")
     return values
 

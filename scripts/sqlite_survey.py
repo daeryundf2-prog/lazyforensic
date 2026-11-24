@@ -31,7 +31,9 @@ WAL은 SQLite가 열 수 있는지와 별개로 프레임 경계·salt·체크�
 알려진 한계:
 - 스키마·행 수만 본다 — 내용 해석(어느 컬럼이 메시지인지)은 수동.
 - total_rows는 실제 테이블에 저장된 행 수의 합이다. 뷰가 돌려주는 행 수는
-  저장 레코드가 아니므로 view_rows로 따로 센다.
+  저장 레코드가 아니므로 view_rows로 따로 센다. 조회하지 못한 뷰가 있으면(작성 앱 전용 함수 등)
+  view_rows는 미확인(None)이고 조회한 뷰 소계만 visible_view_rows로 남긴다.
+- 내부 객체는 이름이 'sqlite_'로 시작하는 것만 문자 그대로 비교해 뺀다('sqliteLog'는 사용자 테이블).
 - 손상된 DB는 integrity_check가 실패로 보고한다 — 복구는 별도 도구.
 """
 from __future__ import annotations
@@ -225,9 +227,12 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
     rec["integrity_ok"] = (integ == "ok")
 
     tables = []
+    # 내부 객체(sqlite_master·sqlite_sequence·sqlite_stat1 등)만 뺀다. LIKE의 '_'는 임의의 한 글자이므로
+    # 'sqliteLog' 같은 사용자 테이블까지 빠진다 — 접두사 7글자를 문자 그대로 비교한다.
+    # SQLite는 대소문자와 관계없이 'sqlite_'로 시작하는 이름을 내부용으로 예약한다.
     rows = cur.execute(
         "SELECT name, type FROM sqlite_master "
-        "WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' "
+        "WHERE type IN ('table','view') AND lower(substr(name, 1, 7)) <> 'sqlite_' "
         "ORDER BY name").fetchall()
     for name, ttype in rows:
         entry: dict = {"name": name, "type": ttype}
@@ -265,7 +270,18 @@ def _survey_conn(conn: sqlite3.Connection, rec: dict, sample: tuple[str, int] | 
             f"테이블 소계 {subtotal}행, 최종 합계 미확인")
     else:
         rec["total_rows"] = subtotal
-    rec["view_rows"] = sum(t["row_count"] or 0 for t in tables if t["type"] == "view")
+    # 조회하지 못한 뷰를 0행으로 더하지 않는다 — 조회한 뷰의 소계만 남기고 뷰 결과는 미확인이다.
+    # 저장 행 합계(total_rows)와는 무관하므로 limitations(취득·집계 제한)에 넣지 않는다.
+    views = [t for t in tables if t["type"] == "view"]
+    view_failed = [t["name"] for t in views if t["row_count"] is None]
+    view_subtotal = sum(t["row_count"] for t in views if t["row_count"] is not None)
+    if view_failed:
+        rec["view_rows"] = None
+        rec["visible_view_rows"] = view_subtotal
+        rec["view_note"] = (f"뷰 {len(view_failed)}개 조회 실패({', '.join(view_failed)}) — 조회한 "
+                            f"{len(views) - len(view_failed)}개 뷰 소계 {view_subtotal}행, 뷰 조회 결과 미확인")
+    else:
+        rec["view_rows"] = view_subtotal
 
 
 def _survey_working_copy(path: Path, rec: dict, sidecars: list[tuple[Path, Path]],
@@ -427,16 +443,22 @@ def main(argv: list[str] | None = None) -> int:
             n_tables = sum(1 for t in r["tables"] if t["type"] == "table")
             n_views = len(r["tables"]) - n_tables
             line = f"{r['file']}: 테이블 {n_tables}개 {rows_text(r)}"
-            if n_views:
+            if n_views and r.get("view_rows") is None:
+                line += (f", 뷰 {n_views}개 조회 결과 미확인(조회한 뷰 소계 {r.get('visible_view_rows')}행, "
+                         f"저장 행 아님)")
+            elif n_views:
                 line += f", 뷰 {n_views}개 조회 결과 {r['view_rows']}행(저장 행 아님)"
             for s in r.get("sidecars", []):
                 line += f", {s['file']} 반영(작업 사본)"
             print(f"{line}, 무결성={mark}")
             for text in r.get("limitations", []):
                 print(f"  제한: {text}")
+            if r.get("view_note"):
+                print(f"  뷰: {r['view_note']}")
             for t in r["tables"]:
-                print(f"  {t['name']} ({t['type']}): {t.get('row_count')}행, "
-                      f"컬럼 {len(t.get('columns', []))}개")
+                count = t.get("row_count")
+                shown = f"{count}행" if count is not None else f"미확인({t.get('count_error', '')})"
+                print(f"  {t['name']} ({t['type']}): {shown}, 컬럼 {len(t.get('columns', []))}개")
                 for row in t.get("sample_rows", []):
                     print(f"    표본: {row}")
     broken = [r for r in records if r.get("is_sqlite") and not r.get("integrity_ok")]
